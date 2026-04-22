@@ -4,36 +4,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { Opportunity, Pipeline } from "./types";
 
-const STAGES = [
-  "Lead Nuevo",
-  "Kiwi",
-  "Tibio",
-  "Caliente",
-  "Agendo",
-  "Consulta",
-  "No asistio",
-  "Seguimiento",
-  "Tratamiento",
-  "Recuperados",
-  "Pacientes"
-];
+interface OpportunitiesViewProps {
+  opportunities: Opportunity[];
+  pipeline?: Pipeline;
+  onMoveOpportunity?: (id: string, stageId: string) => void;
+}
 
-const INITIAL_OPPORTUNITIES = [
-  { id: "1", name: "Juan Pérez", ownerAvatar: "https://i.pravatar.cc/150?u=a1", date: "15 Oct, 2024", source: "Facebook Ads", phone: "+57 300 123 4567", stage: "Lead Nuevo" },
-  { id: "2", name: "María Gómez", ownerAvatar: "https://i.pravatar.cc/150?u=a2", date: "14 Oct, 2024", source: "Google Search", phone: "+57 310 987 6543", stage: "Caliente" },
-  { id: "3", name: "Carlos López", ownerAvatar: "https://i.pravatar.cc/150?u=a3", date: "12 Oct, 2024", source: "Instagram", phone: "+57 315 456 7890", stage: "Agendo" },
-  { id: "4", name: "Ana Martínez", ownerAvatar: "https://i.pravatar.cc/150?u=a1", date: "10 Oct, 2024", source: "Referido", phone: "+57 320 111 2222", stage: "Consulta" },
-  { id: "5", name: "Luis Rodríguez", ownerAvatar: "https://i.pravatar.cc/150?u=a2", date: "08 Oct, 2024", source: "Directo", phone: "+57 301 222 3333", stage: "Tratamiento" },
-];
-
-export function OpportunitiesView() {
+export function OpportunitiesView({ opportunities, pipeline, onMoveOpportunity }: OpportunitiesViewProps) {
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [searchQuery, setSearchQuery] = useState("");
-  const [opportunities, setOpportunities] = useState(INITIAL_OPPORTUNITIES);
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
 
-  const filteredOpps = opportunities.filter(o => o.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const stages = pipeline?.stages ?? [];
+  const stageLookup = new Map(stages.map((s) => [s.id, s.label] as const));
+
+  const filteredOpps = opportunities.filter((o) =>
+    o.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedOppId(id);
@@ -45,12 +34,10 @@ export function OpportunitiesView() {
     e.dataTransfer.dropEffect = "move";
   };
 
-  const handleDrop = (e: React.DragEvent, targetStage: string) => {
+  const handleDrop = (e: React.DragEvent, targetStageId: string) => {
     e.preventDefault();
     if (draggedOppId) {
-      setOpportunities(prev => 
-        prev.map(opp => opp.id === draggedOppId ? { ...opp, stage: targetStage } : opp)
-      );
+      onMoveOpportunity?.(draggedOppId, targetStageId);
       setDraggedOppId(null);
     }
   };
@@ -114,52 +101,59 @@ export function OpportunitiesView() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
-        {viewMode === "board" ? (
+        {stages.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            No se encontró un pipeline en GoHighLevel.
+          </div>
+        ) : viewMode === "board" ? (
           <div className="flex gap-4 h-full pb-4 w-max">
-            {STAGES.map(stage => (
-              <div 
-                key={stage} 
+            {stages.map((stage) => (
+              <div
+                key={stage.id}
                 className="flex flex-col w-72 bg-muted/30 rounded-lg border shrink-0"
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, stage)}
+                onDrop={(e) => handleDrop(e, stage.id)}
               >
                 <div className="p-3 border-b bg-muted/50 rounded-t-lg flex items-center justify-between shrink-0">
-                  <h3 className="font-medium text-sm">{stage}</h3>
+                  <h3 className="font-medium text-sm">{stage.label}</h3>
                   <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border">
-                    {filteredOpps.filter(o => o.stage === stage).length}
+                    {filteredOpps.filter((o) => o.stageId === stage.id).length}
                   </span>
                 </div>
                 <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-                  {filteredOpps.filter(o => o.stage === stage).map(opp => (
-                    <div 
-                      key={opp.id} 
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, opp.id)}
-                      className="bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer active:cursor-grabbing"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-medium text-sm">{opp.name}</h4>
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={opp.ownerAvatar} />
-                          <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
-                        </Avatar>
+                  {filteredOpps
+                    .filter((o) => o.stageId === stage.id)
+                    .map((opp) => (
+                      <div
+                        key={opp.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, opp.id)}
+                        className="bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer active:cursor-grabbing"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-medium text-sm">{opp.name}</h4>
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                        </div>
+                        <div className="space-y-1.5 mt-3">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
+                            <span className="truncate">{opp.source}</span>
+                          </div>
+                          {opp.monetaryValue ? (
+                            <div className="flex items-center text-xs text-muted-foreground">
+                              <Phone className="h-3.5 w-3.5 mr-2 shrink-0 opacity-0" />
+                              <span className="truncate">${opp.monetaryValue}</span>
+                            </div>
+                          ) : null}
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <CalendarIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
+                            <span>{opp.date}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1.5 mt-3">
-                        <div className="flex items-center text-xs text-muted-foreground">
-                          <Phone className="h-3.5 w-3.5 mr-2 shrink-0" />
-                          <span className="truncate">{opp.phone}</span>
-                        </div>
-                        <div className="flex items-center text-xs text-muted-foreground">
-                          <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
-                          <span className="truncate">{opp.source}</span>
-                        </div>
-                        <div className="flex items-center text-xs text-muted-foreground">
-                          <CalendarIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
-                          <span>{opp.date}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             ))}
@@ -171,27 +165,26 @@ export function OpportunitiesView() {
                 <TableRow>
                   <TableHead>Nombre del lead</TableHead>
                   <TableHead>Etapa</TableHead>
-                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Estado</TableHead>
                   <TableHead>Medio de captación</TableHead>
                   <TableHead>Fecha de creación</TableHead>
                   <TableHead className="text-right">Propietario</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOpps.map(opp => (
+                {filteredOpps.map((opp) => (
                   <TableRow key={opp.id}>
                     <TableCell className="font-medium">{opp.name}</TableCell>
                     <TableCell>
                       <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-muted/50">
-                        {opp.stage}
+                        {stageLookup.get(opp.stageId) ?? opp.stageId}
                       </span>
                     </TableCell>
-                    <TableCell>{opp.phone}</TableCell>
+                    <TableCell className="capitalize">{opp.status}</TableCell>
                     <TableCell>{opp.source}</TableCell>
                     <TableCell>{opp.date}</TableCell>
                     <TableCell className="text-right">
                       <Avatar className="h-6 w-6 ml-auto">
-                        <AvatarImage src={opp.ownerAvatar} />
                         <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
                       </Avatar>
                     </TableCell>

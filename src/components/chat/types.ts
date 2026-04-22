@@ -64,6 +64,7 @@ export type ScheduledMessage = {
 
 export type Conversation = {
   id: string;
+  contactId?: string;
   participant: User;
   source: "whatsapp" | "instagram" | "messenger" | "tiktok" | "sms" | "email";
   stage: string;
@@ -75,6 +76,25 @@ export type Conversation = {
   isFavorite?: boolean;
   activeReminder?: string;
   scheduledMessages?: ScheduledMessage[];
+};
+
+export type Pipeline = {
+  id: string;
+  name: string;
+  stages: { id: string; label: string; color: string }[];
+};
+
+export type Opportunity = {
+  id: string;
+  name: string;
+  pipelineId: string;
+  stageId: string;
+  contactId: string;
+  monetaryValue?: number;
+  status: "open" | "won" | "lost" | "abandoned";
+  source: string;
+  date: string;
+  assignedTo?: string;
 };
 
 export type FilterCondition = {
