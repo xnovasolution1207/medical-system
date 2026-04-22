@@ -1,0 +1,1399 @@
+import React, { useState, useRef, useEffect } from "react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChannelAvatar } from "./ChannelAvatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Mic, Zap, Contact, Waypoints, Delete } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Conversation, Message, User, Task } from "./types";
+import { cn } from "@/lib/utils";
+
+interface ChatMessageAreaProps {
+  conversation: Conversation;
+  currentUser: User;
+  tasks: Task[];
+  onAddTask: (task: Omit<Task, "id">) => void;
+  onToggleTask: (id: string) => void;
+  onSendMessage: (text: string, attachment?: Message["attachment"], channel?: Message["channel"], mentions?: string[], reminder?: string, replyTo?: Message["replyTo"]) => void;
+  onScheduleMessage?: (conversationId: string, text: string, date: string, channel?: Message["channel"]) => void;
+  onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
+  onBack?: () => void;
+  onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
+  onClearReminder?: (id: string) => void;
+  onSetReminder?: (id: string, reminder: string) => void;
+  stages: { id: string; label: string; color: string; }[];
+  setStages: (stages: { id: string; label: string; color: string; }[]) => void;
+  isContactSidebarOpen?: boolean;
+  onToggleContactSidebar?: () => void;
+}
+
+export function ChatMessageArea({
+  conversation,
+  currentUser,
+  tasks,
+  onAddTask,
+  onToggleTask,
+  onSendMessage,
+  onScheduleMessage,
+  onCancelScheduledMessage,
+  onBack,
+  onUpdateStage,
+  onClearReminder,
+  onSetReminder,
+  stages,
+  setStages,
+  isContactSidebarOpen,
+  onToggleContactSidebar,
+}: ChatMessageAreaProps) {
+  const [inputText, setInputText] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [activeChannel, setActiveChannel] = useState<"whatsapp" | "sms" | "email" | "internal">("whatsapp");
+  const [activeReminder, setActiveReminder] = useState<string | null>(conversation.activeReminder || null);
+  const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDueDate, setNewTaskDueDate] = useState("Hoy");
+  const [newTaskAssignee, setNewTaskAssignee] = useState(currentUser.name);
+  const [taskPresets, setTaskPresets] = useState<string[]>(["Llamar para seguimiento", "Enviar cotización", "Agendar reunión"]);
+  const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
+  const [editingPresetValue, setEditingPresetValue] = useState("");
+  const [isStagesOpen, setIsStagesOpen] = useState(false);
+  const [editingStageId, setEditingStageId] = useState<string | null>(null);
+  const [editingStageName, setEditingStageName] = useState("");
+  const [messageFilters, setMessageFilters] = useState<string[]>(["Todo"]);
+  const [filterSearch, setFilterSearch] = useState("");
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("Mañana a las 9:00 AM");
+
+  // Plantillas de mensaje
+  const [messageTemplates, setMessageTemplates] = useState([
+    { id: "1", title: "Saludo", text: "¡Hola! ¿En qué puedo ayudarte hoy?" },
+    { id: "2", title: "Despedida", text: "Gracias por contactarnos. ¡Que tengas un excelente día!" },
+    { id: "3", title: "Seguimiento", text: "Hola, te escribo para hacer seguimiento a nuestra conversación anterior." }
+  ]);
+  const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [manageTemplateSearch, setManageTemplateSearch] = useState("");
+  const [isManageTemplatesOpen, setIsManageTemplatesOpen] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingTemplateTitle, setEditingTemplateTitle] = useState("");
+  const [editingTemplateText, setEditingTemplateText] = useState("");
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  // Auto scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [conversation.messages]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      if (file.type.startsWith("image/")) {
+        setPreviewUrl(URL.createObjectURL(file));
+      } else {
+        setPreviewUrl(null);
+      }
+    }
+    // Reset input value so the same file can be selected again if removed
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+    setReplyingToMessage(null);
+  };
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inputText.trim() || selectedFile) {
+      let attachment;
+      if (selectedFile) {
+        attachment = {
+          type: selectedFile.type.startsWith("image/") ? "image" as const : "file" as const,
+          url: previewUrl || "", // In a real app, this would be uploaded to a server first
+          name: selectedFile.name,
+        };
+      }
+      
+      let mentions: string[] = [];
+      if (activeChannel === "internal") {
+        const mentionRegex = /@(\w+)/g;
+        const matches = inputText.match(mentionRegex);
+        if (matches) {
+          mentions = matches.map(m => m.substring(1));
+        }
+      }
+
+      onSendMessage(inputText, attachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined);
+      setInputText("");
+      handleRemoveFile();
+      // Do not clear activeReminder here, let it stay until user closes it
+    }
+  };
+
+  const handleSchedule = () => {
+    if (inputText.trim()) {
+      onScheduleMessage?.(conversation.id, inputText, scheduleDate, activeChannel);
+      setInputText("");
+      setIsScheduleOpen(false);
+      toast({
+        title: "Mensaje programado",
+        description: `El mensaje se enviará: ${scheduleDate}`,
+      });
+    }
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInputText(value);
+
+    // Check if the cursor is right after a word starting with /
+    const cursorPosition = e.target.selectionStart;
+    const textBeforeCursor = value.substring(0, cursorPosition);
+    const match = textBeforeCursor.match(/(?:^|\s)\/([^\s]*)$/);
+
+    if (match) {
+      setIsTemplateMenuOpen(true);
+      setTemplateSearch(match[1]);
+    } else {
+      setIsTemplateMenuOpen(false);
+    }
+  };
+
+  const insertTemplate = (templateText: string) => {
+    const textarea = document.querySelector('textarea');
+    const cursorPosition = textarea?.selectionStart || inputText.length;
+    const textBeforeCursor = inputText.substring(0, cursorPosition);
+    const textAfterCursor = inputText.substring(cursorPosition);
+    
+    const match = textBeforeCursor.match(/(?:^|\s)\/([^\s]*)$/);
+    if (match) {
+      const slashIndex = textBeforeCursor.lastIndexOf('/' + match[1]);
+      const prefix = textBeforeCursor.substring(0, slashIndex);
+      const newText = prefix + (prefix.length > 0 && !prefix.endsWith(' ') ? ' ' : '') + templateText + textAfterCursor;
+      setInputText(newText);
+    } else {
+      setInputText(inputText + templateText);
+    }
+    setIsTemplateMenuOpen(false);
+    
+    setTimeout(() => {
+      textarea?.focus();
+    }, 10);
+  };
+
+  return (
+    <div className="flex h-full flex-1 flex-col bg-background">
+      {/* Header */}
+      <div className="flex h-[68px] items-center justify-between border-b bg-card/50 px-4 py-3 backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mr-1 sm:hidden"
+              onClick={onBack}
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
+          <ChannelAvatar 
+            name={conversation.participant.name} 
+            src={conversation.participant.avatar} 
+            channel={conversation.source} 
+            status={conversation.participant.status}
+            className="h-10 w-10"
+          />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-foreground">
+                {conversation.participant.name}
+              </span>
+            </div>
+            <span className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+              <span className="capitalize font-medium">{conversation.source}</span>
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/50" />
+              <span>{conversation.recipientNumber}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Status Dropdown */}
+          <Popover open={isStagesOpen} onOpenChange={setIsStagesOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="h-9 text-[13px] font-medium border-slate-200 bg-slate-50 hover:bg-slate-100 focus:ring-0 w-[120px] rounded-full px-3 shadow-none text-slate-700 dark:bg-muted/50 dark:border-border dark:text-foreground transition-colors mr-1 justify-between">
+                <div className="flex items-center gap-2 truncate">
+                  <div className={cn("h-2 w-2 shrink-0 rounded-full", stages.find(s => s.id === conversation.stage)?.color || "bg-slate-500")} />
+                  <span className="truncate">{stages.find(s => s.id === conversation.stage)?.label || "Estado"}</span>
+                </div>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50 ml-1" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2 rounded-xl" align="start">
+              <div className="space-y-1">
+                {stages.map((stage, idx) => (
+                  <div key={stage.id} className="flex items-center gap-1 group">
+                    {editingStageId === stage.id ? (
+                      <div className="flex flex-1 items-center gap-1">
+                        <Input
+                          value={editingStageName}
+                          onChange={(e) => setEditingStageName(e.target.value)}
+                          className="h-8 text-sm"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              if (editingStageName.trim() && editingStageName.trim() !== stage.label) {
+                                setStages(stages.map(s => s.id === stage.id ? { ...s, label: editingStageName.trim() } : s));
+                                toast({ title: "Estado actualizado" });
+                              }
+                              setEditingStageId(null);
+                            } else if (e.key === 'Escape') {
+                              setEditingStageId(null);
+                            }
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 shrink-0"
+                          onClick={() => {
+                            if (editingStageName.trim() && editingStageName.trim() !== stage.label) {
+                              setStages(stages.map(s => s.id === stage.id ? { ...s, label: editingStageName.trim() } : s));
+                              toast({ title: "Estado actualizado" });
+                            }
+                            setEditingStageId(null);
+                          }}
+                        >
+                          <Check className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground shrink-0"
+                          onClick={() => setEditingStageId(null)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div 
+                        className="flex flex-1 items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent cursor-pointer"
+                        onClick={() => {
+                          onUpdateStage?.(conversation.id, stage.id);
+                          setIsStagesOpen(false);
+                        }}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          {conversation.stage === stage.id && <Check className="h-4 w-4 shrink-0" />}
+                          <div className={cn("h-2 w-2 shrink-0 rounded-full", stage.color, conversation.stage !== stage.id && "ml-6")} />
+                          <span className="truncate">{stage.label}</span>
+                        </div>
+                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (idx > 0) {
+                                const newStages = [...stages];
+                                [newStages[idx - 1], newStages[idx]] = [newStages[idx], newStages[idx - 1]];
+                                setStages(newStages);
+                              }
+                            }}
+                            disabled={idx === 0}
+                          >
+                            <ChevronDown className="h-3 w-3 rotate-180" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (idx < stages.length - 1) {
+                                const newStages = [...stages];
+                                [newStages[idx + 1], newStages[idx]] = [newStages[idx], newStages[idx + 1]];
+                                setStages(newStages);
+                              }
+                            }}
+                            disabled={idx === stages.length - 1}
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingStageId(stage.id);
+                              setEditingStageName(stage.label);
+                            }}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStages(stages.filter(s => s.id !== stage.id));
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-xs text-muted-foreground mt-2 h-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newId = `stage_${Date.now()}`;
+                    setStages([...stages, { id: newId, label: "Nuevo Estado", color: "bg-slate-500" }]);
+                    setEditingStageId(newId);
+                    setEditingStageName("Nuevo Estado");
+                  }}
+                >
+                  + Añadir estado
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-12 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20">
+                <MessageCircle className="h-4 w-4" />
+                <ChevronDown className="h-3 w-3 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuCheckboxItem checked={messageFilters.includes("Todo")} onCheckedChange={(c) => {
+                if (c) setMessageFilters(["Todo"]);
+                else setMessageFilters([]);
+              }}>
+                Todo
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={messageFilters.includes("Conversaciones")} onCheckedChange={(c) => {
+                if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), "Conversaciones"]);
+                else setMessageFilters(prev => prev.filter(f => f !== "Conversaciones"));
+              }}>
+                Conversaciones
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={messageFilters.includes("Actividades")} onCheckedChange={(c) => {
+                if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), "Actividades"]);
+                else setMessageFilters(prev => prev.filter(f => f !== "Actividades"));
+              }}>
+                Actividades
+              </DropdownMenuCheckboxItem>
+              
+              <div className="h-px bg-muted my-1 mx-1" />
+              
+              <div className="p-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Buscar" 
+                    className="h-9 pl-8" 
+                    value={filterSearch}
+                    onChange={(e) => setFilterSearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  />
+                </div>
+              </div>
+              
+              <ScrollArea className="h-[200px]">
+                {[
+                  "SMS", "Llamada", "WhatsApp", "Comentario interno", 
+                  "Contactos", "Citas", "Oportunidades", "Pagos", 
+                  "Factura", "Registros de acciones de AI"
+                ].filter(opt => opt.toLowerCase().includes(filterSearch.toLowerCase())).map(opt => (
+                  <DropdownMenuCheckboxItem 
+                    key={opt}
+                    checked={messageFilters.includes(opt)} 
+                    onCheckedChange={(c) => {
+                      if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), opt]);
+                      else setMessageFilters(prev => prev.filter(f => f !== opt));
+                    }}
+                  >
+                    {opt}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </ScrollArea>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20">
+            <Phone className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-orange-50 text-orange-500 hover:bg-orange-100 hover:text-orange-600 dark:bg-orange-500/10 dark:text-orange-400 dark:hover:bg-orange-500/20">
+            <Star className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20">
+            <Mail className="h-4 w-4" />
+          </Button>
+
+          {/* Task Button */}
+          <Dialog open={isTaskDialogOpen} onOpenChange={setIsTaskDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 dark:bg-purple-500/10 dark:text-purple-400 dark:hover:bg-purple-500/20">
+                <CheckCircle2 className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Nueva Tarea</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="title">Descripción de la tarea</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 text-xs font-normal bg-background">
+                          <List className="h-3.5 w-3.5 mr-1.5" />
+                          Seleccionar plantilla
+                          <ChevronDown className="h-3.5 w-3.5 ml-2 text-muted-foreground" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-[300px] p-2">
+                        <div className="space-y-1">
+                          {taskPresets.length === 0 ? (
+                            <div className="p-2 text-xs text-muted-foreground text-center">No hay plantillas guardadas</div>
+                          ) : (
+                            taskPresets.map((preset, idx) => (
+                              <div key={idx} className="flex items-center gap-1">
+                                {editingPresetIndex === idx ? (
+                                  <div className="flex flex-1 items-center gap-1">
+                                    <Input
+                                      value={editingPresetValue}
+                                      onChange={(e) => setEditingPresetValue(e.target.value)}
+                                      className="h-7 text-xs"
+                                      autoFocus
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          if (editingPresetValue.trim() && editingPresetValue.trim() !== preset) {
+                                            const newPresets = [...taskPresets];
+                                            newPresets[idx] = editingPresetValue.trim();
+                                            setTaskPresets(newPresets);
+                                            toast({
+                                              title: "Plantilla actualizada",
+                                              description: "La plantilla se ha modificado correctamente.",
+                                            });
+                                          }
+                                          setEditingPresetIndex(null);
+                                        } else if (e.key === 'Escape') {
+                                          setEditingPresetIndex(null);
+                                        }
+                                      }}
+                                    />
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                      onClick={() => {
+                                        if (editingPresetValue.trim() && editingPresetValue.trim() !== preset) {
+                                          const newPresets = [...taskPresets];
+                                          newPresets[idx] = editingPresetValue.trim();
+                                          setTaskPresets(newPresets);
+                                          toast({
+                                            title: "Plantilla actualizada",
+                                            description: "La plantilla se ha modificado correctamente.",
+                                          });
+                                        }
+                                        setEditingPresetIndex(null);
+                                      }}
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-muted-foreground"
+                                      onClick={() => setEditingPresetIndex(null)}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="flex flex-1 items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent cursor-pointer group"
+                                    onClick={() => setNewTaskTitle(preset)}
+                                  >
+                                    <span className="truncate pr-2">{preset}</span>
+                                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingPresetIndex(idx);
+                                          setEditingPresetValue(preset);
+                                        }}
+                                      >
+                                        <Edit2 className="h-3 w-3" />
+                                      </Button>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTaskPresets(taskPresets.filter((_, i) => i !== idx));
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      id="title"
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      placeholder="Ej. Llamar para seguimiento..."
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Guardar como plantilla"
+                      disabled={!newTaskTitle.trim() || taskPresets.includes(newTaskTitle.trim())}
+                      onClick={() => {
+                        if (newTaskTitle.trim() && !taskPresets.includes(newTaskTitle.trim())) {
+                          setTaskPresets([...taskPresets, newTaskTitle.trim()]);
+                          toast({
+                            title: "Plantilla guardada",
+                            description: "La descripción se ha guardado como plantilla.",
+                          });
+                        }
+                      }}
+                    >
+                      <BookmarkPlus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Vencimiento</Label>
+                  <Select value={newTaskDueDate} onValueChange={setNewTaskDueDate}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona una fecha" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Hoy">Hoy</SelectItem>
+                      <SelectItem value="Mañana">Mañana</SelectItem>
+                      <SelectItem value="Próxima semana">Próxima semana</SelectItem>
+                      <SelectItem value="Personalizado">Personalizado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Asignado a</Label>
+                  <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un usuario" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={currentUser.name}>Yo ({currentUser.name})</SelectItem>
+                      <SelectItem value="Carlos López">Carlos López</SelectItem>
+                      <SelectItem value="Ana Martínez">Ana Martínez</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsTaskDialogOpen(false)}>Cancelar</Button>
+                <Button 
+                  disabled={!newTaskTitle.trim()}
+                  onClick={() => {
+                    if (!newTaskTitle.trim()) return;
+                    setIsTaskDialogOpen(false);
+                    
+                    onAddTask({
+                      title: newTaskTitle,
+                      dueDate: newTaskDueDate,
+                      assignee: { name: newTaskAssignee },
+                      contact: { name: conversation.participant.name, avatar: conversation.participant.avatar },
+                      status: "pending",
+                      conversationId: conversation.id
+                    });
+
+                    setNewTaskTitle("");
+                  }}
+                >
+                  Crear Tarea
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 dark:hover:bg-yellow-500/20">
+                <Bell className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              {["10 Min", "20 Min", "30 Min", "60 Min", "Personalizado"].map((time) => (
+                <DropdownMenuItem key={time} onClick={() => {
+                  setActiveReminder(time);
+                  onSetReminder?.(conversation.id, time);
+                }}>
+                  {time}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20">
+            <Trash2 className="h-4 w-4" />
+          </Button>
+
+          {onToggleContactSidebar && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className={cn("h-9 w-9 rounded-full ml-1 hidden lg:flex", isContactSidebarOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted")}
+              onClick={onToggleContactSidebar}
+              title="Alternar panel de contacto"
+            >
+              <PanelRight className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Tasks Banner */}
+      {tasks.filter(t => t.conversationId === conversation.id && t.status === "pending").map(task => (
+        <div key={task.id} className="flex items-center justify-between bg-purple-50/80 px-4 py-2 text-sm text-purple-800 dark:bg-purple-500/10 dark:text-purple-200 border-b border-purple-100 dark:border-purple-500/20">
+          <div className="flex items-center gap-2 font-medium">
+            <button onClick={() => onToggleTask(task.id)} className="text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300">
+              <Circle className="h-4 w-4" />
+            </button>
+            <span>{task.title}</span>
+            <div className="flex items-center gap-1.5 ml-2">
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-purple-200 dark:border-purple-500/30 bg-white/50 dark:bg-black/20 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {task.dueDate}
+              </Badge>
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-purple-200 dark:border-purple-500/30 bg-white/50 dark:bg-black/20 flex items-center gap-1">
+                <UserIcon className="h-3 w-3" />
+                {task.assignee.name}
+              </Badge>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Reminder Banner */}
+      {activeReminder && (
+        <div className="flex items-center justify-between bg-yellow-100/80 px-4 py-2 text-sm text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-200 border-b border-yellow-200 dark:border-yellow-500/30">
+          <div className="flex items-center gap-2 font-medium">
+            <Bell className="h-4 w-4" />
+            <span>Recordatorio configurado para: {activeReminder}</span>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 rounded-full hover:bg-yellow-200 dark:hover:bg-yellow-500/30 text-yellow-800 dark:text-yellow-200"
+            onClick={() => {
+              setActiveReminder(null);
+              onClearReminder?.(conversation.id);
+            }}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+
+      {/* Scheduled Messages Banner */}
+      {conversation.scheduledMessages?.map(msg => (
+        <div key={msg.id} className="flex items-center justify-between bg-emerald-50/80 px-4 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200 border-b border-emerald-200 dark:border-emerald-500/30">
+          <div className="flex items-center gap-2 font-medium overflow-hidden">
+            <Clock className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="truncate max-w-[200px] sm:max-w-[400px] text-xs font-normal opacity-80">"{msg.text}"</span>
+            <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-emerald-200 dark:border-emerald-500/30 bg-white/50 dark:bg-black/20 shrink-0">
+              {msg.scheduledFor}
+            </Badge>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 rounded-full hover:bg-emerald-200 dark:hover:bg-emerald-500/30 text-emerald-800 dark:text-emerald-200 shrink-0"
+            onClick={() => onCancelScheduledMessage?.(conversation.id, msg.id)}
+            title="Cancelar envío"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      ))}
+
+      {/* Messages Area */}
+      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+        <div className="flex flex-col gap-4 py-4">
+          {conversation.messages.map((message, index) => {
+            if (message.systemEvent && message.systemEvent.type === "opportunity_moved") {
+              return (
+                <div key={message.id} className="flex justify-center w-full my-4">
+                  <div className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 bg-slate-50/80 dark:bg-slate-900/40 rounded-full border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 tracking-tight">
+                    <div className="flex items-center flex-wrap justify-center gap-1.5">
+                      <div className="flex items-center justify-center text-slate-400 dark:text-slate-500 mr-0.5">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                          <circle cx="9" cy="7" r="4" />
+                          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                      </div>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">Opportunity {message.systemEvent.opportunityName} moved</span>
+                      <span>from</span>
+                      <div className="flex items-center gap-1">
+                        <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{message.systemEvent.oldStage}</span>
+                      </div>
+                      <span className="mx-0.5">→</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px]">{message.systemEvent.newStage === 'Calientes' ? '🔥' : message.systemEvent.newStage === 'Agendados' ? '📅' : message.systemEvent.newStage === 'Frío' ? '❄️' : '🟡'}</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{message.systemEvent.newStage}</span>
+                      </div>
+                      <span>in {message.systemEvent.pipeline}</span>
+                    </div>
+                    <div className="flex items-center flex-wrap justify-center gap-1.5 mt-0.5">
+                      <span>por <span className="font-semibold text-slate-800 dark:text-slate-200">{message.systemEvent.user}</span></span>
+                      <button className="text-blue-500 dark:text-blue-400 font-medium ml-1 hover:underline">Detalles</button>
+                      <span className="ml-1">{message.timestamp}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            const isMe = message.senderId === currentUser.id;
+            const prevMessage = conversation.messages[index - 1];
+            const isConsecutive = prevMessage && prevMessage.senderId === message.senderId && !prevMessage.systemEvent;
+
+            return (
+              <div
+                key={message.id}
+                className={cn(
+                  "flex w-full items-end gap-2 group",
+                  isMe ? "justify-end" : "justify-start",
+                  isConsecutive ? "mt-1" : "mt-4"
+                )}
+              >
+                {!isMe && (
+                  <div className={cn(isConsecutive ? "invisible" : "visible", "shrink-0")}>
+                    <ChannelAvatar 
+                      name={conversation.participant.name} 
+                      src={conversation.participant.avatar} 
+                      className="h-8 w-8"
+                    />
+                  </div>
+                )}
+
+                {isMe && (
+                  <div className="mb-5 shrink-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-muted-foreground hover:bg-muted">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setReplyingToMessage(message)}>
+                          <Reply className="h-4 w-4 mr-2" />
+                          Responder
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toast({ title: "Detalles del mensaje", description: `Enviado a las ${message.timestamp}` })}>
+                          <Info className="h-4 w-4 mr-2" />
+                          Ver detalles
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+
+                <div
+                  className={cn(
+                    "relative flex max-w-[75%] flex-col gap-1 sm:max-w-[65%]",
+                    isMe ? "items-end" : "items-start"
+                  )}
+                >
+                  {!isConsecutive && isMe && (
+                    <span className="text-[11px] text-muted-foreground font-medium px-2 mb-0.5">
+                      {currentUser.name}
+                    </span>
+                  )}
+                  <div
+                    className={cn(
+                      "shadow-sm transition-all animate-in fade-in slide-in-from-bottom-2",
+                      message.channel === "internal"
+                        ? "bg-[#FFF4CC] text-[#78350F] dark:bg-amber-900/40 dark:text-amber-200 rounded-[24px] px-5 py-2.5 text-[15px] font-medium inline-block"
+                        : isMe
+                        ? "bg-primary text-primary-foreground rounded-[24px] px-5 py-3 text-[15px]"
+                        : "bg-muted text-foreground rounded-[24px] px-5 py-3 text-[15px]",
+                      !message.text && message.attachment && message.attachment.type === "image" ? "bg-transparent p-0 shadow-none" : ""
+                    )}
+                  >
+                    {message.attachment && (
+                      <div className={cn("mb-1 overflow-hidden rounded-lg", message.text ? "mt-1" : "")}>
+                        {message.attachment.type === "image" ? (
+                          <img
+                            src={message.attachment.url}
+                            alt={message.attachment.name}
+                            className="max-h-[250px] max-w-full rounded-lg object-cover"
+                          />
+                        ) : (message.attachment.type === "audio") ? (
+                          <div className={cn(
+                            "flex items-center gap-4 min-w-[220px] sm:min-w-[280px] py-1.5",
+                            isMe ? "text-primary-foreground" : "text-foreground"
+                          )}>
+                            <button className={cn(
+                              "flex items-center justify-center h-12 w-12 shrink-0 rounded-full transition-colors",
+                              isMe ? "bg-white/20 hover:bg-white/30 text-white" : "bg-primary/10 hover:bg-primary/20 text-primary"
+                            )}>
+                              <Play className="h-5 w-5 ml-1" fill="currentColor" />
+                            </button>
+                            <div className="flex-1 flex flex-col justify-center gap-2">
+                              <div className="w-full h-1.5 rounded-full relative mt-1" style={{ backgroundColor: isMe ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.1)' }}>
+                                <div className={cn("absolute left-0 top-0 bottom-0 w-1/3 rounded-full", isMe ? "bg-white" : "bg-primary")}></div>
+                                <div className={cn("absolute left-1/3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full shadow-sm", isMe ? "bg-white" : "bg-primary")}></div>
+                              </div>
+                              <div className="flex justify-between items-center text-[11px] font-medium opacity-80">
+                                <span>0:15</span>
+                                <span>{message.attachment.duration || "0:45"}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (message.attachment.type === "file" || message.attachment.type === "document") ? (
+                          <div className={cn(
+                            "flex items-center gap-2 rounded-lg border p-3",
+                            isMe ? "bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground" : "bg-background border-border text-foreground"
+                          )}>
+                            <FileIcon className="h-5 w-5 shrink-0" />
+                            <div className="flex flex-col overflow-hidden">
+                              <span className="truncate text-sm font-medium">{message.attachment.name}</span>
+                              {message.attachment.size && (
+                                <span className="text-[10px] opacity-70">{message.attachment.size}</span>
+                              )}
+                            </div>
+                          </div>
+                        ) : message.attachment.type === "link" ? (
+                          <a href={message.attachment.url} target="_blank" rel="noopener noreferrer" className={cn(
+                            "flex flex-col overflow-hidden rounded-lg border bg-background text-foreground hover:bg-accent/80 transition-colors max-w-xs sm:max-w-sm",
+                            isMe ? "border-primary-foreground/20 mt-1" : "border-border mt-1"
+                          )}>
+                            {message.attachment.image && (
+                              <div className="h-32 w-full overflow-hidden bg-muted shrink-0">
+                                <img src={message.attachment.image} alt={message.attachment.name} className="h-full w-full object-cover" />
+                              </div>
+                            )}
+                            <div className="flex flex-col p-3 gap-1">
+                              <span className="font-semibold text-sm line-clamp-1">{message.attachment.name}</span>
+                              {message.attachment.description && (
+                                <span className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{message.attachment.description}</span>
+                              )}
+                              <div className="flex items-center gap-1.5 mt-1 text-[10px] text-muted-foreground">
+                                <LinkIcon className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{message.attachment.url}</span>
+                              </div>
+                            </div>
+                          </a>
+                        ) : null}
+                      </div>
+                    )}
+                    {message.text && <span className="whitespace-pre-wrap leading-relaxed">{message.text}</span>}
+                    
+                    {message.channel === "internal" && (message.mentions?.length || message.reminder) ? (
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-amber-200/50 dark:border-amber-500/30 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                        {message.mentions && message.mentions.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <UserIcon className="h-3.5 w-3.5" />
+                            <span>Asignado a @{message.mentions[0]}</span>
+                          </div>
+                        )}
+                        {message.reminder && (
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>{message.reminder}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {message.buttons && message.buttons.length > 0 && (
+                    <div className="flex flex-col gap-2 w-full mt-2">
+                      {message.buttons.map((btn) => (
+                        <button 
+                          key={btn.id}
+                          className={cn(
+                            "flex items-center justify-center gap-2 w-full py-2.5 px-4 text-primary dark:text-primary-foreground text-[14px] font-medium hover:bg-primary/5 dark:hover:bg-primary/20 transition-colors rounded-full border border-primary/20 dark:border-primary/30 bg-background shadow-sm"
+                          )}
+                        >
+                          <span className="truncate">{btn.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className={cn(
+                    "flex items-center gap-1.5 mt-1",
+                    isMe ? "justify-end" : "justify-start"
+                  )}>
+                    <span className="text-[12px] text-muted-foreground flex items-center gap-1 font-medium">
+                      <Clock className="h-3.5 w-3.5 opacity-70" />
+                      {message.timestamp}
+                    </span>
+                    {message.channel && (
+                      <span className="uppercase text-[10px] font-bold bg-slate-100/80 text-slate-500 dark:bg-slate-800 dark:text-slate-400 px-2.5 py-0.5 rounded-full tracking-wider">
+                        {message.channel}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {!isMe && (
+                  <div className="mb-5 shrink-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-muted-foreground hover:bg-muted">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem onClick={() => setReplyingToMessage(message)}>
+                          <Reply className="h-4 w-4 mr-2" />
+                          Responder
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toast({ title: "Detalles del mensaje", description: `Recibido a las ${message.timestamp}` })}>
+                          <Info className="h-4 w-4 mr-2" />
+                          Ver detalles
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+
+                {isMe && (
+                  <div className={cn(isConsecutive ? "invisible" : "visible", "shrink-0")}>
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={currentUser.avatar} />
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                        {currentUser.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </ScrollArea>
+
+      {/* Input Area (CRM Style) */}
+      <div className="border-t bg-card flex flex-col">
+        {/* Channel Tabs */}
+        <div className="px-4 pt-2">
+          <Tabs value={activeChannel} onValueChange={(v) => setActiveChannel(v as "whatsapp" | "sms" | "email" | "internal")}>
+            <TabsList className="h-8 bg-muted/50">
+              <TabsTrigger value="whatsapp" className="text-xs h-6 px-4 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200">WhatsApp</TabsTrigger>
+              <TabsTrigger value="sms" className="text-xs h-6 px-4 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200">SMS</TabsTrigger>
+              <TabsTrigger value="email" className="text-xs h-6 px-4 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200">Email</TabsTrigger>
+              <TabsTrigger value="internal" className="text-xs h-6 px-4 data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800 dark:data-[state=active]:bg-amber-500/20 dark:data-[state=active]:text-amber-400">Comentarios Interno</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        <div className="p-4 pt-2 relative">
+          {replyingToMessage && (
+            <div className="mb-2 flex items-center justify-between bg-muted/30 px-3 py-2 rounded-lg border text-sm animate-in fade-in slide-in-from-bottom-2">
+              <div className="flex flex-col overflow-hidden border-l-2 border-primary pl-2">
+                <span className="text-xs font-semibold text-primary">
+                  Respondiendo a {replyingToMessage.senderId === currentUser.id ? "ti mismo" : conversation.participant.name}
+                </span>
+                <span className="text-xs text-muted-foreground truncate">
+                  {replyingToMessage.text || (replyingToMessage.attachment ? `Archivo ${replyingToMessage.attachment.type}` : "Mensaje")}
+                </span>
+              </div>
+              <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted" onClick={() => setReplyingToMessage(null)}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+
+          {selectedFile && (
+            <div className="mb-3 flex items-center gap-3 rounded-xl border bg-background p-2 pr-4 shadow-sm animate-in slide-in-from-bottom-2">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                {previewUrl ? (
+                  <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
+                ) : (
+                  <FileIcon className="h-6 w-6 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {selectedFile.name}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0"
+                onClick={handleRemoveFile}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {isTemplateMenuOpen && (
+            <div className="absolute bottom-full left-4 mb-2 w-80 rounded-xl border bg-card p-1 shadow-lg z-50 animate-in slide-in-from-bottom-2 fade-in">
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex justify-between items-center">
+                <span>Plantillas rápidas</span>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                  setIsManageTemplatesOpen(true);
+                  setIsTemplateMenuOpen(false);
+                }}>
+                  <Edit2 className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="px-2 pb-2 pt-1 border-b mb-1">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input 
+                    placeholder="Buscar plantilla..." 
+                    className="h-7 pl-7 text-xs bg-background" 
+                    value={templateSearch}
+                    onChange={(e) => setTemplateSearch(e.target.value)}
+                    autoFocus
+                    onKeyDown={(e) => e.stopPropagation()}
+                  />
+                </div>
+              </div>
+              <ScrollArea className="max-h-[200px]">
+                {messageTemplates.filter(t => 
+                  t.title.toLowerCase().includes(templateSearch.toLowerCase()) || 
+                  t.text.toLowerCase().includes(templateSearch.toLowerCase())
+                ).map(template => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    className="w-full text-left px-2 py-1.5 text-sm hover:bg-accent rounded-md flex flex-col gap-0.5"
+                    onClick={() => insertTemplate(template.text)}
+                  >
+                    <span className="font-medium text-foreground">{template.title}</span>
+                    <span className="text-xs text-muted-foreground truncate">{template.text}</span>
+                  </button>
+                ))}
+                {messageTemplates.filter(t => 
+                  t.title.toLowerCase().includes(templateSearch.toLowerCase()) || 
+                  t.text.toLowerCase().includes(templateSearch.toLowerCase())
+                ).length === 0 && (
+                  <div className="px-2 py-3 text-xs text-center text-muted-foreground">
+                    No se encontraron plantillas. Escribe para buscar.
+                  </div>
+                )}
+              </ScrollArea>
+            </div>
+          )}
+          
+          <form
+            onSubmit={handleSend}
+            className={cn(
+              "flex flex-col rounded-xl border focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all shadow-sm overflow-hidden",
+              activeChannel === "internal" ? "bg-amber-50/50 dark:bg-amber-500/5 border-amber-200/50 dark:border-amber-500/20" : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700"
+            )}
+          >
+            {activeChannel === "email" && (
+              <div className="border-b border-slate-200 dark:border-slate-700 px-3 py-2 flex items-center gap-2 bg-slate-100/50 dark:bg-slate-800">
+                <span className="text-xs text-muted-foreground font-medium">Asunto:</span>
+                <input type="text" className="flex-1 bg-transparent border-none outline-none text-sm" placeholder="Escribe el asunto..." />
+              </div>
+            )}
+            
+            <textarea
+              value={inputText}
+              onChange={handleTextareaChange}
+              placeholder={activeChannel === "internal" ? "Escribe un comentario interno..." : `Escribe un mensaje por ${activeChannel === 'whatsapp' ? 'WhatsApp' : activeChannel.toUpperCase()}...`}
+              className="min-h-[80px] w-full resize-none border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:ring-0 outline-none"
+            />
+            
+            {/* Toolbar */}
+            <div className={cn(
+              "flex items-center justify-between border-t px-2 py-1.5",
+              activeChannel === "internal" ? "bg-amber-100/50 dark:bg-amber-500/10 border-amber-200/50 dark:border-amber-500/20" : "bg-slate-100/50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+            )}>
+              <div className="flex items-center gap-1">
+                {activeChannel === "email" && (
+                  <>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                      <Bold className="h-4 w-4" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                      <Italic className="h-4 w-4" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                      <Underline className="h-4 w-4" />
+                    </Button>
+                    <div className="w-px h-4 bg-border mx-1" />
+                  </>
+                )}
+                
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                />
+                
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Emoji">
+                  <Smile className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Nota de voz">
+                  <Mic className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Adjuntar archivo" onClick={() => fileInputRef.current?.click()}>
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Documento">
+                  <FileText className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Respuestas rápidas">
+                  <Zap className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Valores Personalizados">
+                  <Tag className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Solicitar Pago">
+                  <DollarSign className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Contacto">
+                  <Contact className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Flujo">
+                  <Waypoints className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Eliminar">
+                  <Delete className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Popover open={isScheduleOpen} onOpenChange={setIsScheduleOpen}>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="ghost" size="sm" className="h-9 px-4 gap-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full font-medium dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors">
+                      <Clock className="h-4 w-4" />
+                      Programar
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-3">
+                    <div className="space-y-3">
+                      <h4 className="font-medium text-sm">Programar mensaje</h4>
+                      <div className="space-y-2">
+                        <Select value={scheduleDate} onValueChange={setScheduleDate}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Selecciona fecha" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Hoy a las 5:00 PM">Hoy a las 5:00 PM</SelectItem>
+                            <SelectItem value="Mañana a las 9:00 AM">Mañana a las 9:00 AM</SelectItem>
+                            <SelectItem value="Lunes a las 9:00 AM">Lunes a las 9:00 AM</SelectItem>
+                            <SelectItem value="Personalizado">Personalizado...</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        className="w-full h-8 text-xs bg-primary hover:bg-primary/90"
+                        disabled={!inputText.trim()}
+                        onClick={handleSchedule}
+                      >
+                        Programar para enviar
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!inputText.trim() && !selectedFile}
+                  className="h-9 px-5 gap-2 rounded-full bg-indigo-400 hover:bg-indigo-500 text-white font-medium shadow-none"
+                >
+                  <Send className="h-4 w-4" />
+                  Enviar
+                </Button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* Templates Management Dialog */}
+      <Dialog open={isManageTemplatesOpen} onOpenChange={setIsManageTemplatesOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Gestionar Plantillas Rápidas</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            {editingTemplateId ? (
+              <div className="flex flex-col gap-3 rounded-lg border p-4 bg-muted/30 animate-in fade-in slide-in-from-bottom-2">
+                <div className="space-y-1.5">
+                  <Label>Título (Comando)</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">/</span>
+                    <Input 
+                      value={editingTemplateTitle}
+                      onChange={(e) => setEditingTemplateTitle(e.target.value)}
+                      placeholder="Ej: saludo"
+                      className="h-9 pl-6 font-medium"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Contenido del mensaje</Label>
+                  <textarea 
+                    value={editingTemplateText}
+                    onChange={(e) => setEditingTemplateText(e.target.value)}
+                    className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                    placeholder="Escribe el contenido de la plantilla..."
+                  />
+                </div>
+                <div className="flex justify-end gap-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setEditingTemplateId(null)}>
+                    Cancelar
+                  </Button>
+                  <Button size="sm" onClick={() => {
+                    if (editingTemplateTitle.trim() && editingTemplateText.trim()) {
+                      if (editingTemplateId === 'new') {
+                        setMessageTemplates([...messageTemplates, {
+                          id: Date.now().toString(),
+                          title: editingTemplateTitle.trim(),
+                          text: editingTemplateText.trim()
+                        }]);
+                      } else {
+                        setMessageTemplates(messageTemplates.map(t => 
+                          t.id === editingTemplateId ? {
+                            ...t,
+                            title: editingTemplateTitle.trim(),
+                            text: editingTemplateText.trim()
+                          } : t
+                        ));
+                      }
+                      setEditingTemplateId(null);
+                      toast({ title: editingTemplateId === 'new' ? "Plantilla creada" : "Plantilla actualizada" });
+                    }
+                  }}>
+                    Guardar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar plantillas guardadas..."
+                    className="pl-9 h-9 bg-background"
+                    value={manageTemplateSearch}
+                    onChange={(e) => setManageTemplateSearch(e.target.value)}
+                  />
+                </div>
+                <ScrollArea className="max-h-[300px] border rounded-md bg-card">
+                  <div className="p-2 space-y-1">
+                    {messageTemplates
+                      .filter(t => t.title.toLowerCase().includes(manageTemplateSearch.toLowerCase()) || t.text.toLowerCase().includes(manageTemplateSearch.toLowerCase()))
+                      .map(template => (
+                      <div key={template.id} className="flex items-start justify-between gap-2 p-2 hover:bg-accent rounded-md group transition-colors">
+                        <div className="flex flex-col flex-1 min-w-0">
+                          <span className="font-semibold text-sm truncate text-primary">/{template.title}</span>
+                          <span className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">{template.text}</span>
+                        </div>
+                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0 bg-background/50 backdrop-blur-sm rounded-md shadow-sm border p-0.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted" onClick={() => {
+                            setEditingTemplateId(template.id);
+                            setEditingTemplateTitle(template.title);
+                            setEditingTemplateText(template.text);
+                          }}>
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <div className="w-px h-4 bg-border mx-0.5" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10" onClick={() => {
+                            setMessageTemplates(messageTemplates.filter(t => t.id !== template.id));
+                            toast({ title: "Plantilla eliminada" });
+                          }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {messageTemplates.filter(t => t.title.toLowerCase().includes(manageTemplateSearch.toLowerCase()) || t.text.toLowerCase().includes(manageTemplateSearch.toLowerCase())).length === 0 && (
+                      <div className="p-8 text-center flex flex-col items-center justify-center gap-2">
+                        <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                          <FileText className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <span className="text-sm font-medium text-foreground">No se encontraron plantillas</span>
+                        <span className="text-xs text-muted-foreground max-w-[200px]">
+                          {manageTemplateSearch ? "No hay resultados para tu búsqueda." : "Crea tu primera plantilla para responder más rápido."}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+                <Button variant="outline" className="w-full border-dashed bg-muted/30 hover:bg-muted/50 text-muted-foreground hover:text-foreground" onClick={() => {
+                  setEditingTemplateId('new');
+                  setEditingTemplateTitle('');
+                  setEditingTemplateText('');
+                }}>
+                  <span className="mr-2">+</span> Crear nueva plantilla
+                </Button>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

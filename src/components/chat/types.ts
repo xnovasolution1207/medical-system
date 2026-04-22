@@ -1,0 +1,108 @@
+export type User = {
+  id: string;
+  name: string;
+  avatar?: string;
+  status: "online" | "offline" | "busy" | "away";
+  email?: string;
+  phone?: string;
+  tags?: string[];
+  assignedTo?: string;
+  dnd?: {
+    email: boolean;
+    sms: boolean;
+    whatsapp: boolean;
+    calls: boolean;
+  };
+};
+
+export type MessageButton = {
+  id: string;
+  text: string;
+};
+
+export type Message = {
+  id: string;
+  senderId: string;
+  text: string;
+  timestamp: string;
+  isRead: boolean;
+  channel?: "sms" | "email" | "whatsapp" | "instagram" | "messenger" | "tiktok" | "internal";
+  status?: "sent" | "delivered" | "read" | "error";
+  attachment?: {
+    type: "image" | "file" | "audio" | "document" | "link";
+    url: string;
+    name: string;
+    duration?: string;
+    size?: string;
+    description?: string;
+    image?: string;
+  };
+  replyTo?: {
+    id: string;
+    text: string;
+    sender: string;
+  };
+  mentions?: string[];
+  reminder?: string;
+  buttons?: MessageButton[];
+  systemEvent?: {
+    type: "opportunity_moved";
+    opportunityName: string;
+    oldStage: string;
+    newStage: string;
+    pipeline: string;
+    user: string;
+  };
+};
+
+export type ScheduledMessage = {
+  id: string;
+  text: string;
+  scheduledFor: string;
+  channel: "sms" | "email" | "whatsapp" | "internal";
+};
+
+export type Conversation = {
+  id: string;
+  participant: User;
+  source: "whatsapp" | "instagram" | "messenger" | "tiktok" | "sms" | "email";
+  stage: string;
+  recipientNumber: string;
+  lastMessage: string;
+  unreadCount: number;
+  timestamp: string;
+  messages: Message[];
+  isFavorite?: boolean;
+  activeReminder?: string;
+  scheduledMessages?: ScheduledMessage[];
+};
+
+export type FilterCondition = {
+  id: string;
+  field: string;
+  operator: string;
+  value: string;
+};
+
+export type SavedView = {
+  id: string;
+  name: string;
+  filters: FilterCondition[];
+  logic: "AND" | "OR";
+};
+
+export type Task = {
+  id: string;
+  title: string;
+  dueDate: string;
+  assignee: {
+    name: string;
+    avatar?: string;
+  };
+  contact: {
+    name: string;
+    avatar?: string;
+  };
+  status: "pending" | "completed";
+  conversationId: string;
+};
