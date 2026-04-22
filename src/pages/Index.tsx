@@ -137,7 +137,15 @@ export default function Index() {
     api.conversations
       .get(activeId)
       .then((full) => {
-        setConversations((prev) => prev.map((c) => (c.id === full.id ? { ...c, ...full } : c)));
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== full.id) return c;
+            // The detail endpoint can't always tell us the channel (GHL omits
+            // lastMessageType for some conversations and the per-conv stage
+            // override is local), so keep the bootstrap-derived source/stage.
+            return { ...c, ...full, source: c.source, stage: c.stage ?? full.stage };
+          })
+        );
       })
       .catch((err) => console.error("conversation fetch failed", err));
   }, [activeId]);
