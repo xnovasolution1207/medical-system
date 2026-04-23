@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,9 @@ interface ChatMessageAreaProps {
   setStages: (stages: { id: string; label: string; color: string; }[]) => void;
   isContactSidebarOpen?: boolean;
   onToggleContactSidebar?: () => void;
+  hasOlderMessages?: boolean;
+  isLoadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => void;
 }
 
 export function ChatMessageArea({
@@ -52,6 +55,9 @@ export function ChatMessageArea({
   setStages,
   isContactSidebarOpen,
   onToggleContactSidebar,
+  hasOlderMessages = false,
+  isLoadingOlderMessages = false,
+  onLoadOlderMessages,
 }: ChatMessageAreaProps) {
   const [inputText, setInputText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -92,12 +98,48 @@ export function ChatMessageArea({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Auto scroll to bottom when messages change
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  // Scroll management refs — no state needed, mutations happen outside render.
+  const initialScrollDoneRef = useRef(false);
+  const prevFirstMessageIdRef = useRef<string | undefined>(undefined);
+  const scrollHeightBeforeRef = useRef(0);
+  const scrollTopBeforeRef = useRef(0);
+  // Guards against firing onLoadOlderMessages twice before isLoadingOlderMessages updates.
+  const requestedOlderRef = useRef(false);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || conversation.messages.length === 0) return;
+
+    const firstId = conversation.messages[0]?.id;
+
+    if (!initialScrollDoneRef.current) {
+      // First paint with messages — jump to bottom without animation.
+      el.scrollTop = el.scrollHeight;
+      initialScrollDoneRef.current = true;
+      prevFirstMessageIdRef.current = firstId;
+      return;
     }
-  }, [conversation.messages]);
+
+    if (firstId !== prevFirstMessageIdRef.current) {
+      // Older messages were prepended — restore the previous scroll position so
+      // the user stays at the same spot they were reading.
+      const diff = el.scrollHeight - scrollHeightBeforeRef.current;
+      el.scrollTop = scrollTopBeforeRef.current + diff;
+      prevFirstMessageIdRef.current = firstId;
+      return;
+    }
+
+    // New message appended — scroll to bottom only if already near the bottom.
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 150) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [conversation.messages.length]);
+
+  // Reset the guard when the parent signals loading is done.
+  useEffect(() => {
+    if (!isLoadingOlderMessages) requestedOlderRef.current = false;
+  }, [isLoadingOlderMessages]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -765,7 +807,29 @@ export function ChatMessageArea({
       ))}
 
       {/* Messages Area */}
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-4"
+        onScroll={(e) => {
+          if (!hasOlderMessages || isLoadingOlderMessages || !onLoadOlderMessages || requestedOlderRef.current) return;
+          if (e.currentTarget.scrollTop < 100) {
+            requestedOlderRef.current = true;
+            scrollHeightBeforeRef.current = e.currentTarget.scrollHeight;
+            scrollTopBeforeRef.current = e.currentTarget.scrollTop;
+            onLoadOlderMessages();
+          }
+        }}
+      >
+        {isLoadingOlderMessages && (
+          <div className="flex justify-center py-3 text-xs text-muted-foreground">
+            Cargando mensajes anteriores…
+          </div>
+        )}
+        {!hasOlderMessages && conversation.messages.length > 0 && (
+          <div className="flex justify-center py-2 text-[11px] text-muted-foreground/40">
+            Inicio del historial
+          </div>
+        )}
         <div className="flex flex-col gap-4 py-4">
           {conversation.messages.map((message, index) => {
             if (message.systemEvent && message.systemEvent.type === "opportunity_moved") {
@@ -1025,7 +1089,7 @@ export function ChatMessageArea({
             );
           })}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Input Area (CRM Style) */}
       <div className="border-t bg-card flex flex-col">

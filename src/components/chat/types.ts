@@ -80,6 +80,8 @@ export type Conversation = {
   isFavorite?: boolean;
   activeReminder?: string;
   scheduledMessages?: ScheduledMessage[];
+  messagesHasMore?: boolean;
+  messagesOldestId?: string;
 };
 
 export type Pipeline = {

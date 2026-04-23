@@ -127,6 +127,7 @@ export default function Index() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsNextCursor, setConversationsNextCursor] = useState<number | null>(null);
   const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
+  const [loadingOlderFor, setLoadingOlderFor] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [stages, setStages] = useState<{ id: string; label: string; color: string }[]>([]);
@@ -445,6 +446,36 @@ export default function Index() {
     }
   }, [conversationsNextCursor, isLoadingMoreConversations]);
 
+  const handleLoadOlderMessages = useCallback(async () => {
+    if (!activeId || loadingOlderFor === activeId) return;
+    const conv = conversations.find((c) => c.id === activeId);
+    if (!conv?.messagesOldestId || !conv.messagesHasMore) return;
+    setLoadingOlderFor(activeId);
+    try {
+      const result = await api.conversations.messages(activeId, {
+        lastMessageId: conv.messagesOldestId,
+        limit: 50,
+      });
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== activeId) return c;
+          const existingIds = new Set(c.messages.map((m) => m.id));
+          const fresh = result.messages.filter((m) => !existingIds.has(m.id));
+          return {
+            ...c,
+            messages: [...fresh, ...c.messages],
+            messagesHasMore: result.hasMore,
+            messagesOldestId: result.oldestId,
+          };
+        })
+      );
+    } catch (err) {
+      console.error("load older messages failed", err);
+    } finally {
+      setLoadingOlderFor(null);
+    }
+  }, [activeId, loadingOlderFor, conversations]);
+
   const handleToggleFavorite = useCallback((id: string) => {
     let nextValue = false;
     setConversations((prev) =>
@@ -638,6 +669,9 @@ export default function Index() {
               onSetReminder={handleSetReminder}
               isContactSidebarOpen={isContactSidebarOpen}
               onToggleContactSidebar={() => setIsContactSidebarOpen(!isContactSidebarOpen)}
+              hasOlderMessages={Boolean(activeConversation.messagesHasMore)}
+              isLoadingOlderMessages={loadingOlderFor === activeId}
+              onLoadOlderMessages={handleLoadOlderMessages}
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center bg-muted/30 p-8 text-center">
