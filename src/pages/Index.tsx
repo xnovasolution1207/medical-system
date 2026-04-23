@@ -125,6 +125,8 @@ export default function Index() {
 
   const [currentUser, setCurrentUser] = useState<User>(FALLBACK_USER);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationsNextCursor, setConversationsNextCursor] = useState<number | null>(null);
+  const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [stages, setStages] = useState<{ id: string; label: string; color: string }[]>([]);
@@ -160,6 +162,7 @@ export default function Index() {
         if (cancelled) return;
         setCurrentUser(data.currentUser);
         setConversations(data.conversations);
+        setConversationsNextCursor(data.conversationsNextCursor ?? null);
         setOpportunities(data.opportunities);
         setPipelines(data.pipelines);
         setStages(data.stages);
@@ -424,6 +427,24 @@ export default function Index() {
     );
   }, []);
 
+  const handleLoadMoreConversations = useCallback(async () => {
+    if (!conversationsNextCursor || isLoadingMoreConversations) return;
+    setIsLoadingMoreConversations(true);
+    try {
+      const result = await api.conversations.list({ limit: 25, startAfterDate: conversationsNextCursor });
+      setConversations((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+        return fresh.length ? [...prev, ...fresh] : prev;
+      });
+      setConversationsNextCursor(result.nextCursor);
+    } catch (err) {
+      console.error("load more conversations failed", err);
+    } finally {
+      setIsLoadingMoreConversations(false);
+    }
+  }, [conversationsNextCursor, isLoadingMoreConversations]);
+
   const handleToggleFavorite = useCallback((id: string) => {
     let nextValue = false;
     setConversations((prev) =>
@@ -580,6 +601,9 @@ export default function Index() {
               onSaveView={handleSaveView}
               stages={stages}
               activeTab={activeMainTab}
+              onLoadMore={handleLoadMoreConversations}
+              hasMore={conversationsNextCursor !== null}
+              isLoadingMore={isLoadingMoreConversations}
             />
           )}
         </div>

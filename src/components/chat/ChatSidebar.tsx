@@ -1,5 +1,4 @@
-import React, { useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import React, { useState, useCallback } from "react";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -50,6 +49,9 @@ interface ChatSidebarProps {
   onSaveView?: (view: SavedView) => void;
   stages?: { id: string; label: string; color: string; }[];
   activeTab?: string;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }
 
 export function ChatSidebar({
@@ -62,7 +64,10 @@ export function ChatSidebar({
   activeViewId = null,
   onSaveView,
   stages = [],
-  activeTab = "todos"
+  activeTab = "todos",
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
 }: ChatSidebarProps) {
   const [filter, setFilter] = useState<"all" | "unread" | "recent" | "favorites">("all");
   const [search, setSearch] = useState("");
@@ -76,6 +81,17 @@ export function ChatSidebar({
   const [builderFilters, setBuilderFilters] = useState<FilterCondition[]>([]);
   const [builderLogic, setBuilderLogic] = useState<"AND" | "OR">("AND");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (!hasMore || isLoadingMore || !onLoadMore) return;
+      const el = e.currentTarget;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+        onLoadMore();
+      }
+    },
+    [hasMore, isLoadingMore, onLoadMore]
+  );
 
   React.useEffect(() => {
     const handleOpenFilter = (e: any) => {
@@ -475,7 +491,7 @@ export function ChatSidebar({
       </div>
 
       {/* Conversation List */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="flex flex-col gap-0.5 p-2">
           {filteredConversations.length === 0 ? (
             <div className="text-center p-4 text-sm text-muted-foreground">
@@ -637,8 +653,18 @@ export function ChatSidebar({
               </button>
             )})
           )}
+          {isLoadingMore && (
+            <div className="flex justify-center py-3 text-xs text-muted-foreground">
+              Cargando más conversaciones…
+            </div>
+          )}
+          {!hasMore && filteredConversations.length > 0 && (
+            <div className="flex justify-center py-2 text-[11px] text-muted-foreground/50">
+              Todas las conversaciones cargadas
+            </div>
+          )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

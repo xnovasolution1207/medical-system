@@ -12,6 +12,7 @@ import type {
 export interface BootstrapPayload {
   currentUser: User;
   conversations: Conversation[];
+  conversationsNextCursor: number | null;
   pipelines: Pipeline[];
   stages: { id: string; label: string; color: string }[];
   opportunities: Opportunity[];
@@ -39,7 +40,16 @@ export const api = {
   bootstrap: () => request<BootstrapPayload>("GET", "/bootstrap"),
 
   conversations: {
-    list: () => request<Conversation[]>("GET", "/conversations"),
+    list: (params?: { limit?: number; startAfterDate?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.limit != null) qs.set("limit", String(params.limit));
+      if (params?.startAfterDate != null) qs.set("startAfterDate", String(params.startAfterDate));
+      const query = qs.toString();
+      return request<{ conversations: Conversation[]; nextCursor: number | null }>(
+        "GET",
+        `/conversations${query ? `?${query}` : ""}`
+      );
+    },
     get: (id: string) => request<Conversation>("GET", `/conversations/${id}`),
     messages: (id: string) => request<Message[]>("GET", `/conversations/${id}/messages`),
     send: (
