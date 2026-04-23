@@ -14,6 +14,10 @@ export type WsListener = (event: WsEvent) => void;
 
 export interface Subscription {
   close(): void;
+  // Tells the backend which conversation this client is currently viewing so
+  // the poller can target a fast tail loop at it. Pass null to clear focus.
+  // Safe to call any time (queued before the socket is open).
+  setFocus(conversationId: string | null): void;
 }
 
 export function subscribe(listener: WsListener): Subscription {
@@ -21,17 +25,28 @@ export function subscribe(listener: WsListener): Subscription {
   let closed = false;
   let attempts = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingFocus: string | null = null;
+  let focusSent = false;
 
   const wsUrl = (() => {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.host}/ws`;
   })();
 
+  function flushFocus() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: "focus", conversationId: pendingFocus }));
+    focusSent = true;
+  }
+
   function connect() {
     if (closed) return;
     socket = new WebSocket(wsUrl);
     socket.onopen = () => {
       attempts = 0;
+      // Re-send focus on every (re)connection so the backend stays in sync.
+      focusSent = false;
+      if (pendingFocus !== null || focusSent) flushFocus();
     };
     socket.onmessage = (e) => {
       try {
@@ -59,6 +74,10 @@ export function subscribe(listener: WsListener): Subscription {
       closed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
+    },
+    setFocus(conversationId) {
+      pendingFocus = conversationId;
+      flushFocus();
     },
   };
 }

@@ -16,7 +16,7 @@ import {
 } from "@/components/chat/types";
 import { cn } from "@/lib/utils";
 import { api, BootstrapPayload } from "@/lib/api";
-import { subscribe } from "@/lib/socket";
+import { subscribe, type Subscription } from "@/lib/socket";
 import { useToast } from "@/hooks/use-toast";
 
 const INITIAL_SAVED_VIEWS: SavedView[] = [
@@ -52,6 +52,7 @@ export default function Index() {
   // Track which conversation message-lists we've already hydrated to avoid
   // refetching on every selection.
   const hydratedConversations = useRef<Set<string>>(new Set());
+  const subscriptionRef = useRef<Subscription | null>(null);
 
   // ---- Bootstrap ----
   useEffect(() => {
@@ -126,8 +127,18 @@ export default function Index() {
         setTasks((prev) => prev.map((t) => (t.id === event.task.id ? event.task : t)));
       }
     });
-    return () => sub.close();
+    subscriptionRef.current = sub;
+    return () => {
+      sub.close();
+      subscriptionRef.current = null;
+    };
   }, []);
+
+  // Tell the backend which conversation is open so it can poll messages on
+  // that one every ~1s instead of waiting for the global sweep.
+  useEffect(() => {
+    subscriptionRef.current?.setFocus(activeId);
+  }, [activeId]);
 
   // ---- Lazy-hydrate full message list when a conversation is selected ----
   useEffect(() => {
