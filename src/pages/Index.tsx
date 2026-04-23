@@ -29,6 +29,12 @@ const INITIAL_SAVED_VIEWS: SavedView[] = [
 
 const FALLBACK_USER: User = { id: "agent", name: "Agente de Ventas", status: "online" };
 
+// Message-pagination page sizes. Initial fetch shows the most recent
+// MESSAGE_INITIAL_PAGE_SIZE; each upward-scroll triggers a fetch of
+// MESSAGE_OLDER_PAGE_SIZE older messages.
+const MESSAGE_INITIAL_PAGE_SIZE = 30;
+const MESSAGE_OLDER_PAGE_SIZE = 30;
+
 // Reconcile an incoming message (from WS or HTTP) against the local list.
 //
 // Three sources can echo our outbound message back to us, in any order:
@@ -243,14 +249,19 @@ export default function Index() {
     subscriptionRef.current?.setFocus(activeId);
   }, [activeId]);
 
-  // ---- Lazy-hydrate full message list when a conversation is selected ----
+  // ---- Lazy-hydrate the recent message window when a conversation is selected ----
+  // Pulls only the most recent MESSAGE_INITIAL_PAGE_SIZE messages — older
+  // history streams in via the upward-scroll handler below.
   useEffect(() => {
     if (!activeId) return;
     if (hydratedConversations.current.has(activeId)) return;
-    hydratedConversations.current.add(activeId);
+    const requestedId = activeId;
     api.conversations
-      .get(activeId)
+      .get(requestedId, { limit: MESSAGE_INITIAL_PAGE_SIZE })
       .then((full) => {
+        // Mark hydrated only on success so a transient error allows retry on
+        // the next selection of this conversation.
+        hydratedConversations.current.add(requestedId);
         setConversations((prev) =>
           prev.map((c) => {
             if (c.id !== full.id) return c;
@@ -462,7 +473,7 @@ export default function Index() {
     try {
       const result = await api.conversations.messages(activeId, {
         lastMessageId: conv.messagesOldestId,
-        limit: 50,
+        limit: MESSAGE_OLDER_PAGE_SIZE,
       });
       setConversations((prev) =>
         prev.map((c) => {

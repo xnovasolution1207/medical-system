@@ -50,7 +50,12 @@ export const api = {
         `/conversations${query ? `?${query}` : ""}`
       );
     },
-    get: (id: string) => request<Conversation>("GET", `/conversations/${id}`),
+    get: (id: string, params?: { limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.limit != null) qs.set("limit", String(params.limit));
+      const query = qs.toString();
+      return request<Conversation>("GET", `/conversations/${id}${query ? `?${query}` : ""}`);
+    },
     messages: (id: string, params?: { lastMessageId?: string; limit?: number }) => {
       const qs = new URLSearchParams();
       if (params?.lastMessageId) qs.set("lastMessageId", params.lastMessageId);
