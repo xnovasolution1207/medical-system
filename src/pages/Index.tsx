@@ -147,6 +147,11 @@ export default function Index() {
   // Keep currentUser.id reachable from the WS listener closure without making
   // the listener depend on it (which would re-subscribe on every change).
   const currentUserIdRef = useRef<string>(FALLBACK_USER.id);
+  // Synchronous guards for pagination fetches — state updates lag a render,
+  // so refs prevent double-firing when scroll events arrive faster than React
+  // can propagate setIsLoading(true) back to the scroll handler.
+  const isLoadingMoreConversationsRef = useRef(false);
+  const loadingOlderForRef = useRef<string | null>(null);
 
   // Keep the ref in lockstep with state so the WS listener (subscribed once)
   // always sees the latest user id without needing to be re-subscribed.
@@ -429,7 +434,8 @@ export default function Index() {
   }, []);
 
   const handleLoadMoreConversations = useCallback(async () => {
-    if (!conversationsNextCursor || isLoadingMoreConversations) return;
+    if (!conversationsNextCursor || isLoadingMoreConversationsRef.current) return;
+    isLoadingMoreConversationsRef.current = true;
     setIsLoadingMoreConversations(true);
     try {
       const result = await api.conversations.list({ limit: 25, startAfterDate: conversationsNextCursor });
@@ -442,14 +448,16 @@ export default function Index() {
     } catch (err) {
       console.error("load more conversations failed", err);
     } finally {
+      isLoadingMoreConversationsRef.current = false;
       setIsLoadingMoreConversations(false);
     }
-  }, [conversationsNextCursor, isLoadingMoreConversations]);
+  }, [conversationsNextCursor]);
 
   const handleLoadOlderMessages = useCallback(async () => {
-    if (!activeId || loadingOlderFor === activeId) return;
+    if (!activeId || loadingOlderForRef.current === activeId) return;
     const conv = conversations.find((c) => c.id === activeId);
     if (!conv?.messagesOldestId || !conv.messagesHasMore) return;
+    loadingOlderForRef.current = activeId;
     setLoadingOlderFor(activeId);
     try {
       const result = await api.conversations.messages(activeId, {
@@ -472,9 +480,10 @@ export default function Index() {
     } catch (err) {
       console.error("load older messages failed", err);
     } finally {
+      loadingOlderForRef.current = null;
       setLoadingOlderFor(null);
     }
-  }, [activeId, loadingOlderFor, conversations]);
+  }, [activeId, conversations]);
 
   const handleToggleFavorite = useCallback((id: string) => {
     let nextValue = false;

@@ -106,6 +106,16 @@ export function ChatMessageArea({
   // Guards against firing onLoadOlderMessages twice before isLoadingOlderMessages updates.
   const requestedOlderRef = useRef(false);
 
+  // When the conversation changes, reset all scroll-state refs so the new
+  // conversation always starts with a jump-to-bottom (branch 1 in the
+  // useLayoutEffect below). Without this, switching conversations can
+  // accidentally trigger the "prepend restore" path.
+  useLayoutEffect(() => {
+    initialScrollDoneRef.current = false;
+    prevFirstMessageIdRef.current = undefined;
+    requestedOlderRef.current = false;
+  }, [conversation.id]);
+
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el || conversation.messages.length === 0) return;
@@ -134,7 +144,7 @@ export function ChatMessageArea({
     if (distanceFromBottom < 150) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [conversation.messages.length]);
+  }, [conversation.id, conversation.messages.length]);
 
   // Reset the guard when the parent signals loading is done.
   useEffect(() => {
