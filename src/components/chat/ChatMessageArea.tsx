@@ -1155,6 +1155,14 @@ export function ChatMessageArea({
             <textarea
               value={inputText}
               onChange={handleTextareaChange}
+              onKeyDown={(e) => {
+                // Enter sends; Shift+Enter inserts a newline; skip while an
+                // IME (Korean/Japanese/Chinese) composition is active so
+                // confirming a candidate doesn't fire a send.
+                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }}
               placeholder={activeChannel === "internal" ? "Escribe un comentario interno..." : `Escribe un mensaje por ${activeChannel === 'whatsapp' ? 'WhatsApp' : activeChannel.toUpperCase()}...`}
               className="min-h-[80px] w-full resize-none border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:ring-0 outline-none"
             />

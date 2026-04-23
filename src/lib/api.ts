@@ -50,6 +50,7 @@ export const api = {
         attachment?: Message["attachment"];
         mentions?: string[];
         reminder?: string;
+        clientId?: string;
       }
     ) => request<Message>("POST", `/conversations/${id}/messages`, payload),
     patch: (

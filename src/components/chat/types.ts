@@ -22,6 +22,10 @@ export type MessageButton = {
 
 export type Message = {
   id: string;
+  // Echo of the optimistic id the SPA assigned when it sent this message.
+  // Lets the listener dedupe an optimistic insert against the real WS / HTTP
+  // echo of the same message even though the server-assigned `id` differs.
+  clientId?: string;
   senderId: string;
   text: string;
   timestamp: string;

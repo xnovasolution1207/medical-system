@@ -29,6 +29,94 @@ const INITIAL_SAVED_VIEWS: SavedView[] = [
 
 const FALLBACK_USER: User = { id: "agent", name: "Agente de Ventas", status: "online" };
 
+// Reconcile an incoming message (from WS or HTTP) against the local list.
+//
+// Three sources can echo our outbound message back to us, in any order:
+//   (1) The POST response — carries clientId.
+//   (2) The backend's immediate WS broadcast — carries clientId.
+//   (3) The poller's WS broadcast — does NOT carry clientId (the poller
+//       reads GHL's conversation/messages API which has no notion of it).
+//
+// Source 3 can race ahead of 1/2 since the poller is already polling GHL
+// when our POST handler is mid-flight. So we need a content-match fallback
+// for outbound messages that look like an unresolved optimistic.
+//
+// Match priority:
+//   a. clientId equality → it's the same logical message, swap real id in.
+//   b. id equality → exact duplicate, no-op.
+//   c. incoming is from currentUser, doesn't carry clientId, and there's an
+//      unresolved optimistic (id === clientId && id starts with "tmp-") with
+//      matching text+channel → treat as resolution, swap real id in.
+//   d. otherwise → append.
+//
+// Returns the same array reference when nothing changed so React skips renders.
+function mergeIncomingMessage(
+  messages: Message[],
+  incoming: Message,
+  currentUserId?: string
+): Message[] {
+  // (a) clientId-based match
+  if (incoming.clientId) {
+    const idx = messages.findIndex(
+      (m) => m.clientId === incoming.clientId || m.id === incoming.clientId
+    );
+    if (idx !== -1) {
+      const next = messages.slice();
+      next[idx] = {
+        ...incoming,
+        clientId: messages[idx].clientId ?? incoming.clientId,
+        replyTo: messages[idx].replyTo ?? incoming.replyTo,
+      };
+      return next;
+    }
+  }
+
+  // (b) id duplicate
+  if (messages.some((m) => m.id === incoming.id)) return messages;
+
+  // (c) content-match fallback for an outbound poller broadcast
+  if (currentUserId && incoming.senderId === currentUserId) {
+    const idx = messages.findIndex(
+      (m) =>
+        m.senderId === currentUserId &&
+        // unresolved optimistic: tmp-id where clientId still equals id
+        m.id === m.clientId &&
+        m.id.startsWith("tmp-") &&
+        m.text === incoming.text &&
+        m.channel === incoming.channel
+    );
+    if (idx !== -1) {
+      const next = messages.slice();
+      next[idx] = {
+        ...incoming,
+        clientId: messages[idx].clientId,
+        replyTo: messages[idx].replyTo ?? incoming.replyTo,
+      };
+      return next;
+    }
+  }
+
+  return [...messages, incoming];
+}
+
+// Move a conversation to index 0 (most-recent-first ordering). Returns the
+// same array reference when the conversation isn't found or is already at
+// the front so React skips the render.
+function moveConversationToFront(
+  conversations: Conversation[],
+  id: string,
+  patch?: Partial<Conversation>
+): Conversation[] {
+  const idx = conversations.findIndex((c) => c.id === id);
+  if (idx === -1) return conversations;
+  const updated = patch ? { ...conversations[idx], ...patch } : conversations[idx];
+  if (idx === 0 && !patch) return conversations;
+  const next = conversations.slice();
+  next.splice(idx, 1);
+  next.unshift(updated);
+  return next;
+}
+
 export default function Index() {
   const { toast } = useToast();
 
@@ -53,6 +141,15 @@ export default function Index() {
   // refetching on every selection.
   const hydratedConversations = useRef<Set<string>>(new Set());
   const subscriptionRef = useRef<Subscription | null>(null);
+  // Keep currentUser.id reachable from the WS listener closure without making
+  // the listener depend on it (which would re-subscribe on every change).
+  const currentUserIdRef = useRef<string>(FALLBACK_USER.id);
+
+  // Keep the ref in lockstep with state so the WS listener (subscribed once)
+  // always sees the latest user id without needing to be re-subscribed.
+  useEffect(() => {
+    currentUserIdRef.current = currentUser.id;
+  }, [currentUser.id]);
 
   // ---- Bootstrap ----
   useEffect(() => {
@@ -85,19 +182,18 @@ export default function Index() {
   useEffect(() => {
     const sub = subscribe((event) => {
       if (event.type === "message.created") {
-        setConversations((prev) =>
-          prev.map((c) => {
-            if (c.id !== event.conversationId) return c;
-            // Skip duplicates if we already optimistically appended this id.
-            if (c.messages.some((m) => m.id === event.message.id)) return c;
-            return {
-              ...c,
-              messages: [...c.messages, event.message],
-              lastMessage: event.message.text || c.lastMessage,
-              timestamp: event.message.timestamp || c.timestamp,
-            };
-          })
-        );
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === event.conversationId);
+          if (idx === -1) return prev;
+          const c = prev[idx];
+          const nextMessages = mergeIncomingMessage(c.messages, event.message, currentUserIdRef.current);
+          if (nextMessages === c.messages) return prev;
+          return moveConversationToFront(prev, c.id, {
+            messages: nextMessages,
+            lastMessage: event.message.text || c.lastMessage,
+            timestamp: event.message.timestamp || c.timestamp,
+          });
+        });
       } else if (event.type === "conversation.updated") {
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === event.conversation.id);
@@ -109,9 +205,7 @@ export default function Index() {
             messages: existing.messages.length ? existing.messages : event.conversation.messages,
             scheduledMessages: existing.scheduledMessages ?? event.conversation.scheduledMessages,
           };
-          const next = prev.slice();
-          next[idx] = merged;
-          return next;
+          return moveConversationToFront(prev, merged.id, merged);
         });
       } else if (event.type === "opportunity.updated") {
         setOpportunities((prev) => {
@@ -174,9 +268,10 @@ export default function Index() {
       replyTo?: Message["replyTo"]
     ) => {
       if (!activeId) return;
-      const optimisticId = `tmp-${Date.now()}`;
+      const optimisticId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const optimistic: Message = {
         id: optimisticId,
+        clientId: optimisticId,
         senderId: currentUser.id,
         text,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -189,29 +284,31 @@ export default function Index() {
         status: "sent",
       };
 
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.id === activeId
-            ? {
-                ...conv,
-                messages: [...conv.messages, optimistic],
-                lastMessage: text || "Archivo adjunto",
-                timestamp: optimistic.timestamp,
-                ...(reminder ? { activeReminder: reminder } : {}),
-              }
-            : conv
-        )
-      );
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === activeId);
+        if (idx === -1) return prev;
+        const c = prev[idx];
+        return moveConversationToFront(prev, activeId, {
+          messages: [...c.messages, optimistic],
+          lastMessage: text || "Archivo adjunto",
+          timestamp: optimistic.timestamp,
+          ...(reminder ? { activeReminder: reminder } : {}),
+        });
+      });
 
       api.conversations
-        .send(activeId, { text, channel, attachment, mentions, reminder })
+        .send(activeId, { text, channel, attachment, mentions, reminder, clientId: optimisticId })
         .then((sent) => {
           setConversations((prev) =>
             prev.map((conv) =>
               conv.id === activeId
                 ? {
                     ...conv,
-                    messages: conv.messages.map((m) => (m.id === optimisticId ? { ...sent, replyTo } : m)),
+                    messages: mergeIncomingMessage(
+                      conv.messages,
+                      { ...sent, clientId: sent.clientId ?? optimisticId },
+                      currentUserIdRef.current
+                    ),
                   }
                 : conv
             )
