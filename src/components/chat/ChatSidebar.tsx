@@ -513,9 +513,9 @@ export function ChatSidebar({
                   isActive={activeConversationId === conv.id}
                 />
 
-                <div className="flex flex-1 flex-col overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <span className={cn("truncate font-semibold text-foreground", viewMode === "small" ? "text-xs" : "text-sm")}>
+                <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={cn("truncate min-w-0 flex-1 font-semibold text-foreground", viewMode === "small" ? "text-xs" : "text-sm")}>
                       {conv.participant.name}
                     </span>
                     <div className="flex items-center gap-1.5">
@@ -557,7 +557,7 @@ export function ChatSidebar({
                         </DropdownMenu>
                       </div>
                       {viewMode === "small" && conv.unreadCount > 0 && (
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                        <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                           {conv.unreadCount}
                         </span>
                       )}
@@ -568,7 +568,10 @@ export function ChatSidebar({
                     <div className="flex items-start justify-between gap-2 mt-0.5">
                       <span
                         className={cn(
-                          "line-clamp-1 text-xs leading-tight pr-2",
+                          // min-w-0 lets the span shrink inside the flex row;
+                          // without it the unbroken text overflows and pushes
+                          // the trailing unread badge off the right edge.
+                          "line-clamp-1 min-w-0 flex-1 text-xs leading-tight pr-2",
                           conv.unreadCount > 0
                             ? "font-semibold text-foreground"
                             : "text-muted-foreground"
@@ -578,7 +581,7 @@ export function ChatSidebar({
                         {conv.lastMessage}
                       </span>
                       {conv.unreadCount > 0 && (
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                        <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                           {conv.unreadCount}
                         </span>
                       )}
