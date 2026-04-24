@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { ImageLightbox } from "./ImageLightbox";
+import { VideoLightbox } from "./VideoLightbox";
+import { AudioPlayer } from "./AudioPlayer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -958,7 +960,7 @@ export function ChatMessageArea({
                         : isMe
                         ? "bg-primary text-primary-foreground rounded-[24px] px-5 py-3 text-[15px]"
                         : "bg-muted text-foreground rounded-[24px] px-5 py-3 text-[15px]",
-                      !message.text && message.attachment && message.attachment.type === "image" ? "bg-transparent p-0 shadow-none" : ""
+                      !message.text && message.attachment && (message.attachment.type === "image" || message.attachment.type === "video") ? "bg-transparent p-0 shadow-none" : ""
                     )}
                   >
                     {message.attachment && (
@@ -974,28 +976,34 @@ export function ChatMessageArea({
                               className="max-h-[250px] max-w-full rounded-lg object-cover transition-transform group-hover:scale-[1.02]"
                             />
                           </ImageLightbox>
-                        ) : (message.attachment.type === "audio") ? (
-                          <div className={cn(
-                            "flex items-center gap-4 min-w-[220px] sm:min-w-[280px] py-1.5",
-                            isMe ? "text-primary-foreground" : "text-foreground"
-                          )}>
-                            <button className={cn(
-                              "flex items-center justify-center h-12 w-12 shrink-0 rounded-full transition-colors",
-                              isMe ? "bg-white/20 hover:bg-white/30 text-white" : "bg-primary/10 hover:bg-primary/20 text-primary"
-                            )}>
-                              <Play className="h-5 w-5 ml-1" fill="currentColor" />
-                            </button>
-                            <div className="flex-1 flex flex-col justify-center gap-2">
-                              <div className="w-full h-1.5 rounded-full relative mt-1" style={{ backgroundColor: isMe ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.1)' }}>
-                                <div className={cn("absolute left-0 top-0 bottom-0 w-1/3 rounded-full", isMe ? "bg-white" : "bg-primary")}></div>
-                                <div className={cn("absolute left-1/3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full shadow-sm", isMe ? "bg-white" : "bg-primary")}></div>
-                              </div>
-                              <div className="flex justify-between items-center text-[11px] font-medium opacity-80">
-                                <span>0:15</span>
-                                <span>{message.attachment.duration || "0:45"}</span>
+                        ) : (message.attachment.type === "video") ? (
+                          <VideoLightbox
+                            src={message.attachment.url}
+                            alt={message.attachment.name}
+                          >
+                            <div className="relative">
+                              {/* First-frame poster via preload="metadata" —
+                                  cheap preview without a separate thumbnail. */}
+                              <video
+                                src={message.attachment.url}
+                                preload="metadata"
+                                muted
+                                playsInline
+                                className="max-h-[250px] max-w-full rounded-lg object-cover bg-black transition-transform group-hover:scale-[1.02]"
+                              />
+                              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/25 opacity-90 transition-opacity group-hover:opacity-100">
+                                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/90 shadow-lg">
+                                  <Play className="h-6 w-6 translate-x-0.5 text-slate-900" fill="currentColor" />
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          </VideoLightbox>
+                        ) : (message.attachment.type === "audio") ? (
+                          <AudioPlayer
+                            src={message.attachment.url}
+                            variant={isMe ? "light" : "dark"}
+                            fallbackDuration={message.attachment.duration}
+                          />
                         ) : (message.attachment.type === "file" || message.attachment.type === "document") ? (
                           <div className={cn(
                             "flex items-center gap-2 rounded-lg border p-3",

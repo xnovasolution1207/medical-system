@@ -12,7 +12,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { User, Conversation } from "./types";
 import { ImageLightbox } from "./ImageLightbox";
-import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon } from "lucide-react";
+import { VideoLightbox } from "./VideoLightbox";
+import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play } from "lucide-react";
 
 const MOCK_AGENTS = [
   { id: "a1", name: "Agente de Ventas", avatar: "https://i.pravatar.cc/150?u=a1" },
@@ -553,7 +554,7 @@ export function ContactSidebar({ contact, conversation, onUpdateContactName }: C
                 if (tab === "image") return type === "image";
                 if (tab === "doc") return type === "document" || type === "file";
                 if (tab === "link") return type === "link";
-                if (tab === "media") return type === "audio";
+                if (tab === "media") return type === "audio" || type === "video";
                 return false;
               }) || [];
 
@@ -570,9 +571,28 @@ export function ContactSidebar({ contact, conversation, onUpdateContactName }: C
                           >
                             <img src={msg.attachment.url} alt={msg.attachment.name} className="h-full w-full object-cover" />
                           </ImageLightbox>
+                        ) : msg.attachment?.type === 'video' && msg.attachment.url ? (
+                          <VideoLightbox
+                            src={msg.attachment.url}
+                            alt={msg.attachment.name}
+                            className="h-10 w-10 shrink-0 border bg-black"
+                          >
+                            <div className="relative h-full w-full">
+                              <video
+                                src={msg.attachment.url}
+                                preload="metadata"
+                                muted
+                                playsInline
+                                className="h-full w-full object-cover"
+                              />
+                              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30">
+                                <Play className="h-4 w-4 text-white" fill="currentColor" />
+                              </div>
+                            </div>
+                          </VideoLightbox>
                         ) : (
                           <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
-                            {msg.attachment?.type === 'audio' ? <Headphones className="h-5 w-5" /> : 
+                            {msg.attachment?.type === 'audio' ? <Headphones className="h-5 w-5" /> :
                              msg.attachment?.type === 'link' ? <LinkIcon className="h-5 w-5" /> :
                              <FileIcon className="h-5 w-5" />}
                           </div>

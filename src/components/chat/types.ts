@@ -38,7 +38,7 @@ export type Message = {
   channel?: "sms" | "email" | "whatsapp" | "instagram" | "messenger" | "tiktok" | "internal";
   status?: "sent" | "delivered" | "read" | "error";
   attachment?: {
-    type: "image" | "file" | "audio" | "document" | "link";
+    type: "image" | "video" | "file" | "audio" | "document" | "link";
     url: string;
     name: string;
     duration?: string;
