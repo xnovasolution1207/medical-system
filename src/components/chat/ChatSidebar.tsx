@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +52,12 @@ interface ChatSidebarProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   isLoadingMore?: boolean;
+  // Search is controlled by the parent: typing in the input drives a
+  // server-side query against the whole GHL location (not just the loaded
+  // window), so name matching must live outside this component.
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  isSearching?: boolean;
 }
 
 export function ChatSidebar({
@@ -68,9 +74,19 @@ export function ChatSidebar({
   onLoadMore,
   hasMore = false,
   isLoadingMore = false,
+  searchValue,
+  onSearchChange,
+  isSearching = false,
 }: ChatSidebarProps) {
   const [filter, setFilter] = useState<"all" | "unread" | "recent" | "favorites">("all");
-  const [search, setSearch] = useState("");
+  // Fallback local search for standalone/test usage when the parent doesn't
+  // control the search input; the parent in Index.tsx always provides it.
+  const [internalSearch, setInternalSearch] = useState("");
+  const search = searchValue ?? internalSearch;
+  const setSearch = (value: string) => {
+    if (onSearchChange) onSearchChange(value);
+    else setInternalSearch(value);
+  };
   const [dateFilter, setDateFilter] = useState<string>("");
   const [dateRange, setDateRange] = useState<any>();
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
@@ -117,10 +133,10 @@ export function ChatSidebar({
     if (activeTab === "recordatorios" && !conv.activeReminder) {
       return false;
     }
-    
-    if (search && !conv.participant.name.toLowerCase().includes(search.toLowerCase())) {
-      return false;
-    }
+
+    // Name matching is handled server-side against the full GHL contact set —
+    // don't re-filter here, or conversations whose match is on phone/email/
+    // tags would get dropped by the UI.
     if (filter === "unread" && conv.unreadCount === 0) {
       return false;
     }
@@ -431,8 +447,11 @@ export function ChatSidebar({
               placeholder="Buscar..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-muted pl-9 shadow-none focus-visible:ring-primary h-9"
+              className="w-full bg-muted pl-9 pr-9 shadow-none focus-visible:ring-primary h-9"
             />
+            {isSearching && (
+              <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
           </div>
           <div className="flex items-center border rounded-md p-0.5 bg-muted/30 shrink-0">
             <Button variant={viewMode === "normal" ? "secondary" : "ghost"} size="icon" className="h-8 w-8 rounded-sm" onClick={() => setViewMode("normal")} title="Vista Normal">
@@ -495,7 +514,11 @@ export function ChatSidebar({
         <div className="flex flex-col gap-0.5 p-2">
           {filteredConversations.length === 0 ? (
             <div className="text-center p-4 text-sm text-muted-foreground">
-              No hay conversaciones
+              {search.trim()
+                ? isSearching
+                  ? "Buscando en GoHighLevel..."
+                  : `Sin resultados para "${search.trim()}"`
+                : "No hay conversaciones"}
             </div>
           ) : (
             filteredConversations.map((conv) => {

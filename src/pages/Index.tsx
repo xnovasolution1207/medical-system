@@ -140,6 +140,15 @@ export default function Index() {
   const [taskUserFilters, setTaskUserFilters] = useState<string[]>([]);
   const [isContactSidebarOpen, setIsContactSidebarOpen] = useState(true);
 
+  // Server-side search across every contact in the GHL location. When the
+  // query is non-empty, `searchResults` replaces `conversations` as the
+  // sidebar list; when empty, `searchResults` is null and the normal list
+  // (bootstrap + paginated + WS-updated) is shown.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
+  const [searchNextCursor, setSearchNextCursor] = useState<number | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+
   // Track which conversation message-lists we've already hydrated to avoid
   // refetching on every selection.
   const hydratedConversations = useRef<Set<string>>(new Set());
@@ -251,18 +260,63 @@ export default function Index() {
     api.conversations
       .get(activeId)
       .then((full) => {
-        setConversations((prev) =>
-          prev.map((c) => {
-            if (c.id !== full.id) return c;
-            // The detail endpoint can't always tell us the channel (GHL omits
-            // lastMessageType for some conversations and the per-conv stage
-            // override is local), so keep the bootstrap-derived source/stage.
-            return { ...c, ...full, source: c.source, stage: c.stage ?? full.stage };
-          })
-        );
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === full.id);
+          // Upsert: a conversation selected from server search results won't
+          // be in `prev`; prepend it so ChatMessageArea can render it.
+          if (idx === -1) return [full, ...prev];
+          const next = prev.slice();
+          const existing = prev[idx];
+          // The detail endpoint can't always tell us the channel (GHL omits
+          // lastMessageType for some conversations and the per-conv stage
+          // override is local), so keep the bootstrap-derived source/stage.
+          next[idx] = { ...existing, ...full, source: existing.source, stage: existing.stage ?? full.stage };
+          return next;
+        });
       })
       .catch((err) => console.error("conversation fetch failed", err));
   }, [activeId]);
+
+  // ---- Server-side search (debounced) ----
+  // Empty query → exit search mode. Non-empty → hit the backend, which
+  // forwards `query` to GHL's conversations/search across the whole location.
+  // `cancelled` guards against out-of-order responses when the user is typing.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults(null);
+      setSearchNextCursor(null);
+      setIsSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setIsSearching(true);
+    const handle = window.setTimeout(() => {
+      api.conversations
+        .list({ limit: 25, query: q })
+        .then((result) => {
+          if (cancelled) return;
+          setSearchResults(result.conversations);
+          setSearchNextCursor(result.nextCursor);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          console.error("search failed", err);
+          setSearchResults([]);
+          setSearchNextCursor(null);
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearching(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [searchQuery]);
+
+  const isSearchActive = searchQuery.trim().length > 0;
+  const displayConversations = isSearchActive ? searchResults ?? [] : conversations;
 
   const activeConversation = conversations.find((c) => c.id === activeId);
 
@@ -434,24 +488,40 @@ export default function Index() {
   }, []);
 
   const handleLoadMoreConversations = useCallback(async () => {
-    if (!conversationsNextCursor || isLoadingMoreConversationsRef.current) return;
+    const q = searchQuery.trim();
+    const cursor = q ? searchNextCursor : conversationsNextCursor;
+    if (!cursor || isLoadingMoreConversationsRef.current) return;
     isLoadingMoreConversationsRef.current = true;
     setIsLoadingMoreConversations(true);
     try {
-      const result = await api.conversations.list({ limit: 25, startAfterDate: conversationsNextCursor });
-      setConversations((prev) => {
-        const existingIds = new Set(prev.map((c) => c.id));
-        const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
-        return fresh.length ? [...prev, ...fresh] : prev;
+      const result = await api.conversations.list({
+        limit: 25,
+        startAfterDate: cursor,
+        query: q || undefined,
       });
-      setConversationsNextCursor(result.nextCursor);
+      if (q) {
+        setSearchResults((prev) => {
+          const base = prev ?? [];
+          const existingIds = new Set(base.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return fresh.length ? [...base, ...fresh] : base;
+        });
+        setSearchNextCursor(result.nextCursor);
+      } else {
+        setConversations((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return fresh.length ? [...prev, ...fresh] : prev;
+        });
+        setConversationsNextCursor(result.nextCursor);
+      }
     } catch (err) {
       console.error("load more conversations failed", err);
     } finally {
       isLoadingMoreConversationsRef.current = false;
       setIsLoadingMoreConversations(false);
     }
-  }, [conversationsNextCursor]);
+  }, [conversationsNextCursor, searchNextCursor, searchQuery]);
 
   const handleLoadOlderMessages = useCallback(async () => {
     if (!activeId || loadingOlderForRef.current === activeId) return;
@@ -596,9 +666,6 @@ export default function Index() {
       <div className="flex h-screen w-full flex-col items-center justify-center gap-2 bg-background p-6 text-center">
         <h1 className="text-xl font-semibold">No se pudo conectar al backend</h1>
         <p className="text-sm text-muted-foreground max-w-lg">{bootstrapError}</p>
-        <p className="text-xs text-muted-foreground">
-          Verifica que el backend esté corriendo en http://localhost:3001 y que GHL_API_KEY/GHL_LOCATION_ID estén configurados.
-        </p>
       </div>
     );
   }
@@ -631,7 +698,7 @@ export default function Index() {
             />
           ) : (
             <ChatSidebar
-              conversations={conversations}
+              conversations={displayConversations}
               tasks={tasks}
               activeConversationId={activeId || ""}
               onSelectConversation={setActiveId}
@@ -642,8 +709,11 @@ export default function Index() {
               stages={stages}
               activeTab={activeMainTab}
               onLoadMore={handleLoadMoreConversations}
-              hasMore={conversationsNextCursor !== null}
+              hasMore={(isSearchActive ? searchNextCursor : conversationsNextCursor) !== null}
               isLoadingMore={isLoadingMoreConversations}
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              isSearching={isSearching}
             />
           )}
         </div>

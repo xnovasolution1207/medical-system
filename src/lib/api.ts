@@ -45,10 +45,11 @@ export const api = {
   bootstrap: () => request<BootstrapPayload>("GET", "/bootstrap"),
 
   conversations: {
-    list: (params?: { limit?: number; startAfterDate?: number }) => {
+    list: (params?: { limit?: number; startAfterDate?: number; query?: string }) => {
       const qs = new URLSearchParams();
       if (params?.limit != null) qs.set("limit", String(params.limit));
       if (params?.startAfterDate != null) qs.set("startAfterDate", String(params.startAfterDate));
+      if (params?.query) qs.set("query", params.query);
       const query = qs.toString();
       return request<{ conversations: Conversation[]; nextCursor: number | null }>(
         "GET",
