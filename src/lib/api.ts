@@ -1,5 +1,8 @@
 // REST client for the backend (which proxies GoHighLevel).
-// All paths are relative; Vite proxies /api → http://localhost:3001 in dev.
+// In dev, VITE_BACKEND_URL is empty → requests are same-origin and the Vite
+// proxy rewrites /api → http://localhost:3001. In production (e.g. the SPA
+// on Vercel, backend on Render), set VITE_BACKEND_URL at build time to the
+// backend's absolute URL so fetches target it directly.
 import type {
   Conversation,
   Message,
@@ -19,7 +22,9 @@ export interface BootstrapPayload {
   tasks: Task[];
 }
 
-const API_BASE = "/api";
+// Strip any trailing slash so we can always append "/api/..." cleanly.
+const BACKEND_ORIGIN = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/+$/, "");
+const API_BASE = `${BACKEND_ORIGIN}/api`;
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -50,12 +55,7 @@ export const api = {
         `/conversations${query ? `?${query}` : ""}`
       );
     },
-    get: (id: string, params?: { limit?: number }) => {
-      const qs = new URLSearchParams();
-      if (params?.limit != null) qs.set("limit", String(params.limit));
-      const query = qs.toString();
-      return request<Conversation>("GET", `/conversations/${id}${query ? `?${query}` : ""}`);
-    },
+    get: (id: string) => request<Conversation>("GET", `/conversations/${id}`),
     messages: (id: string, params?: { lastMessageId?: string; limit?: number }) => {
       const qs = new URLSearchParams();
       if (params?.lastMessageId) qs.set("lastMessageId", params.lastMessageId);

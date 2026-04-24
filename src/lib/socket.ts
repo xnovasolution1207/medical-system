@@ -28,7 +28,15 @@ export function subscribe(listener: WsListener): Subscription {
   let pendingFocus: string | null = null;
   let focusSent = false;
 
+  // In dev, VITE_BACKEND_URL is unset → we connect to the current page origin
+  // and the Vite dev server proxies /ws to the backend. In production, it must
+  // be set to the backend's absolute URL (http(s)://...); we swap the scheme
+  // to ws(s):// and append /ws.
   const wsUrl = (() => {
+    const backend = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/+$/, "");
+    if (backend) {
+      return `${backend.replace(/^http/i, "ws")}/ws`;
+    }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.host}/ws`;
   })();
