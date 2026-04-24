@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { User, Conversation } from "./types";
+import { ImageLightbox } from "./ImageLightbox";
 import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon } from "lucide-react";
 
 const MOCK_AGENTS = [
@@ -562,9 +563,13 @@ export function ContactSidebar({ contact, conversation, onUpdateContactName }: C
                     filteredDocs.map((msg, idx) => (
                       <div key={idx} className="flex items-center gap-3 p-3 rounded-xl border bg-card hover:bg-accent/50 transition-colors group cursor-pointer shadow-sm">
                         {msg.attachment?.type === 'image' && msg.attachment.url ? (
-                          <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 border bg-muted">
+                          <ImageLightbox
+                            src={msg.attachment.url}
+                            alt={msg.attachment.name}
+                            className="h-10 w-10 shrink-0 border bg-muted"
+                          >
                             <img src={msg.attachment.url} alt={msg.attachment.name} className="h-full w-full object-cover" />
-                          </div>
+                          </ImageLightbox>
                         ) : (
                           <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
                             {msg.attachment?.type === 'audio' ? <Headphones className="h-5 w-5" /> : 

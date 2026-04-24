@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
+import { ImageLightbox } from "./ImageLightbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -963,11 +964,16 @@ export function ChatMessageArea({
                     {message.attachment && (
                       <div className={cn("mb-1 overflow-hidden rounded-lg", message.text ? "mt-1" : "")}>
                         {message.attachment.type === "image" ? (
-                          <img
+                          <ImageLightbox
                             src={message.attachment.url}
                             alt={message.attachment.name}
-                            className="max-h-[250px] max-w-full rounded-lg object-cover"
-                          />
+                          >
+                            <img
+                              src={message.attachment.url}
+                              alt={message.attachment.name}
+                              className="max-h-[250px] max-w-full rounded-lg object-cover transition-transform group-hover:scale-[1.02]"
+                            />
+                          </ImageLightbox>
                         ) : (message.attachment.type === "audio") ? (
                           <div className={cn(
                             "flex items-center gap-4 min-w-[220px] sm:min-w-[280px] py-1.5",
