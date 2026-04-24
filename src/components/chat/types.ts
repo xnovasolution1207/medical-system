@@ -27,6 +27,11 @@ export type Message = {
   // echo of the same message even though the server-assigned `id` differs.
   clientId?: string;
   senderId: string;
+  // Resolved from GHL's per-message userId (only on outbound messages). When
+  // present the UI renders this agent's avatar/name instead of the generic
+  // logged-in currentUser — so a shared inbox shows who actually sent what.
+  senderName?: string;
+  senderAvatar?: string;
   text: string;
   timestamp: string;
   isRead: boolean;

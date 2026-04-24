@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Mic, Zap, Contact, Waypoints, Delete } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -880,7 +881,20 @@ export function ChatMessageArea({
 
             const isMe = message.senderId === currentUser.id;
             const prevMessage = conversation.messages[index - 1];
-            const isConsecutive = prevMessage && prevMessage.senderId === message.senderId && !prevMessage.systemEvent;
+            // Consecutive grouping considers the resolved agent identity too,
+            // so two back-to-back outbound messages from different agents
+            // each get their own avatar header instead of being collapsed.
+            const isConsecutive =
+              prevMessage &&
+              prevMessage.senderId === message.senderId &&
+              prevMessage.senderName === message.senderName &&
+              !prevMessage.systemEvent;
+            // Prefer the per-message agent info (populated server-side from
+            // GHL's userId on each outbound message). Fall back to the
+            // logged-in currentUser when the poller hasn't resolved it yet
+            // or the message was just sent from this session.
+            const outboundName = message.senderName ?? currentUser.name;
+            const outboundAvatar = message.senderAvatar ?? currentUser.avatar;
 
             return (
               <div
@@ -893,9 +907,10 @@ export function ChatMessageArea({
               >
                 {!isMe && (
                   <div className={cn(isConsecutive ? "invisible" : "visible", "shrink-0")}>
-                    <ChannelAvatar 
-                      name={conversation.participant.name} 
-                      src={conversation.participant.avatar} 
+                    {/* ChannelAvatar already renders a hover tooltip with the name. */}
+                    <ChannelAvatar
+                      name={conversation.participant.name}
+                      src={conversation.participant.avatar}
                       className="h-8 w-8"
                     />
                   </div>
@@ -931,7 +946,7 @@ export function ChatMessageArea({
                 >
                   {!isConsecutive && isMe && (
                     <span className="text-[11px] text-muted-foreground font-medium px-2 mb-0.5">
-                      {currentUser.name}
+                      {outboundName}
                     </span>
                   )}
                   <div
@@ -1087,12 +1102,19 @@ export function ChatMessageArea({
 
                 {isMe && (
                   <div className={cn(isConsecutive ? "invisible" : "visible", "shrink-0")}>
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={currentUser.avatar} />
-                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                        {currentUser.name.charAt(0)}
-                      </AvatarFallback>
-                    </Avatar>
+                    <Tooltip delayDuration={200}>
+                      <TooltipTrigger asChild>
+                        <Avatar className="h-8 w-8 cursor-default">
+                          <AvatarImage src={outboundAvatar} alt={outboundName} />
+                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                            {outboundName.charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="text-xs font-medium">
+                        {outboundName}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 )}
               </div>
