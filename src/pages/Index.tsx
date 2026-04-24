@@ -71,8 +71,27 @@ function mergeIncomingMessage(
     }
   }
 
-  // (b) id duplicate
-  if (messages.some((m) => m.id === incoming.id)) return messages;
+  // (b) id match — update in place when content grew (attachment arrived
+  // after the initial text-only broadcast, or text lengthened). Bail as a
+  // no-op only when the existing copy is already as rich as the incoming.
+  {
+    const idx = messages.findIndex((m) => m.id === incoming.id);
+    if (idx !== -1) {
+      const existing = messages[idx];
+      const attachmentGrew = Boolean(incoming.attachment) && !existing.attachment;
+      const textGrew = (incoming.text?.length ?? 0) > (existing.text?.length ?? 0);
+      if (!attachmentGrew && !textGrew) return messages;
+      const next = messages.slice();
+      next[idx] = {
+        ...existing,
+        ...incoming,
+        // Preserve local-only fields set at optimistic-insert time.
+        clientId: existing.clientId ?? incoming.clientId,
+        replyTo: existing.replyTo ?? incoming.replyTo,
+      };
+      return next;
+    }
+  }
 
   // (c) content-match fallback for an outbound poller broadcast
   if (currentUserId && incoming.senderId === currentUserId) {
