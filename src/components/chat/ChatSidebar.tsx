@@ -527,14 +527,25 @@ export function ChatSidebar({
               const hasPendingTasks = tasks.some(t => t.conversationId === conv.id && t.status === "pending");
               
               return (
-              <button
+              // role=button + keyboard handling instead of a real <button>
+              // because this row contains an inner DropdownMenu trigger (also
+              // a <button>); a nested-button DOM is invalid and React warns.
+              <div
                 key={conv.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectConversation(conv.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelectConversation(conv.id);
+                  }
+                }}
                 className={cn(
-                  "group relative flex items-center gap-3 rounded-lg text-left transition-all",
+                  "group relative flex items-center gap-3 rounded-lg text-left transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   viewMode === "normal" ? "p-3" : viewMode === "compact" ? "p-2" : "p-1.5 px-3",
-                  activeConversationId === conv.id 
-                    ? "bg-accent/80 text-accent-foreground shadow-sm ring-1 ring-border/50" 
+                  activeConversationId === conv.id
+                    ? "bg-accent/80 text-accent-foreground shadow-sm ring-1 ring-border/50"
                     : "hover:bg-muted/50"
                 )}
               >
@@ -673,7 +684,7 @@ export function ChatSidebar({
                     </div>
                   )}
                 </div>
-              </button>
+              </div>
             )})
           )}
           {isLoadingMore && (

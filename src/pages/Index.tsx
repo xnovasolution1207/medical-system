@@ -242,6 +242,19 @@ export default function Index() {
             conversations: moveConversationToFront(prev.conversations, merged.id, merged),
           };
         });
+      } else if (event.type === "contact.updated") {
+        // GHL contact create / update / tag webhook → patch the participant
+        // on every conversation whose contact id matches. New contacts with
+        // no conversation yet are a silent no-op; the conversation row will
+        // appear via InboundMessage when they actually message in.
+        updateBootstrap((prev) => ({
+          ...prev,
+          conversations: prev.conversations.map((c) =>
+            c.contactId === event.contactId || c.participant.id === event.contactId
+              ? { ...c, participant: { ...c.participant, ...event.patch } }
+              : c
+          ),
+        }));
       } else if (event.type === "opportunity.updated") {
         updateBootstrap((prev) => {
           const idx = prev.opportunities.findIndex((o) => o.id === event.opportunity.id);
