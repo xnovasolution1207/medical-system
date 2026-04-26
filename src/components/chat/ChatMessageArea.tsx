@@ -894,7 +894,7 @@ export function ChatMessageArea({
               !prevMessage.systemEvent;
             // Prefer the per-message agent info (populated server-side from
             // GHL's userId on each outbound message). Fall back to the
-            // logged-in currentUser when the poller hasn't resolved it yet
+            // logged-in currentUser when the backend hasn't resolved it yet
             // or the message was just sent from this session.
             const outboundName = message.senderName ?? currentUser.name;
             const outboundAvatar = message.senderAvatar ?? currentUser.avatar;

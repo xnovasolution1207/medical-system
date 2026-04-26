@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { TaskList } from "@/components/chat/TaskList";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
@@ -10,13 +11,11 @@ import {
   Conversation,
   SavedView,
   Task,
-  Pipeline,
-  Opportunity,
   User,
 } from "@/components/chat/types";
 import { cn } from "@/lib/utils";
 import { api, BootstrapPayload } from "@/lib/api";
-import { subscribe, type Subscription } from "@/lib/socket";
+import { subscribe } from "@/lib/socket";
 import { useToast } from "@/hooks/use-toast";
 
 const INITIAL_SAVED_VIEWS: SavedView[] = [
@@ -29,33 +28,32 @@ const INITIAL_SAVED_VIEWS: SavedView[] = [
 
 const FALLBACK_USER: User = { id: "agent", name: "Agente de Ventas", status: "online" };
 
+// Single React Query key holding the full app payload. WS events mutate the
+// cache via setQueryData; the query itself never refetches on its own (the
+// backend is webhook-driven, so the WS stream is the only update channel).
+const BOOTSTRAP_QUERY_KEY = ["bootstrap"] as const;
+
 // Reconcile an incoming message (from WS or HTTP) against the local list.
 //
 // Three sources can echo our outbound message back to us, in any order:
 //   (1) The POST response — carries clientId.
 //   (2) The backend's immediate WS broadcast — carries clientId.
-//   (3) The poller's WS broadcast — does NOT carry clientId (the poller
-//       reads GHL's conversation/messages API which has no notion of it).
-//
-// Source 3 can race ahead of 1/2 since the poller is already polling GHL
-// when our POST handler is mid-flight. So we need a content-match fallback
-// for outbound messages that look like an unresolved optimistic.
+//   (3) GHL's OutboundMessage webhook → backend → WS — does NOT carry clientId
+//       (the webhook reads GHL's API which has no notion of it). The backend
+//       suppresses this when it can via wasRecentlyBroadcasted, but on a slow
+//       network the dedup window can lapse, so we still defend in the SPA.
 //
 // Match priority:
 //   a. clientId equality → it's the same logical message, swap real id in.
-//   b. id equality → exact duplicate, no-op.
+//   b. id equality → exact duplicate, no-op (or merge if content grew).
 //   c. incoming is from currentUser, doesn't carry clientId, and there's an
-//      unresolved optimistic (id === clientId && id starts with "tmp-") with
-//      matching text+channel → treat as resolution, swap real id in.
+//      unresolved optimistic with matching text+channel → treat as resolution.
 //   d. otherwise → append.
-//
-// Returns the same array reference when nothing changed so React skips renders.
 function mergeIncomingMessage(
   messages: Message[],
   incoming: Message,
   currentUserId?: string
 ): Message[] {
-  // (a) clientId-based match
   if (incoming.clientId) {
     const idx = messages.findIndex(
       (m) => m.clientId === incoming.clientId || m.id === incoming.clientId
@@ -71,9 +69,6 @@ function mergeIncomingMessage(
     }
   }
 
-  // (b) id match — update in place when content grew (attachment arrived
-  // after the initial text-only broadcast, or text lengthened). Bail as a
-  // no-op only when the existing copy is already as rich as the incoming.
   {
     const idx = messages.findIndex((m) => m.id === incoming.id);
     if (idx !== -1) {
@@ -85,7 +80,6 @@ function mergeIncomingMessage(
       next[idx] = {
         ...existing,
         ...incoming,
-        // Preserve local-only fields set at optimistic-insert time.
         clientId: existing.clientId ?? incoming.clientId,
         replyTo: existing.replyTo ?? incoming.replyTo,
       };
@@ -93,12 +87,10 @@ function mergeIncomingMessage(
     }
   }
 
-  // (c) content-match fallback for an outbound poller broadcast
   if (currentUserId && incoming.senderId === currentUserId) {
     const idx = messages.findIndex(
       (m) =>
         m.senderId === currentUserId &&
-        // unresolved optimistic: tmp-id where clientId still equals id
         m.id === m.clientId &&
         m.id.startsWith("tmp-") &&
         m.text === incoming.text &&
@@ -138,138 +130,143 @@ function moveConversationToFront(
 
 export default function Index() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [bootstrapped, setBootstrapped] = useState(false);
-  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  // The single source of truth for app state — fetched once via /bootstrap and
+  // then mutated only via WS events and optimistic local updates. Refetching
+  // is disabled because we'd lose the live patches.
+  const { data, isLoading, error } = useQuery<BootstrapPayload>({
+    queryKey: BOOTSTRAP_QUERY_KEY,
+    queryFn: () => api.bootstrap(),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    retry: 1,
+  });
 
-  const [currentUser, setCurrentUser] = useState<User>(FALLBACK_USER);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [conversationsNextCursor, setConversationsNextCursor] = useState<number | null>(null);
-  const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
-  const [loadingOlderFor, setLoadingOlderFor] = useState<string | null>(null);
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
-  const [stages, setStages] = useState<{ id: string; label: string; color: string }[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  // Strongly-typed setter helper. No-ops when the cache is empty (still loading).
+  const updateBootstrap = useCallback(
+    (mutator: (prev: BootstrapPayload) => BootstrapPayload) => {
+      queryClient.setQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY, (prev) =>
+        prev ? mutator(prev) : prev
+      );
+    },
+    [queryClient]
+  );
+
+  const conversations = data?.conversations ?? [];
+  const tasks = data?.tasks ?? [];
+  const opportunities = data?.opportunities ?? [];
+  const pipelines = data?.pipelines ?? [];
+  const stages = data?.stages ?? [];
+  const currentUser = data?.currentUser ?? FALLBACK_USER;
+  const conversationsNextCursor = data?.conversationsNextCursor ?? null;
+
+  // Local UI state — not part of the bootstrap payload because it's purely
+  // client-side: which conversation/tab is open, search input, etc.
   const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL_SAVED_VIEWS);
-
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [activeMainTab, setActiveMainTab] = useState("todos");
   const [taskUserFilters, setTaskUserFilters] = useState<string[]>([]);
   const [isContactSidebarOpen, setIsContactSidebarOpen] = useState(true);
 
-  // Server-side search across every contact in the GHL location. When the
-  // query is non-empty, `searchResults` replaces `conversations` as the
-  // sidebar list; when empty, `searchResults` is null and the normal list
-  // (bootstrap + paginated + WS-updated) is shown.
+  const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
+  const [loadingOlderFor, setLoadingOlderFor] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [searchNextCursor, setSearchNextCursor] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Track which conversation message-lists we've already hydrated to avoid
-  // refetching on every selection.
   const hydratedConversations = useRef<Set<string>>(new Set());
-  const subscriptionRef = useRef<Subscription | null>(null);
-  // Keep currentUser.id reachable from the WS listener closure without making
-  // the listener depend on it (which would re-subscribe on every change).
   const currentUserIdRef = useRef<string>(FALLBACK_USER.id);
-  // Synchronous guards for pagination fetches — state updates lag a render,
-  // so refs prevent double-firing when scroll events arrive faster than React
-  // can propagate setIsLoading(true) back to the scroll handler.
   const isLoadingMoreConversationsRef = useRef(false);
   const loadingOlderForRef = useRef<string | null>(null);
 
-  // Keep the ref in lockstep with state so the WS listener (subscribed once)
-  // always sees the latest user id without needing to be re-subscribed.
   useEffect(() => {
     currentUserIdRef.current = currentUser.id;
   }, [currentUser.id]);
 
-  // ---- Bootstrap ----
+  // Auto-select the first conversation once the bootstrap arrives (only when
+  // the user hasn't already picked one).
   useEffect(() => {
-    let cancelled = false;
-    api
-      .bootstrap()
-      .then((data: BootstrapPayload) => {
-        if (cancelled) return;
-        setCurrentUser(data.currentUser);
-        setConversations(data.conversations);
-        setConversationsNextCursor(data.conversationsNextCursor ?? null);
-        setOpportunities(data.opportunities);
-        setPipelines(data.pipelines);
-        setStages(data.stages);
-        setTasks(data.tasks);
-        setActiveId(data.conversations[0]?.id ?? null);
-        setBootstrapped(true);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error("bootstrap failed", err);
-        setBootstrapError(err instanceof Error ? err.message : "Error al cargar datos");
-        setBootstrapped(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (data && activeId === null && data.conversations.length > 0) {
+      setActiveId(data.conversations[0].id);
+    }
+  }, [data, activeId]);
 
   // ---- WebSocket subscription ----
+  // The WS listener is the only place that mutates the cache for live updates.
+  // It runs once for the lifetime of the page and writes into React Query via
+  // setQueryData, exactly as the new architecture specifies.
   useEffect(() => {
     const sub = subscribe((event) => {
       if (event.type === "message.created") {
-        setConversations((prev) => {
-          const idx = prev.findIndex((c) => c.id === event.conversationId);
-          if (idx === -1) return prev;
-          const c = prev[idx];
-          const nextMessages = mergeIncomingMessage(c.messages, event.message, currentUserIdRef.current);
+        updateBootstrap((prev) => {
+          const idx = prev.conversations.findIndex((c) => c.id === event.conversationId);
+          if (idx === -1) return prev; // wait for the conversation.updated companion event
+          const c = prev.conversations[idx];
+          const nextMessages = mergeIncomingMessage(
+            c.messages,
+            event.message,
+            currentUserIdRef.current
+          );
           if (nextMessages === c.messages) return prev;
-          return moveConversationToFront(prev, c.id, {
-            messages: nextMessages,
-            lastMessage: event.message.text || c.lastMessage,
-            timestamp: event.message.timestamp || c.timestamp,
-          });
+          return {
+            ...prev,
+            conversations: moveConversationToFront(prev.conversations, c.id, {
+              messages: nextMessages,
+              lastMessage: event.message.text || c.lastMessage,
+              timestamp: event.message.timestamp || c.timestamp,
+            }),
+          };
         });
       } else if (event.type === "conversation.updated") {
-        setConversations((prev) => {
-          const idx = prev.findIndex((c) => c.id === event.conversation.id);
-          if (idx === -1) return [event.conversation, ...prev];
+        updateBootstrap((prev) => {
+          const idx = prev.conversations.findIndex((c) => c.id === event.conversation.id);
+          if (idx === -1) {
+            return { ...prev, conversations: [event.conversation, ...prev.conversations] };
+          }
           // Preserve already-hydrated message list when WS only refreshes header data.
-          const existing = prev[idx];
+          const existing = prev.conversations[idx];
           const merged: Conversation = {
             ...event.conversation,
             messages: existing.messages.length ? existing.messages : event.conversation.messages,
             scheduledMessages: existing.scheduledMessages ?? event.conversation.scheduledMessages,
           };
-          return moveConversationToFront(prev, merged.id, merged);
+          return {
+            ...prev,
+            conversations: moveConversationToFront(prev.conversations, merged.id, merged),
+          };
         });
       } else if (event.type === "opportunity.updated") {
-        setOpportunities((prev) => {
-          const idx = prev.findIndex((o) => o.id === event.opportunity.id);
-          if (idx === -1) return [event.opportunity, ...prev];
-          const next = prev.slice();
+        updateBootstrap((prev) => {
+          const idx = prev.opportunities.findIndex((o) => o.id === event.opportunity.id);
+          if (idx === -1) {
+            return { ...prev, opportunities: [event.opportunity, ...prev.opportunities] };
+          }
+          const next = prev.opportunities.slice();
           next[idx] = event.opportunity;
-          return next;
+          return { ...prev, opportunities: next };
         });
       } else if (event.type === "task.created") {
-        setTasks((prev) => (prev.some((t) => t.id === event.task.id) ? prev : [event.task, ...prev]));
+        updateBootstrap((prev) =>
+          prev.tasks.some((t) => t.id === event.task.id)
+            ? prev
+            : { ...prev, tasks: [event.task, ...prev.tasks] }
+        );
       } else if (event.type === "task.updated") {
-        setTasks((prev) => prev.map((t) => (t.id === event.task.id ? event.task : t)));
+        updateBootstrap((prev) => ({
+          ...prev,
+          tasks: prev.tasks.map((t) => (t.id === event.task.id ? event.task : t)),
+        }));
       }
     });
-    subscriptionRef.current = sub;
-    return () => {
-      sub.close();
-      subscriptionRef.current = null;
-    };
-  }, []);
-
-  // Tell the backend which conversation is open so it can poll messages on
-  // that one every ~1s instead of waiting for the global sweep.
-  useEffect(() => {
-    subscriptionRef.current?.setFocus(activeId);
-  }, [activeId]);
+    return () => sub.close();
+  }, [updateBootstrap]);
 
   // ---- Lazy-hydrate full message list when a conversation is selected ----
   useEffect(() => {
@@ -279,27 +276,27 @@ export default function Index() {
     api.conversations
       .get(activeId)
       .then((full) => {
-        setConversations((prev) => {
-          const idx = prev.findIndex((c) => c.id === full.id);
-          // Upsert: a conversation selected from server search results won't
-          // be in `prev`; prepend it so ChatMessageArea can render it.
-          if (idx === -1) return [full, ...prev];
-          const next = prev.slice();
-          const existing = prev[idx];
+        updateBootstrap((prev) => {
+          const idx = prev.conversations.findIndex((c) => c.id === full.id);
+          if (idx === -1) return { ...prev, conversations: [full, ...prev.conversations] };
+          const next = prev.conversations.slice();
+          const existing = next[idx];
           // The detail endpoint can't always tell us the channel (GHL omits
-          // lastMessageType for some conversations and the per-conv stage
-          // override is local), so keep the bootstrap-derived source/stage.
-          next[idx] = { ...existing, ...full, source: existing.source, stage: existing.stage ?? full.stage };
-          return next;
+          // lastMessageType for some conversations) and the per-conv stage
+          // override is local, so keep the bootstrap-derived source/stage.
+          next[idx] = {
+            ...existing,
+            ...full,
+            source: existing.source,
+            stage: existing.stage ?? full.stage,
+          };
+          return { ...prev, conversations: next };
         });
       })
       .catch((err) => console.error("conversation fetch failed", err));
-  }, [activeId]);
+  }, [activeId, updateBootstrap]);
 
   // ---- Server-side search (debounced) ----
-  // Empty query → exit search mode. Non-empty → hit the backend, which
-  // forwards `query` to GHL's conversations/search across the whole location.
-  // `cancelled` guards against out-of-order responses when the user is typing.
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
@@ -336,10 +333,9 @@ export default function Index() {
 
   const isSearchActive = searchQuery.trim().length > 0;
   const displayConversations = isSearchActive ? searchResults ?? [] : conversations;
-
   const activeConversation = conversations.find((c) => c.id === activeId);
 
-  // ---- Handlers ----
+  // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
   const handleSendMessage = useCallback(
     (
       text: string,
@@ -366,23 +362,27 @@ export default function Index() {
         status: "sent",
       };
 
-      setConversations((prev) => {
-        const idx = prev.findIndex((c) => c.id === activeId);
+      updateBootstrap((prev) => {
+        const idx = prev.conversations.findIndex((c) => c.id === activeId);
         if (idx === -1) return prev;
-        const c = prev[idx];
-        return moveConversationToFront(prev, activeId, {
-          messages: [...c.messages, optimistic],
-          lastMessage: text || "Archivo adjunto",
-          timestamp: optimistic.timestamp,
-          ...(reminder ? { activeReminder: reminder } : {}),
-        });
+        const c = prev.conversations[idx];
+        return {
+          ...prev,
+          conversations: moveConversationToFront(prev.conversations, activeId, {
+            messages: [...c.messages, optimistic],
+            lastMessage: text || "Archivo adjunto",
+            timestamp: optimistic.timestamp,
+            ...(reminder ? { activeReminder: reminder } : {}),
+          }),
+        };
       });
 
       api.conversations
         .send(activeId, { text, channel, attachment, mentions, reminder, clientId: optimisticId })
         .then((sent) => {
-          setConversations((prev) =>
-            prev.map((conv) =>
+          updateBootstrap((prev) => ({
+            ...prev,
+            conversations: prev.conversations.map((conv) =>
               conv.id === activeId
                 ? {
                     ...conv,
@@ -393,13 +393,14 @@ export default function Index() {
                     ),
                   }
                 : conv
-            )
-          );
+            ),
+          }));
         })
         .catch((err) => {
           console.error("send failed", err);
-          setConversations((prev) =>
-            prev.map((conv) =>
+          updateBootstrap((prev) => ({
+            ...prev,
+            conversations: prev.conversations.map((conv) =>
               conv.id === activeId
                 ? {
                     ...conv,
@@ -408,20 +409,25 @@ export default function Index() {
                     ),
                   }
                 : conv
-            )
-          );
-          toast({ title: "No se pudo enviar el mensaje", description: String(err), variant: "destructive" });
+            ),
+          }));
+          toast({
+            title: "No se pudo enviar el mensaje",
+            description: String(err),
+            variant: "destructive",
+          });
         });
     },
-    [activeId, currentUser.id, toast]
+    [activeId, currentUser.id, toast, updateBootstrap]
   );
 
   const handleScheduleMessage = useCallback(
     (conversationId: string, text: string, date: string, channel: Message["channel"]) => {
       const localChannel = (channel as "sms" | "email" | "whatsapp" | "internal") ?? "sms";
       const optimisticId = `sch-tmp-${Date.now()}`;
-      setConversations((prev) =>
-        prev.map((c) =>
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
           c.id === conversationId
             ? {
                 ...c,
@@ -431,13 +437,14 @@ export default function Index() {
                 ],
               }
             : c
-        )
-      );
+        ),
+      }));
       api.conversations
         .schedule(conversationId, { text, scheduledFor: date, channel: localChannel })
         .then((saved) => {
-          setConversations((prev) =>
-            prev.map((c) =>
+          updateBootstrap((prev) => ({
+            ...prev,
+            conversations: prev.conversations.map((c) =>
               c.id === conversationId
                 ? {
                     ...c,
@@ -446,65 +453,89 @@ export default function Index() {
                     ),
                   }
                 : c
-            )
-          );
+            ),
+          }));
         })
         .catch((err) => console.error("schedule failed", err));
     },
-    []
+    [updateBootstrap]
   );
 
-  const handleCancelScheduledMessage = useCallback((conversationId: string, messageId: string) => {
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === conversationId
-          ? { ...c, scheduledMessages: (c.scheduledMessages ?? []).filter((m) => m.id !== messageId) }
-          : c
-      )
-    );
-    api.conversations.cancelScheduled(conversationId, messageId).catch((err) =>
-      console.error("cancel scheduled failed", err)
-    );
-  }, []);
+  const handleCancelScheduledMessage = useCallback(
+    (conversationId: string, messageId: string) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === conversationId
+            ? {
+                ...c,
+                scheduledMessages: (c.scheduledMessages ?? []).filter((m) => m.id !== messageId),
+              }
+            : c
+        ),
+      }));
+      api.conversations
+        .cancelScheduled(conversationId, messageId)
+        .catch((err) => console.error("cancel scheduled failed", err));
+    },
+    [updateBootstrap]
+  );
 
   const handleUpdateStage = useCallback(
     (id: string, stage: Conversation["stage"]) => {
-      setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, stage } : c)));
-      api.conversations.patch(id, { stage }).catch((err) => console.error("stage update failed", err));
-      // If this conversation has an opportunity, also move it server-side.
-      const conv = conversations.find((c) => c.id === id);
+      const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
+      const conv = cache?.conversations.find((c) => c.id === id);
       const opp = conv?.contactId
-        ? opportunities.find((o) => o.contactId === conv.contactId)
+        ? cache?.opportunities.find((o) => o.contactId === conv.contactId)
         : undefined;
+
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => (c.id === id ? { ...c, stage } : c)),
+        opportunities: opp
+          ? prev.opportunities.map((o) => (o.id === opp.id ? { ...o, stageId: stage } : o))
+          : prev.opportunities,
+      }));
+
+      api.conversations.patch(id, { stage }).catch((err) => console.error("stage update failed", err));
       if (opp && opp.stageId !== stage) {
-        setOpportunities((prev) =>
-          prev.map((o) => (o.id === opp.id ? { ...o, stageId: stage } : o))
-        );
-        api.opportunities.move(opp.id, stage).catch((err) =>
-          console.error("opportunity move failed", err)
-        );
+        api.opportunities
+          .move(opp.id, stage)
+          .catch((err) => console.error("opportunity move failed", err));
       }
     },
-    [conversations, opportunities]
+    [queryClient, updateBootstrap]
   );
 
-  const handleClearReminder = useCallback((id: string) => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, activeReminder: undefined } : c))
-    );
-    api.conversations.patch(id, { activeReminder: null }).catch((err) =>
-      console.error("clear reminder failed", err)
-    );
-  }, []);
+  const handleClearReminder = useCallback(
+    (id: string) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === id ? { ...c, activeReminder: undefined } : c
+        ),
+      }));
+      api.conversations
+        .patch(id, { activeReminder: null })
+        .catch((err) => console.error("clear reminder failed", err));
+    },
+    [updateBootstrap]
+  );
 
-  const handleSetReminder = useCallback((id: string, reminder: string) => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, activeReminder: reminder } : c))
-    );
-    api.conversations.patch(id, { activeReminder: reminder }).catch((err) =>
-      console.error("set reminder failed", err)
-    );
-  }, []);
+  const handleSetReminder = useCallback(
+    (id: string, reminder: string) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === id ? { ...c, activeReminder: reminder } : c
+        ),
+      }));
+      api.conversations
+        .patch(id, { activeReminder: reminder })
+        .catch((err) => console.error("set reminder failed", err));
+    },
+    [updateBootstrap]
+  );
 
   const handleLoadMoreConversations = useCallback(async () => {
     const q = searchQuery.trim();
@@ -527,12 +558,15 @@ export default function Index() {
         });
         setSearchNextCursor(result.nextCursor);
       } else {
-        setConversations((prev) => {
-          const existingIds = new Set(prev.map((c) => c.id));
+        updateBootstrap((prev) => {
+          const existingIds = new Set(prev.conversations.map((c) => c.id));
           const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
-          return fresh.length ? [...prev, ...fresh] : prev;
+          return {
+            ...prev,
+            conversations: fresh.length ? [...prev.conversations, ...fresh] : prev.conversations,
+            conversationsNextCursor: result.nextCursor,
+          };
         });
-        setConversationsNextCursor(result.nextCursor);
       }
     } catch (err) {
       console.error("load more conversations failed", err);
@@ -540,11 +574,12 @@ export default function Index() {
       isLoadingMoreConversationsRef.current = false;
       setIsLoadingMoreConversations(false);
     }
-  }, [conversationsNextCursor, searchNextCursor, searchQuery]);
+  }, [conversationsNextCursor, searchNextCursor, searchQuery, updateBootstrap]);
 
   const handleLoadOlderMessages = useCallback(async () => {
     if (!activeId || loadingOlderForRef.current === activeId) return;
-    const conv = conversations.find((c) => c.id === activeId);
+    const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
+    const conv = cache?.conversations.find((c) => c.id === activeId);
     if (!conv?.messagesOldestId || !conv.messagesHasMore) return;
     loadingOlderForRef.current = activeId;
     setLoadingOlderFor(activeId);
@@ -553,8 +588,9 @@ export default function Index() {
         lastMessageId: conv.messagesOldestId,
         limit: 50,
       });
-      setConversations((prev) =>
-        prev.map((c) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => {
           if (c.id !== activeId) return c;
           const existingIds = new Set(c.messages.map((m) => m.id));
           const fresh = result.messages.filter((m) => !existingIds.has(m.id));
@@ -564,52 +600,61 @@ export default function Index() {
             messagesHasMore: result.hasMore,
             messagesOldestId: result.oldestId,
           };
-        })
-      );
+        }),
+      }));
     } catch (err) {
       console.error("load older messages failed", err);
     } finally {
       loadingOlderForRef.current = null;
       setLoadingOlderFor(null);
     }
-  }, [activeId, conversations]);
+  }, [activeId, queryClient, updateBootstrap]);
 
-  const handleToggleFavorite = useCallback((id: string) => {
-    let nextValue = false;
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== id) return c;
-        nextValue = !c.isFavorite;
-        return { ...c, isFavorite: nextValue };
-      })
-    );
-    api.conversations.patch(id, { isFavorite: nextValue }).catch((err) =>
-      console.error("toggle favorite failed", err)
-    );
-  }, []);
+  const handleToggleFavorite = useCallback(
+    (id: string) => {
+      let nextValue = false;
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => {
+          if (c.id !== id) return c;
+          nextValue = !c.isFavorite;
+          return { ...c, isFavorite: nextValue };
+        }),
+      }));
+      api.conversations
+        .patch(id, { isFavorite: nextValue })
+        .catch((err) => console.error("toggle favorite failed", err));
+    },
+    [updateBootstrap]
+  );
 
   const handleUpdateContactName = useCallback(
     (contactId: string, newName: string) => {
-      setConversations((prev) =>
-        prev.map((c) =>
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
           c.participant.id === contactId
             ? { ...c, participant: { ...c.participant, name: newName } }
             : c
-        )
-      );
+        ),
+      }));
       api.contacts.update(contactId, { name: newName }).catch((err) => {
         console.error("contact update failed", err);
-        toast({ title: "No se pudo actualizar el contacto", description: String(err), variant: "destructive" });
+        toast({
+          title: "No se pudo actualizar el contacto",
+          description: String(err),
+          variant: "destructive",
+        });
       });
     },
-    [toast]
+    [toast, updateBootstrap]
   );
 
   const handleAddTask = useCallback(
     (task: Omit<Task, "id">) => {
       const optimisticId = `t-tmp-${Date.now()}`;
       const optimistic: Task = { ...task, id: optimisticId };
-      setTasks((prev) => [optimistic, ...prev]);
+      updateBootstrap((prev) => ({ ...prev, tasks: [optimistic, ...prev.tasks] }));
       if (!task.conversationId) return;
       api.tasks
         .create({
@@ -619,37 +664,48 @@ export default function Index() {
           assignedTo: task.assignee.name,
         })
         .then((saved) => {
-          setTasks((prev) => prev.map((t) => (t.id === optimisticId ? saved : t)));
+          updateBootstrap((prev) => ({
+            ...prev,
+            tasks: prev.tasks.map((t) => (t.id === optimisticId ? saved : t)),
+          }));
         })
         .catch((err) => {
           console.error("create task failed", err);
-          setTasks((prev) => prev.filter((t) => t.id !== optimisticId));
-          toast({ title: "No se pudo crear la tarea", description: String(err), variant: "destructive" });
+          updateBootstrap((prev) => ({
+            ...prev,
+            tasks: prev.tasks.filter((t) => t.id !== optimisticId),
+          }));
+          toast({
+            title: "No se pudo crear la tarea",
+            description: String(err),
+            variant: "destructive",
+          });
         });
     },
-    [toast]
+    [toast, updateBootstrap]
   );
 
   const handleToggleTask = useCallback(
     (id: string) => {
       let nextStatus: Task["status"] = "completed";
       let contactId: string | undefined;
-      setTasks((prev) =>
-        prev.map((t) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        tasks: prev.tasks.map((t) => {
           if (t.id !== id) return t;
           nextStatus = t.status === "completed" ? "pending" : "completed";
-          const conv = conversations.find((c) => c.id === t.conversationId);
+          const conv = prev.conversations.find((c) => c.id === t.conversationId);
           contactId = conv?.contactId ?? conv?.participant.id;
           return { ...t, status: nextStatus };
-        })
-      );
+        }),
+      }));
       if (contactId && !id.startsWith("t-tmp-")) {
         api.tasks
           .setCompleted(contactId, id, nextStatus === "completed")
           .catch((err) => console.error("toggle task failed", err));
       }
     },
-    [conversations]
+    [updateBootstrap]
   );
 
   const handleSaveView = useCallback((view: SavedView) => {
@@ -665,14 +721,29 @@ export default function Index() {
     setActiveViewId((current) => (current === id ? null : current));
   }, []);
 
-  const handleMoveOpportunity = useCallback((id: string, stageId: string) => {
-    setOpportunities((prev) => prev.map((o) => (o.id === id ? { ...o, stageId } : o)));
-    api.opportunities.move(id, stageId).catch((err) => console.error("opportunity move failed", err));
-  }, []);
+  const handleMoveOpportunity = useCallback(
+    (id: string, stageId: string) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        opportunities: prev.opportunities.map((o) => (o.id === id ? { ...o, stageId } : o)),
+      }));
+      api.opportunities
+        .move(id, stageId)
+        .catch((err) => console.error("opportunity move failed", err));
+    },
+    [updateBootstrap]
+  );
 
-  const opportunitiesPipeline = useMemo(() => pipelines[0], [pipelines]);
+  const setStages = useCallback(
+    (next: BootstrapPayload["stages"]) => {
+      updateBootstrap((prev) => ({ ...prev, stages: next }));
+    },
+    [updateBootstrap]
+  );
 
-  if (!bootstrapped) {
+  const opportunitiesPipeline = pipelines[0];
+
+  if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background text-muted-foreground">
         Cargando datos de GoHighLevel…
@@ -680,11 +751,13 @@ export default function Index() {
     );
   }
 
-  if (bootstrapError) {
+  if (error || !data) {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center gap-2 bg-background p-6 text-center">
         <h1 className="text-xl font-semibold">No se pudo conectar al backend</h1>
-        <p className="text-sm text-muted-foreground max-w-lg">{bootstrapError}</p>
+        <p className="text-sm text-muted-foreground max-w-lg">
+          {error instanceof Error ? error.message : "Error al cargar datos"}
+        </p>
       </div>
     );
   }
