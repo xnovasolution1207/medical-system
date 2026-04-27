@@ -798,6 +798,20 @@ export default function Index() {
     [updateBootstrap]
   );
 
+  const handleDeleteLead = useCallback(async () => {
+    if (!activeConversation?.contactId) return;
+    const contactId = activeConversation.contactId;
+    await api.contacts.delete(contactId);
+    updateBootstrap((prev) => ({
+      ...prev,
+      conversations: prev.conversations.filter(
+        (c) => c.contactId !== contactId && c.participant.id !== contactId
+      ),
+    }));
+    setActiveId(null);
+    toast({ title: "Lead eliminado", description: "El contacto ha sido eliminado correctamente." });
+  }, [activeConversation, updateBootstrap, toast]);
+
   const setStages = useCallback(
     (next: BootstrapPayload["stages"]) => {
       updateBootstrap((prev) => ({ ...prev, stages: next }));
@@ -907,6 +921,7 @@ export default function Index() {
               hasOlderMessages={Boolean(activeConversation.messagesHasMore)}
               isLoadingOlderMessages={loadingOlderFor === activeId}
               onLoadOlderMessages={handleLoadOlderMessages}
+              onDeleteLead={handleDeleteLead}
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center bg-muted/30 p-8 text-center">

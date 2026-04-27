@@ -100,6 +100,7 @@ export const api = {
   contacts: {
     update: (id: string, patch: { name?: string; email?: string; phone?: string; tags?: string[] }) =>
       request<User>("PATCH", `/contacts/${id}`, patch),
+    delete: (id: string) => request<void>("DELETE", `/contacts/${id}`),
   },
 
   opportunities: {
