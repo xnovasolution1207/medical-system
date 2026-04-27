@@ -163,7 +163,7 @@ export function ChatSidebar({
             match = conv.participant.tags?.some(t => t.toLowerCase().includes(valLower)) || false;
             break;
           case "embudo_actual":
-            match = conv.stage.toLowerCase().includes(valLower);
+            match = (conv.stage ?? "").toLowerCase().includes(valLower);
             break;
           default:
             match = true;
@@ -640,17 +640,17 @@ export function ChatSidebar({
 
                   {viewMode === "normal" && (
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      {(() => {
+                      {conv.stage && (() => {
                         const currentStage = stages.find(s => s.id === conv.stage) || { label: conv.stage, color: "bg-slate-500" };
-                        
+
                         let colorClasses = "bg-slate-500/15 text-slate-700 dark:text-slate-400 hover:bg-slate-500/25";
                         if (currentStage.color.includes("rose")) colorClasses = "bg-rose-500/15 text-rose-700 dark:text-rose-400 hover:bg-rose-500/25";
                         else if (currentStage.color.includes("amber")) colorClasses = "bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/25";
                         else if (currentStage.color.includes("emerald")) colorClasses = "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25";
                         else if (currentStage.color.includes("sky")) colorClasses = "bg-sky-500/15 text-sky-700 dark:text-sky-400 hover:bg-sky-500/25";
-                        
+
                         return (
-                          <Badge 
+                          <Badge
                             variant="outline"
                             className={cn(
                               "text-[10px] h-5 px-2 py-0 uppercase tracking-wider font-medium border-transparent",

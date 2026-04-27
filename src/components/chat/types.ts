@@ -76,7 +76,7 @@ export type Conversation = {
   contactId?: string;
   participant: User;
   source: "whatsapp" | "instagram" | "messenger" | "tiktok" | "sms" | "email";
-  stage: string;
+  stage?: string;
   recipientNumber: string;
   lastMessage: string;
   unreadCount: number;
