@@ -19,6 +19,7 @@ import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, Fil
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
+import { proxyMediaUrl } from "@/lib/api";
 
 interface ChatMessageAreaProps {
   conversation: Conversation;
@@ -40,6 +41,43 @@ interface ChatMessageAreaProps {
   hasOlderMessages?: boolean;
   isLoadingOlderMessages?: boolean;
   onLoadOlderMessages?: () => void;
+}
+
+// Video message thumbnail. Attempts to show the first frame via
+// preload="metadata"; falls back to a static slate card with the filename
+// when the browser can't extract a poster (unsupported codec, CORS, etc.).
+// Clicking always opens VideoLightbox with native controls + autoPlay.
+function VideoThumbnail({ src, name }: { src: string; name: string }) {
+  const [posterFailed, setPosterFailed] = React.useState(false);
+  // Route through the backend proxy to bypass CDN CORS restrictions and
+  // Bearer-auth requirements that block <video> / range requests in the browser.
+  const proxied = proxyMediaUrl(src);
+  return (
+    <VideoLightbox src={proxied} alt={name}>
+      <div className="relative">
+        {posterFailed ? (
+          <div className="flex min-h-[130px] min-w-[220px] flex-col items-center justify-center gap-2 rounded-lg bg-slate-800 px-6 py-5">
+            <Video className="h-8 w-8 text-slate-400" />
+            <span className="max-w-[180px] truncate text-xs text-slate-400">{name}</span>
+          </div>
+        ) : (
+          <video
+            src={proxied}
+            preload="metadata"
+            muted
+            playsInline
+            onError={() => setPosterFailed(true)}
+            className="max-h-[250px] max-w-full rounded-lg object-cover bg-black transition-transform group-hover:scale-[1.02]"
+          />
+        )}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/25 opacity-90 transition-opacity group-hover:opacity-100">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/90 shadow-lg">
+            <Play className="h-6 w-6 translate-x-0.5 text-slate-900" fill="currentColor" />
+          </div>
+        </div>
+      </div>
+    </VideoLightbox>
+  );
 }
 
 export function ChatMessageArea({
@@ -846,6 +884,25 @@ export function ChatMessageArea({
         )}
         <div className="flex flex-col gap-4 py-4">
           {conversation.messages.map((message, index) => {
+            // GHL emits this literal body when the inbound WhatsApp message
+            // type (sticker, location, contact card, ephemeral, etc.) is not
+            // processable by GHL. Render it as a subtle system notice so it
+            // doesn't look like a broken chat bubble.
+            if (
+              !message.attachment &&
+              typeof message.text === "string" &&
+              /message type (is currently |)not supported/i.test(message.text)
+            ) {
+              return (
+                <div key={message.id} className="flex justify-center w-full my-1">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/50 italic px-3 py-1 bg-muted/30 rounded-full border border-muted/50 select-none">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    Tipo de mensaje no compatible
+                  </span>
+                </div>
+              );
+            }
+
             if (message.systemEvent && message.systemEvent.type === "opportunity_moved") {
               return (
                 <div key={message.id} className="flex justify-center w-full my-4">
@@ -977,30 +1034,13 @@ export function ChatMessageArea({
                             />
                           </ImageLightbox>
                         ) : (message.attachment.type === "video") ? (
-                          <VideoLightbox
+                          <VideoThumbnail
                             src={message.attachment.url}
-                            alt={message.attachment.name}
-                          >
-                            <div className="relative">
-                              {/* First-frame poster via preload="metadata" —
-                                  cheap preview without a separate thumbnail. */}
-                              <video
-                                src={message.attachment.url}
-                                preload="metadata"
-                                muted
-                                playsInline
-                                className="max-h-[250px] max-w-full rounded-lg object-cover bg-black transition-transform group-hover:scale-[1.02]"
-                              />
-                              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/25 opacity-90 transition-opacity group-hover:opacity-100">
-                                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/90 shadow-lg">
-                                  <Play className="h-6 w-6 translate-x-0.5 text-slate-900" fill="currentColor" />
-                                </div>
-                              </div>
-                            </div>
-                          </VideoLightbox>
+                            name={message.attachment.name}
+                          />
                         ) : (message.attachment.type === "audio") ? (
                           <AudioPlayer
-                            src={message.attachment.url}
+                            src={proxyMediaUrl(message.attachment.url)}
                             variant={isMe ? "light" : "dark"}
                             fallbackDuration={message.attachment.duration}
                           />

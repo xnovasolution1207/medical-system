@@ -26,6 +26,13 @@ export interface BootstrapPayload {
 const BACKEND_ORIGIN = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/+$/, "");
 const API_BASE = `${BACKEND_ORIGIN}/api`;
 
+// Returns a URL that streams the given media file through the backend proxy.
+// This sidesteps CORS restrictions and auth requirements on GHL's CDN for
+// video and audio resources (which are more strictly enforced than images).
+export function proxyMediaUrl(url: string): string {
+  return `${API_BASE}/media?url=${encodeURIComponent(url)}`;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
