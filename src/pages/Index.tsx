@@ -285,6 +285,46 @@ export default function Index() {
           ...prev,
           tasks: prev.tasks.map((t) => (t.id === event.task.id ? event.task : t)),
         }));
+      } else if (event.type === "lead.updated") {
+        updateBootstrap((prev) => {
+          // 1. Patch the participant on every conversation for this contact.
+          let conversations = prev.conversations.map((c) =>
+            c.contactId === event.contactId || c.participant.id === event.contactId
+              ? { ...c, participant: { ...c.participant, ...event.lead.contact } }
+              : c
+          );
+
+          // 2. Upsert the conversation, most-recent-first.
+          const inc = event.lead.conversation;
+          if (inc) {
+            const idx = conversations.findIndex((c) => c.id === inc.id);
+            if (idx === -1) {
+              // New conversation — prepend so it appears at the top.
+              conversations = [inc, ...conversations];
+            } else {
+              const existing = conversations[idx];
+              // Preserve the richer local message list; append only genuinely
+              // new messages from GHL (identified by id not yet in cache).
+              const existingIds = new Set(existing.messages.map((m) => m.id));
+              const freshMsgs = inc.messages.filter((m) => !existingIds.has(m.id));
+              const merged: Conversation = {
+                ...inc,
+                messages: freshMsgs.length
+                  ? [...existing.messages, ...freshMsgs]
+                  : existing.messages,
+                scheduledMessages:
+                  existing.scheduledMessages ?? inc.scheduledMessages,
+              };
+              conversations = moveConversationToFront(conversations, inc.id, merged);
+            }
+          }
+
+          // 3. Upsert tasks (add new, update existing, never remove).
+          const taskMap = new Map(prev.tasks.map((t) => [t.id, t]));
+          for (const t of event.lead.tasks) taskMap.set(t.id, t);
+
+          return { ...prev, conversations, tasks: Array.from(taskMap.values()) };
+        });
       }
     });
     return () => sub.close();

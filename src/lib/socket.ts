@@ -1,6 +1,6 @@
 // Thin WebSocket subscriber. Reconnects with exponential backoff so a backend
 // restart during dev doesn't require a page reload.
-import type { Conversation, Message, Opportunity, Task, User } from "@/components/chat/types";
+import type { Conversation, LeadBundle, Message, Opportunity, Task, User } from "@/components/chat/types";
 
 export type WsEvent =
   | { type: "hello"; clientId: string }
@@ -9,7 +9,8 @@ export type WsEvent =
   | { type: "contact.updated"; contactId: string; patch: Partial<User> }
   | { type: "opportunity.updated"; opportunity: Opportunity }
   | { type: "task.created"; task: Task }
-  | { type: "task.updated"; task: Task };
+  | { type: "task.updated"; task: Task }
+  | { type: "lead.updated"; contactId: string; lead: LeadBundle };
 
 export type WsListener = (event: WsEvent) => void;
 

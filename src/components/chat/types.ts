@@ -137,3 +137,10 @@ export type Task = {
   status: "pending" | "completed";
   conversationId: string;
 };
+
+export type LeadBundle = {
+  contactId: string;
+  contact: User;
+  conversation: Conversation | null;
+  tasks: Task[];
+};
