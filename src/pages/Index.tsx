@@ -802,14 +802,45 @@ export default function Index() {
     if (!activeConversation?.contactId) return;
     const contactId = activeConversation.contactId;
     await api.contacts.delete(contactId);
-    updateBootstrap((prev) => ({
-      ...prev,
-      conversations: prev.conversations.filter(
+
+    // Drop the deleted contact's conversations and remember how many slots
+    // opened up — we'll backfill the same number from the next page so the
+    // sidebar window stays the same size after delete.
+    let removedCount = 0;
+    let cursorForBackfill: number | null = null;
+    updateBootstrap((prev) => {
+      const filtered = prev.conversations.filter(
         (c) => c.contactId !== contactId && c.participant.id !== contactId
-      ),
-    }));
+      );
+      removedCount = prev.conversations.length - filtered.length;
+      cursorForBackfill = prev.conversationsNextCursor;
+      return { ...prev, conversations: filtered };
+    });
     setActiveId(null);
     toast({ title: "Lead eliminado", description: "El contacto ha sido eliminado correctamente." });
+
+    // Pull `removedCount` older conversations from GHL using the existing
+    // pagination cursor. No-op when we've already loaded everything
+    // (`conversationsNextCursor === null`).
+    if (removedCount > 0 && cursorForBackfill != null) {
+      try {
+        const result = await api.conversations.list({
+          limit: removedCount,
+          startAfterDate: cursorForBackfill,
+        });
+        updateBootstrap((prev) => {
+          const existingIds = new Set(prev.conversations.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return {
+            ...prev,
+            conversations: fresh.length ? [...prev.conversations, ...fresh] : prev.conversations,
+            conversationsNextCursor: result.nextCursor,
+          };
+        });
+      } catch (err) {
+        console.error("backfill after delete failed", err);
+      }
+    }
   }, [activeConversation, updateBootstrap, toast]);
 
   const setStages = useCallback(
