@@ -204,6 +204,9 @@ export default function Index() {
   // setQueryData, exactly as the new architecture specifies.
   useEffect(() => {
     const sub = subscribe((event) => {
+      // Inspect every incoming WS event before it's merged into the React
+      // Query cache. Helpful for debugging the live pipeline.
+      console.log("[ws] incoming", event.type, event);
       if (event.type === "message.created") {
         updateBootstrap((prev) => {
           const idx = prev.conversations.findIndex((c) => c.id === event.conversationId);
