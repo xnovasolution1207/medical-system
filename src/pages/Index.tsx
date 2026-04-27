@@ -218,12 +218,18 @@ export default function Index() {
             currentUserIdRef.current
           );
           if (nextMessages === c.messages) return prev;
+          // Increment the lead's unread badge only for inbound messages (the
+          // outbound echoes from our own POST shouldn't count). The agent-send
+          // path resets to 0 separately.
+          const isInbound = event.message.senderId !== currentUserIdRef.current;
+          const nextUnreadCount = isInbound ? (c.unreadCount ?? 0) + 1 : c.unreadCount;
           return {
             ...prev,
             conversations: moveConversationToFront(prev.conversations, c.id, {
               messages: nextMessages,
               lastMessage: event.message.text || c.lastMessage,
               timestamp: event.message.timestamp || c.timestamp,
+              unreadCount: nextUnreadCount,
             }),
           };
         });
@@ -388,6 +394,8 @@ export default function Index() {
             messages: [...c.messages, optimistic],
             lastMessage: text || "Archivo adjunto",
             timestamp: optimistic.timestamp,
+            // Agent/manager replied → the lead's chat is now considered seen.
+            unreadCount: 0,
             ...(reminder ? { activeReminder: reminder } : {}),
           }),
         };
