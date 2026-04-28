@@ -82,6 +82,31 @@ function VideoThumbnail({ src, name }: { src: string; name: string }) {
   );
 }
 
+// Display labels for the channel composer tabs. `internal` is "Comentarios
+// Interno" rather than a channel because it's the agent-private notes tab,
+// not an outbound channel.
+const CHANNEL_LABELS: Record<NonNullable<Message["channel"]>, string> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  messenger: "Messenger",
+  tiktok: "TikTok",
+  sms: "SMS",
+  email: "Email",
+  internal: "Comentarios Interno",
+};
+
+// Stable left-to-right order for the channel tabs. Channels not in this list
+// won't render — every channel the lead actually uses must be included here.
+const CHANNEL_ORDER: Array<NonNullable<Message["channel"]>> = [
+  "whatsapp",
+  "instagram",
+  "messenger",
+  "tiktok",
+  "sms",
+  "email",
+  "internal",
+];
+
 export function ChatMessageArea({
   conversation,
   currentUser,
@@ -107,7 +132,22 @@ export function ChatMessageArea({
   const [inputText, setInputText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [activeChannel, setActiveChannel] = useState<"whatsapp" | "sms" | "email" | "internal">("whatsapp");
+  // The composer opens on the lead's primary channel. The component is
+  // remounted (key={conversation.id} in Index.tsx) when switching leads, so a
+  // useState initializer is enough — we don't need to re-derive on prop change.
+  const [activeChannel, setActiveChannel] = useState<NonNullable<Message["channel"]>>(
+    () => conversation.source ?? "whatsapp"
+  );
+
+  // Channels visible as tabs: the conversation's primary source + any channel
+  // the message history actually uses + always-internal (private notes).
+  const availableChannels = (() => {
+    const seen = new Set<NonNullable<Message["channel"]>>([conversation.source, "internal"]);
+    for (const m of conversation.messages) {
+      if (m.channel) seen.add(m.channel);
+    }
+    return CHANNEL_ORDER.filter((c) => seen.has(c));
+  })();
   const [activeReminder, setActiveReminder] = useState<string | null>(conversation.activeReminder || null);
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -1193,12 +1233,22 @@ export function ChatMessageArea({
       <div className="border-t bg-card flex flex-col">
         {/* Channel Tabs */}
         <div className="px-4 pt-2">
-          <Tabs value={activeChannel} onValueChange={(v) => setActiveChannel(v as "whatsapp" | "sms" | "email" | "internal")}>
+          <Tabs value={activeChannel} onValueChange={(v) => setActiveChannel(v as NonNullable<Message["channel"]>)}>
             <TabsList className="h-8 bg-muted/50">
-              <TabsTrigger value="whatsapp" className="text-xs h-6 px-4 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200">WhatsApp</TabsTrigger>
-              <TabsTrigger value="sms" className="text-xs h-6 px-4 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200">SMS</TabsTrigger>
-              <TabsTrigger value="email" className="text-xs h-6 px-4 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200">Email</TabsTrigger>
-              <TabsTrigger value="internal" className="text-xs h-6 px-4 data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800 dark:data-[state=active]:bg-amber-500/20 dark:data-[state=active]:text-amber-400">Comentarios Interno</TabsTrigger>
+              {availableChannels.map((ch) => (
+                <TabsTrigger
+                  key={ch}
+                  value={ch}
+                  className={cn(
+                    "text-xs h-6 px-4",
+                    ch === "internal"
+                      ? "data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800 dark:data-[state=active]:bg-amber-500/20 dark:data-[state=active]:text-amber-400"
+                      : "data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200"
+                  )}
+                >
+                  {CHANNEL_LABELS[ch]}
+                </TabsTrigger>
+              ))}
             </TabsList>
           </Tabs>
         </div>
@@ -1325,7 +1375,7 @@ export function ChatMessageArea({
                 e.preventDefault();
                 e.currentTarget.form?.requestSubmit();
               }}
-              placeholder={activeChannel === "internal" ? "Escribe un comentario interno..." : `Escribe un mensaje por ${activeChannel === 'whatsapp' ? 'WhatsApp' : activeChannel.toUpperCase()}...`}
+              placeholder={activeChannel === "internal" ? "Escribe un comentario interno..." : `Escribe un mensaje por ${CHANNEL_LABELS[activeChannel]}...`}
               className="min-h-[80px] w-full resize-none border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:ring-0 outline-none"
             />
             
