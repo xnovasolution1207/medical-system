@@ -950,6 +950,38 @@ export default function Index() {
     [updateBootstrap]
   );
 
+  const handleCreateOpportunity = useCallback(
+    async (payload: {
+      name: string;
+      contactId: string;
+      pipelineId: string;
+      stageId: string;
+      monetaryValue?: number;
+    }) => {
+      try {
+        const created = await api.opportunities.create(payload);
+        updateBootstrap((prev) => ({
+          ...prev,
+          opportunities: prev.opportunities.some((o) => o.id === created.id)
+            ? prev.opportunities
+            : [created, ...prev.opportunities],
+        }));
+        toast({
+          title: "Oportunidad creada",
+          description: `${payload.name} se agregó al pipeline.`,
+        });
+      } catch (err) {
+        console.error("create opportunity failed", err);
+        toast({
+          title: "No se pudo crear la oportunidad",
+          description: String((err as Error)?.message ?? err),
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, updateBootstrap]
+  );
+
   const handleDeleteLead = useCallback(async (conversationId?: string) => {
     // Resolve the target: explicit id when called from the sidebar dropdown,
     // otherwise the currently active conversation (chat header trash icon).
@@ -1095,7 +1127,9 @@ export default function Index() {
           <OpportunitiesView
             opportunities={opportunities}
             pipeline={opportunitiesPipeline}
+            conversations={conversations}
             onMoveOpportunity={handleMoveOpportunity}
+            onCreateOpportunity={handleCreateOpportunity}
           />
         </div>
       ) : (

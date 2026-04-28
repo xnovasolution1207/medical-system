@@ -1,44 +1,252 @@
-import React, { useState } from "react";
-import { Search, Filter, ArrowUpDown, Download, Plus, Settings, LayoutGrid, List as ListIcon, Phone, Calendar as CalendarIcon, Globe } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import {
+  Search,
+  Filter,
+  ArrowUpDown,
+  Download,
+  Plus,
+  Settings,
+  LayoutGrid,
+  List as ListIcon,
+  Phone,
+  Calendar as CalendarIcon,
+  Globe,
+  Check,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { Opportunity, Pipeline } from "./types";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import type { Conversation, Opportunity, Pipeline } from "./types";
 
 interface OpportunitiesViewProps {
   opportunities: Opportunity[];
   pipeline?: Pipeline;
+  // Source for the "Crear oportunidad" contact picker. We pull contacts from
+  // the conversations the SPA has already loaded — without `users.readonly`
+  // (and without a separate /contacts/search endpoint exposed to the SPA),
+  // this is the most pragmatic source. Not provided ⇒ picker shows "no
+  // contactos disponibles".
+  conversations?: Conversation[];
   onMoveOpportunity?: (id: string, stageId: string) => void;
+  onCreateOpportunity?: (payload: {
+    name: string;
+    contactId: string;
+    pipelineId: string;
+    stageId: string;
+    monetaryValue?: number;
+  }) => void | Promise<void>;
 }
 
-export function OpportunitiesView({ opportunities, pipeline, onMoveOpportunity }: OpportunitiesViewProps) {
+type SortKey =
+  | "recientes"
+  | "antiguos"
+  | "nombre-asc"
+  | "nombre-desc"
+  | "valor-desc"
+  | "valor-asc";
+
+const SORT_LABELS: Record<SortKey, string> = {
+  recientes: "Más recientes",
+  antiguos: "Más antiguos",
+  "nombre-asc": "Nombre A-Z",
+  "nombre-desc": "Nombre Z-A",
+  "valor-desc": "Valor (mayor a menor)",
+  "valor-asc": "Valor (menor a mayor)",
+};
+
+const STATUS_LABELS: Record<Opportunity["status"], string> = {
+  open: "Abierta",
+  won: "Ganada",
+  lost: "Perdida",
+  abandoned: "Abandonada",
+};
+
+export function OpportunitiesView({
+  opportunities,
+  pipeline,
+  conversations,
+  onMoveOpportunity,
+  onCreateOpportunity,
+}: OpportunitiesViewProps) {
+  const { toast } = useToast();
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [searchQuery, setSearchQuery] = useState("");
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
 
-  const stages = pipeline?.stages ?? [];
-  const stageLookup = new Map(stages.map((s) => [s.id, s.label] as const));
+  // Filtros Avanzados
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [sourceFilters, setSourceFilters] = useState<string[]>([]);
+  const [stageFilters, setStageFilters] = useState<string[]>([]);
 
-  const filteredOpps = opportunities.filter((o) =>
-    o.name.toLowerCase().includes(searchQuery.toLowerCase())
+  // Ordenar
+  const [sortKey, setSortKey] = useState<SortKey>("recientes");
+
+  // Crear oportunidad dialog
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newOppContactId, setNewOppContactId] = useState("");
+  const [newOppName, setNewOppName] = useState("");
+  const [newOppStageId, setNewOppStageId] = useState("");
+  const [newOppValue, setNewOppValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const stages = pipeline?.stages ?? [];
+  const stageLookup = useMemo(
+    () => new Map(stages.map((s) => [s.id, s.label] as const)),
+    [stages]
   );
+
+  // Unique source values seen in current opportunities (for the filter popover).
+  const availableSources = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of opportunities) if (o.source) set.add(o.source);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [opportunities]);
+
+  // Deduped contact list for the create-dialog Select. Falls back to the
+  // participant id when contactId isn't on the conversation (older rows).
+  const uniqueContacts = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { contactId: string; name: string }[] = [];
+    for (const c of conversations ?? []) {
+      const id = c.contactId ?? c.participant.id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push({ contactId: id, name: c.participant.name });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }, [conversations]);
+
+  // Filter + sort chain. Search + advanced filters narrow first; sort runs on
+  // the result. `Opportunity.date` is a localized display string (e.g.
+  // "28 abr 2026") — lexical compare is good-enough for v1 ordering; if it
+  // becomes an issue, plumb `createdAtIso` through `toFrontendOpportunity`.
+  const filteredOpps = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let list = opportunities.filter((o) => o.name.toLowerCase().includes(q));
+    if (statusFilters.length) list = list.filter((o) => statusFilters.includes(o.status));
+    if (sourceFilters.length) list = list.filter((o) => sourceFilters.includes(o.source));
+    if (stageFilters.length) list = list.filter((o) => stageFilters.includes(o.stageId));
+
+    const sorted = [...list];
+    switch (sortKey) {
+      case "nombre-asc":
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case "nombre-desc":
+        sorted.sort((a, b) => b.name.localeCompare(a.name));
+        break;
+      case "valor-desc":
+        sorted.sort((a, b) => (b.monetaryValue ?? 0) - (a.monetaryValue ?? 0));
+        break;
+      case "valor-asc":
+        sorted.sort((a, b) => (a.monetaryValue ?? 0) - (b.monetaryValue ?? 0));
+        break;
+      case "antiguos":
+        sorted.sort((a, b) => a.date.localeCompare(b.date));
+        break;
+      case "recientes":
+      default:
+        sorted.sort((a, b) => b.date.localeCompare(a.date));
+        break;
+    }
+    return sorted;
+  }, [opportunities, searchQuery, statusFilters, sourceFilters, stageFilters, sortKey]);
+
+  const activeFilterCount =
+    statusFilters.length + sourceFilters.length + stageFilters.length;
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedOppId(id);
     e.dataTransfer.effectAllowed = "move";
   };
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   };
-
   const handleDrop = (e: React.DragEvent, targetStageId: string) => {
     e.preventDefault();
     if (draggedOppId) {
       onMoveOpportunity?.(draggedOppId, targetStageId);
       setDraggedOppId(null);
+    }
+  };
+
+  const toggleFilter = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string
+  ) => {
+    setter((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
+
+  const clearFilters = () => {
+    setStatusFilters([]);
+    setSourceFilters([]);
+    setStageFilters([]);
+  };
+
+  const handleComingSoon = () => {
+    toast({
+      title: "Próximamente",
+      description: "Esta función estará disponible más adelante.",
+    });
+  };
+
+  const canSubmit =
+    !isSubmitting &&
+    Boolean(newOppContactId) &&
+    Boolean(newOppName.trim()) &&
+    Boolean(newOppStageId) &&
+    Boolean(pipeline);
+
+  const handleSubmitCreate = async () => {
+    if (!pipeline || !canSubmit) return;
+    setIsSubmitting(true);
+    try {
+      await onCreateOpportunity?.({
+        name: newOppName.trim(),
+        contactId: newOppContactId,
+        pipelineId: pipeline.id,
+        stageId: newOppStageId,
+        monetaryValue: newOppValue ? Number(newOppValue) : undefined,
+      });
+      // Reset and close.
+      setNewOppContactId("");
+      setNewOppName("");
+      setNewOppStageId("");
+      setNewOppValue("");
+      setIsCreateOpen(false);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -50,46 +258,174 @@ export function OpportunitiesView({ opportunities, pipeline, onMoveOpportunity }
         <div className="flex items-center gap-2">
           <div className="relative w-64 shrink-0">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Buscar oportunidad..." 
+            <Input
+              placeholder="Buscar oportunidad..."
               className="pl-8 bg-muted/50"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button variant="outline" className="gap-2 shrink-0">
-            <Filter className="h-4 w-4" />
-            Filtros Avanzados
-          </Button>
-          <Button variant="outline" className="gap-2 shrink-0">
-            <ArrowUpDown className="h-4 w-4" />
-            Ordenar
-          </Button>
-          <Button variant="outline" className="gap-2 shrink-0">
+
+          {/* Filtros Avanzados */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="gap-2 shrink-0">
+                <Filter className="h-4 w-4" />
+                Filtros Avanzados
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 p-0">
+              <div className="max-h-[60vh] overflow-y-auto p-3 space-y-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Estado
+                  </p>
+                  {(Object.keys(STATUS_LABELS) as Opportunity["status"][]).map((s) => (
+                    <label
+                      key={s}
+                      className="flex items-center gap-2 text-sm cursor-pointer select-none"
+                    >
+                      <Checkbox
+                        checked={statusFilters.includes(s)}
+                        onCheckedChange={() => toggleFilter(setStatusFilters, s)}
+                      />
+                      <span>{STATUS_LABELS[s]}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {availableSources.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Origen
+                    </p>
+                    {availableSources.map((src) => (
+                      <label
+                        key={src}
+                        className="flex items-center gap-2 text-sm cursor-pointer select-none"
+                      >
+                        <Checkbox
+                          checked={sourceFilters.includes(src)}
+                          onCheckedChange={() => toggleFilter(setSourceFilters, src)}
+                        />
+                        <span className="truncate">{src}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {stages.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Etapa
+                    </p>
+                    {stages.map((s) => (
+                      <label
+                        key={s.id}
+                        className="flex items-center gap-2 text-sm cursor-pointer select-none"
+                      >
+                        <Checkbox
+                          checked={stageFilters.includes(s.id)}
+                          onCheckedChange={() => toggleFilter(setStageFilters, s.id)}
+                        />
+                        <span className="truncate">{s.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="border-t p-2 flex justify-between items-center bg-muted/30">
+                <span className="text-xs text-muted-foreground">
+                  {activeFilterCount === 0
+                    ? "Sin filtros activos"
+                    : `${activeFilterCount} filtro${activeFilterCount === 1 ? "" : "s"} activo${activeFilterCount === 1 ? "" : "s"}`}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={clearFilters}
+                  disabled={activeFilterCount === 0}
+                >
+                  Limpiar
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Ordenar */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2 shrink-0">
+                <ArrowUpDown className="h-4 w-4" />
+                Ordenar
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Ordenar por
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={sortKey}
+                onValueChange={(v) => setSortKey(v as SortKey)}
+              >
+                {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                  <DropdownMenuRadioItem key={key} value={key}>
+                    {SORT_LABELS[key]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Importar — stubbed (no GHL bulk-create endpoint exposed) */}
+          <Button variant="outline" className="gap-2 shrink-0" onClick={handleComingSoon}>
             <Download className="h-4 w-4" />
             Importar
           </Button>
-          <Button variant="outline" className="gap-2 shrink-0">
+
+          {/* Gestionar campos — stubbed (GHL pipeline-stage CRUD isn't in the v2 API) */}
+          <Button variant="outline" className="gap-2 shrink-0" onClick={handleComingSoon}>
             <Settings className="h-4 w-4" />
             Gestionar campos
           </Button>
-          <Button className="gap-2 shrink-0">
+
+          {/* Crear oportunidad */}
+          <Button
+            className="gap-2 shrink-0"
+            onClick={() => {
+              if (!pipeline) {
+                toast({
+                  title: "No hay pipeline disponible",
+                  description: "No se encontró un pipeline en GoHighLevel.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              setIsCreateOpen(true);
+            }}
+          >
             <Plus className="h-4 w-4" />
             Crear oportunidad
           </Button>
-          
+
           <div className="flex items-center bg-muted/50 rounded-md p-1 shrink-0">
-            <Button 
-              variant={viewMode === "board" ? "secondary" : "ghost"} 
-              size="icon" 
+            <Button
+              variant={viewMode === "board" ? "secondary" : "ghost"}
+              size="icon"
               className="h-8 w-8"
               onClick={() => setViewMode("board")}
             >
               <LayoutGrid className="h-4 w-4" />
             </Button>
-            <Button 
-              variant={viewMode === "list" ? "secondary" : "ghost"} 
-              size="icon" 
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="icon"
               className="h-8 w-8"
               onClick={() => setViewMode("list")}
             >
@@ -202,6 +538,117 @@ export function OpportunitiesView({ opportunities, pipeline, onMoveOpportunity }
           </div>
         )}
       </div>
+
+      {/* Crear oportunidad dialog */}
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open) => {
+          // Don't let the user close mid-submit; otherwise the toast/state can
+          // race with the dialog teardown.
+          if (!isSubmitting) setIsCreateOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Crear oportunidad</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Contacto</Label>
+              {uniqueContacts.length === 0 ? (
+                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground text-center">
+                  No hay contactos cargados todavía. Abre la bandeja de
+                  conversaciones primero para que aparezcan aquí.
+                </div>
+              ) : (
+                <Select
+                  value={newOppContactId}
+                  onValueChange={(v) => {
+                    setNewOppContactId(v);
+                    // Auto-fill the opportunity name with the contact's
+                    // display name on first selection so the agent doesn't
+                    // have to retype it.
+                    const c = uniqueContacts.find((x) => x.contactId === v);
+                    if (c && !newOppName.trim()) setNewOppName(c.name);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un contacto" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {uniqueContacts.map((c) => (
+                      <SelectItem key={c.contactId} value={c.contactId}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="new-opp-name">Nombre de la oportunidad</Label>
+              <Input
+                id="new-opp-name"
+                value={newOppName}
+                onChange={(e) => setNewOppName(e.target.value)}
+                placeholder="Ej. Cotización - Sept 2026"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Etapa</Label>
+              <Select value={newOppStageId} onValueChange={setNewOppStageId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una etapa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {stages.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      <div className="flex items-center gap-2">
+                        <div className={cn("h-2 w-2 rounded-full", s.color)} />
+                        <span>{s.label}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="new-opp-value">Valor monetario (opcional)</Label>
+              <Input
+                id="new-opp-value"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={newOppValue}
+                onChange={(e) => setNewOppValue(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={isSubmitting}
+              onClick={() => setIsCreateOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button disabled={!canSubmit} onClick={handleSubmitCreate}>
+              {isSubmitting ? (
+                "Creando…"
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <Check className="h-4 w-4" />
+                  Crear
+                </span>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
