@@ -28,6 +28,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -58,6 +68,10 @@ interface ChatSidebarProps {
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   isSearching?: boolean;
+  // May be async — the parent kicks off an HTTP delete + backfill chain.
+  // We await it so the dialog stays open ("Eliminando…") until the work
+  // finishes.
+  onDeleteConversation?: (id: string) => void | Promise<void>;
 }
 
 export function ChatSidebar({
@@ -77,6 +91,7 @@ export function ChatSidebar({
   searchValue,
   onSearchChange,
   isSearching = false,
+  onDeleteConversation,
 }: ChatSidebarProps) {
   const [filter, setFilter] = useState<"all" | "unread" | "recent" | "favorites">("all");
   // Fallback local search for standalone/test usage when the parent doesn't
@@ -92,6 +107,12 @@ export function ChatSidebar({
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
+  // Delete-confirmation state. We keep the lead's name alongside the id so
+  // the dialog copy can read "Se eliminará a {name}…" without re-deriving it
+  // from the conversations array at render time (the row may have already
+  // been optimistically removed by the time the dialog re-renders).
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
 
   const [builderFilters, setBuilderFilters] = useState<FilterCondition[]>([]);
@@ -599,7 +620,13 @@ export function ChatSidebar({
                               <span>Marcar como leído</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive cursor-pointer">
+                            <DropdownMenuItem
+                              className="gap-2 text-destructive focus:text-destructive cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPendingDelete({ id: conv.id, name: conv.participant.name });
+                              }}
+                            >
                               <Trash2 className="h-4 w-4" />
                               <span>Eliminar</span>
                             </DropdownMenuItem>
@@ -699,6 +726,46 @@ export function ChatSidebar({
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar lead?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará permanentemente a{" "}
+              <span className="font-semibold text-foreground">{pendingDelete?.name}</span>{" "}
+              y todas sus conversaciones. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async (e) => {
+                // Don't let the AlertDialog close before the async work
+                // finishes — onDeleteConversation triggers an HTTP delete +
+                // backfill chain in the parent.
+                e.preventDefault();
+                if (!pendingDelete) return;
+                setIsDeleting(true);
+                try {
+                  await onDeleteConversation?.(pendingDelete.id);
+                } finally {
+                  setIsDeleting(false);
+                  setPendingDelete(null);
+                }
+              }}
+            >
+              {isDeleting ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

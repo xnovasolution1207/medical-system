@@ -33,6 +33,13 @@ const FALLBACK_USER: User = { id: "agent", name: "Agente de Ventas", status: "on
 // backend is webhook-driven, so the WS stream is the only update channel).
 const BOOTSTRAP_QUERY_KEY = ["bootstrap"] as const;
 
+// Conversation rows we synthesize for ContactCreate webhooks that fire
+// before any GHL conversation exists yet. They use this id prefix so we can
+// recognise them and avoid hitting GHL with a non-existent conversation id.
+const STUB_CONV_PREFIX = "pending-";
+const isStubConvId = (id: string | null | undefined): boolean =>
+  typeof id === "string" && id.startsWith(STUB_CONV_PREFIX);
+
 // Reconcile an incoming message (from WS or HTTP) against the local list.
 //
 // Three sources can echo our outbound message back to us, in any order:
@@ -185,10 +192,19 @@ export default function Index() {
   const currentUserIdRef = useRef<string>(FALLBACK_USER.id);
   const isLoadingMoreConversationsRef = useRef(false);
   const loadingOlderForRef = useRef<string | null>(null);
+  // Mirrors `activeId` so the WS lead.updated handler can transfer focus
+  // from a stub row to the real conversation row without depending on
+  // `activeId` (which would force the WS subscription to re-establish on
+  // every selection change).
+  const activeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     currentUserIdRef.current = currentUser.id;
   }, [currentUser.id]);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   // Auto-select the first conversation once the bootstrap arrives (only when
   // the user hasn't already picked one).
@@ -286,6 +302,19 @@ export default function Index() {
           tasks: prev.tasks.map((t) => (t.id === event.task.id ? event.task : t)),
         }));
       } else if (event.type === "lead.updated") {
+        // Stub id used for contact-only ContactCreate events that arrive
+        // before any conversation exists in GHL. We use a deterministic
+        // prefix so the row can be replaced when the real conversation
+        // (from the first inbound message) shows up.
+        const stubId = `pending-${event.contactId}`;
+        const realConv = event.lead.conversation;
+        // If the user is currently viewing the stub and the real conversation
+        // just arrived, transfer focus so the chat area stops showing an
+        // empty state. We do this outside updateBootstrap so the activeId
+        // change happens once per event, not once per cache write.
+        if (realConv && activeIdRef.current === stubId) {
+          setActiveId(realConv.id);
+        }
         updateBootstrap((prev) => {
           // 1. Patch the participant on every conversation for this contact.
           let conversations = prev.conversations.map((c) =>
@@ -295,12 +324,7 @@ export default function Index() {
           );
 
           // 2. Upsert the conversation, most-recent-first.
-          const inc = event.lead.conversation;
-          // Stub id used for contact-only ContactCreate events that arrive
-          // before any conversation exists in GHL. We use a deterministic
-          // prefix so the row can be replaced when the real conversation
-          // (from the first inbound message) shows up.
-          const stubId = `pending-${event.contactId}`;
+          const inc = realConv;
           if (inc) {
             // Real conversation arrived — drop any stub we may have
             // synthesized earlier so the lead doesn't appear twice.
@@ -368,6 +392,11 @@ export default function Index() {
   // ---- Lazy-hydrate full message list when a conversation is selected ----
   useEffect(() => {
     if (!activeId) return;
+    // Stub rows (id="pending-<contactId>") are placeholders we synthesize for
+    // ContactCreate webhooks that arrive before any conversation exists in
+    // GHL. They have no real GHL conversation to fetch — skip until the row
+    // is replaced by the real conversation via the next lead.updated event.
+    if (isStubConvId(activeId)) return;
     if (hydratedConversations.current.has(activeId)) return;
     hydratedConversations.current.add(activeId);
     api.conversations
@@ -443,6 +472,15 @@ export default function Index() {
       replyTo?: Message["replyTo"]
     ) => {
       if (!activeId) return;
+      if (isStubConvId(activeId)) {
+        toast({
+          title: "Conversación no disponible",
+          description:
+            "Este lead aún no tiene una conversación. Espera a que envíe el primer mensaje.",
+          variant: "destructive",
+        });
+        return;
+      }
       const optimisticId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const optimistic: Message = {
         id: optimisticId,
@@ -522,6 +560,15 @@ export default function Index() {
 
   const handleScheduleMessage = useCallback(
     (conversationId: string, text: string, date: string, channel: Message["channel"]) => {
+      if (isStubConvId(conversationId)) {
+        toast({
+          title: "Conversación no disponible",
+          description:
+            "Este lead aún no tiene una conversación. Espera a que envíe el primer mensaje.",
+          variant: "destructive",
+        });
+        return;
+      }
       const localChannel = (channel as "sms" | "email" | "whatsapp" | "internal") ?? "sms";
       const optimisticId = `sch-tmp-${Date.now()}`;
       updateBootstrap((prev) => ({
@@ -557,7 +604,7 @@ export default function Index() {
         })
         .catch((err) => console.error("schedule failed", err));
     },
-    [updateBootstrap]
+    [toast, updateBootstrap]
   );
 
   const handleCancelScheduledMessage = useCallback(
@@ -573,6 +620,7 @@ export default function Index() {
             : c
         ),
       }));
+      if (isStubConvId(conversationId)) return;
       api.conversations
         .cancelScheduled(conversationId, messageId)
         .catch((err) => console.error("cancel scheduled failed", err));
@@ -596,7 +644,13 @@ export default function Index() {
           : prev.opportunities,
       }));
 
-      api.conversations.patch(id, { stage }).catch((err) => console.error("stage update failed", err));
+      // GHL flag-store endpoints are conversation-keyed; stub rows have no
+      // backing GHL conversation, so skip the patch. Local state still
+      // updates above so the UI is responsive; flags will start persisting
+      // once the real conversation arrives.
+      if (!isStubConvId(id)) {
+        api.conversations.patch(id, { stage }).catch((err) => console.error("stage update failed", err));
+      }
       if (opp && opp.stageId !== stage) {
         api.opportunities
           .move(opp.id, stage)
@@ -614,6 +668,7 @@ export default function Index() {
           c.id === id ? { ...c, activeReminder: undefined } : c
         ),
       }));
+      if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { activeReminder: null })
         .catch((err) => console.error("clear reminder failed", err));
@@ -629,6 +684,7 @@ export default function Index() {
           c.id === id ? { ...c, activeReminder: reminder } : c
         ),
       }));
+      if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { activeReminder: reminder })
         .catch((err) => console.error("set reminder failed", err));
@@ -720,6 +776,7 @@ export default function Index() {
           return { ...c, isFavorite: nextValue };
         }),
       }));
+      if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { isFavorite: nextValue })
         .catch((err) => console.error("toggle favorite failed", err));
@@ -833,9 +890,16 @@ export default function Index() {
     [updateBootstrap]
   );
 
-  const handleDeleteLead = useCallback(async () => {
-    if (!activeConversation?.contactId) return;
-    const contactId = activeConversation.contactId;
+  const handleDeleteLead = useCallback(async (conversationId?: string) => {
+    // Resolve the target: explicit id when called from the sidebar dropdown,
+    // otherwise the currently active conversation (chat header trash icon).
+    const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
+    const target = conversationId
+      ? cache?.conversations.find((c) => c.id === conversationId)
+      : activeConversation;
+    const contactId = target?.contactId ?? target?.participant.id;
+    if (!contactId) return;
+
     await api.contacts.delete(contactId);
 
     // Drop the deleted contact's conversations and remember how many slots
@@ -851,7 +915,8 @@ export default function Index() {
       cursorForBackfill = prev.conversationsNextCursor;
       return { ...prev, conversations: filtered };
     });
-    setActiveId(null);
+    // If the row being deleted is currently open, navigate away from it.
+    setActiveId((current) => (current && current === (target?.id ?? null) ? null : current));
     toast({ title: "Lead eliminado", description: "El contacto ha sido eliminado correctamente." });
 
     // Pull `removedCount` older conversations from GHL using the existing
@@ -876,7 +941,7 @@ export default function Index() {
         console.error("backfill after delete failed", err);
       }
     }
-  }, [activeConversation, updateBootstrap, toast]);
+  }, [activeConversation, queryClient, updateBootstrap, toast]);
 
   const setStages = useCallback(
     (next: BootstrapPayload["stages"]) => {
@@ -950,6 +1015,16 @@ export default function Index() {
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               isSearching={isSearching}
+              onDeleteConversation={(id) => {
+                handleDeleteLead(id).catch((err) => {
+                  console.error("delete from sidebar failed", err);
+                  toast({
+                    title: "No se pudo eliminar el lead",
+                    description: String(err),
+                    variant: "destructive",
+                  });
+                });
+              }}
             />
           )}
         </div>
