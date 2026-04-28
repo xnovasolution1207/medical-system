@@ -291,11 +291,30 @@ export default function Index() {
           return { ...prev, opportunities: next };
         });
       } else if (event.type === "task.created") {
-        updateBootstrap((prev) =>
-          prev.tasks.some((t) => t.id === event.task.id)
-            ? prev
-            : { ...prev, tasks: [event.task, ...prev.tasks] }
-        );
+        updateBootstrap((prev) => {
+          // Already present by id — POST .then probably ran first. No-op.
+          if (prev.tasks.some((t) => t.id === event.task.id)) return prev;
+
+          // Otherwise look for an optimistic row from `handleAddTask` that's
+          // still carrying its temp id. Without this branch the WS broadcast
+          // races ahead of the POST response: the optimistic stays in state,
+          // the WS event appends a second row with the real id, and then the
+          // POST .then maps the optimistic into a *third* row with the same
+          // real id — two visible duplicates that React can't key.
+          const optimisticIdx = prev.tasks.findIndex(
+            (t) =>
+              t.id.startsWith("t-tmp-") &&
+              t.conversationId === event.task.conversationId &&
+              t.title === event.task.title
+          );
+          if (optimisticIdx !== -1) {
+            const next = prev.tasks.slice();
+            next[optimisticIdx] = event.task;
+            return { ...prev, tasks: next };
+          }
+
+          return { ...prev, tasks: [event.task, ...prev.tasks] };
+        });
       } else if (event.type === "task.updated") {
         updateBootstrap((prev) => ({
           ...prev,
@@ -855,7 +874,10 @@ export default function Index() {
           conversationId: task.conversationId,
           title: task.title,
           dueDate: task.dueDate,
-          assignedTo: task.assignee.name,
+          // GHL's `assignedTo` expects a user id, not a display name. Until
+          // the GHL token is granted `users.readonly` (and we can pick from
+          // a real roster), leave the GHL task unassigned. The local Task's
+          // `assignee.name` still drives the UI label.
         })
         .then((saved) => {
           updateBootstrap((prev) => ({
@@ -1101,6 +1123,7 @@ export default function Index() {
               isLoadingOlderMessages={loadingOlderFor === activeId}
               onLoadOlderMessages={handleLoadOlderMessages}
               onDeleteLead={handleDeleteLead}
+              onToggleFavorite={handleToggleFavorite}
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center bg-muted/30 p-8 text-center">

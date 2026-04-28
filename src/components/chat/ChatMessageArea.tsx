@@ -35,6 +35,7 @@ interface ChatMessageAreaProps {
   onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
   onClearReminder?: (id: string) => void;
   onSetReminder?: (id: string, reminder: string) => void;
+  onToggleFavorite?: (id: string) => void;
   stages: { id: string; label: string; color: string; }[];
   setStages: (stages: { id: string; label: string; color: string; }[]) => void;
   isContactSidebarOpen?: boolean;
@@ -141,6 +142,7 @@ export function ChatMessageArea({
   onUpdateStage,
   onClearReminder,
   onSetReminder,
+  onToggleFavorite,
   stages,
   setStages,
   isContactSidebarOpen,
@@ -173,6 +175,10 @@ export function ChatMessageArea({
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDueDate, setNewTaskDueDate] = useState("Hoy");
+  // Captured by the datetime-local input when "Personalizado" is the chosen
+  // preset. Shape is "YYYY-MM-DDTHH:mm" — `new Date(value)` parses it as
+  // local time, then we hand the ISO string to the backend.
+  const [customDueDateTime, setCustomDueDateTime] = useState("");
   const [newTaskAssignee, setNewTaskAssignee] = useState(currentUser.name);
   const [taskPresets, setTaskPresets] = useState<string[]>(["Llamar para seguimiento", "Enviar cotización", "Agendar reunión"]);
   const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
@@ -187,10 +193,26 @@ export function ChatMessageArea({
   // ("Todo / Conversaciones / WhatsApp / SMS / …"). The render loop maps over
   // this list, and `prevMessage` lookups for consecutive grouping use the
   // same filtered indices so collapsing behavior matches what's on screen.
-  const visibleMessages = useMemo(
-    () => conversation.messages.filter((m) => messageMatchesFilters(m, messageFilters)),
-    [conversation.messages, messageFilters]
-  );
+  //
+  // We also de-duplicate by `id` here as a safety net. The merge paths that
+  // populate `conversation.messages` (mergeIncomingMessage, the lead.updated
+  // existingIds filter, the load-older-messages dedup) all attempt to keep
+  // the array unique, but they race against each other across WS reconnects,
+  // optimistic-send echoes, and the lazy-hydrate `...existing, ...full`
+  // swap. A transient duplicate would otherwise trip React's "two children
+  // with the same key" warning and could cause a node to be omitted on the
+  // next render. Keeping the first occurrence preserves message order.
+  const visibleMessages = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Message[] = [];
+    for (const m of conversation.messages) {
+      if (seen.has(m.id)) continue;
+      if (!messageMatchesFilters(m, messageFilters)) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+    return out;
+  }, [conversation.messages, messageFilters]);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("Mañana a las 9:00 AM");
@@ -635,15 +657,76 @@ export function ChatMessageArea({
               </ScrollArea>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20">
-            <Phone className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-orange-50 text-orange-500 hover:bg-orange-100 hover:text-orange-600 dark:bg-orange-500/10 dark:text-orange-400 dark:hover:bg-orange-500/20">
-            <Star className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20">
-            <Mail className="h-4 w-4" />
-          </Button>
+          {/* Call: opens the OS tel: handler. Disabled when the contact has no phone. */}
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 disabled:opacity-40"
+                disabled={!conversation.participant.phone}
+                onClick={() => {
+                  if (conversation.participant.phone) {
+                    window.location.href = `tel:${conversation.participant.phone}`;
+                  }
+                }}
+              >
+                <Phone className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {conversation.participant.phone
+                ? `Llamar a ${conversation.participant.phone}`
+                : "Sin número de teléfono"}
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Favorite: toggles isFavorite via the parent's handler (which patches
+              the GHL flag store). Star fills when the conversation is favorited. */}
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-9 w-9 rounded-full bg-orange-50 text-orange-500 hover:bg-orange-100 hover:text-orange-600 dark:bg-orange-500/10 dark:text-orange-400 dark:hover:bg-orange-500/20",
+                  conversation.isFavorite && "bg-orange-100 dark:bg-orange-500/20"
+                )}
+                onClick={() => onToggleFavorite?.(conversation.id)}
+              >
+                <Star
+                  className={cn("h-4 w-4", conversation.isFavorite && "fill-current")}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {conversation.isFavorite ? "Quitar de favoritos" : "Marcar como favorito"}
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Email: opens the OS mailto: handler. Disabled when the contact has no email. */}
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 disabled:opacity-40"
+                disabled={!conversation.participant.email}
+                onClick={() => {
+                  if (conversation.participant.email) {
+                    window.location.href = `mailto:${conversation.participant.email}`;
+                  }
+                }}
+              >
+                <Mail className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {conversation.participant.email
+                ? `Enviar email a ${conversation.participant.email}`
+                : "Sin dirección de email"}
+            </TooltipContent>
+          </Tooltip>
 
           {/* Task Button */}
           <Dialog open={isTaskDialogOpen} onOpenChange={setIsTaskDialogOpen}>
@@ -808,39 +891,71 @@ export function ChatMessageArea({
                       <SelectItem value="Personalizado">Personalizado</SelectItem>
                     </SelectContent>
                   </Select>
+                  {newTaskDueDate === "Personalizado" && (
+                    <Input
+                      type="datetime-local"
+                      value={customDueDateTime}
+                      onChange={(e) => setCustomDueDateTime(e.target.value)}
+                      className="mt-1"
+                    />
+                  )}
                 </div>
                 <div className="grid gap-2">
                   <Label>Asignado a</Label>
+                  {/* Single-option select. Without `users.readonly` scope on
+                      the GHL token we don't have a real user roster, so we
+                      can't offer assignment to specific GHL users — the
+                      backend would receive a name, not a user id, and GHL
+                      would silently drop it. Defaulting to "Yo" mirrors how
+                      the agent's own session would assign the task. */}
                   <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona un usuario" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={currentUser.name}>Yo ({currentUser.name})</SelectItem>
-                      <SelectItem value="Carlos López">Carlos López</SelectItem>
-                      <SelectItem value="Ana Martínez">Ana Martínez</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsTaskDialogOpen(false)}>Cancelar</Button>
-                <Button 
-                  disabled={!newTaskTitle.trim()}
+                <Button
+                  // Block "Crear" until both the title and (when relevant) the
+                  // custom datetime are filled in. Without this guard, picking
+                  // "Personalizado" without filling the date sends the literal
+                  // word and falls back to "tomorrow" silently — surprising.
+                  disabled={
+                    !newTaskTitle.trim() ||
+                    (newTaskDueDate === "Personalizado" && !customDueDateTime)
+                  }
                   onClick={() => {
                     if (!newTaskTitle.trim()) return;
+                    if (newTaskDueDate === "Personalizado" && !customDueDateTime) return;
+
+                    // Resolve the dueDate the backend will see. ISO strings
+                    // are parsed via `new Date()` in `parseDueDate`, the
+                    // preset labels keep their existing meanings ("Hoy" →
+                    // today 5pm, "Mañana" → 9am, etc.).
+                    const dueDateOut =
+                      newTaskDueDate === "Personalizado"
+                        ? new Date(customDueDateTime).toISOString()
+                        : newTaskDueDate;
+
                     setIsTaskDialogOpen(false);
-                    
+
                     onAddTask({
                       title: newTaskTitle,
-                      dueDate: newTaskDueDate,
+                      dueDate: dueDateOut,
                       assignee: { name: newTaskAssignee },
                       contact: { name: conversation.participant.name, avatar: conversation.participant.avatar },
                       status: "pending",
-                      conversationId: conversation.id
+                      conversationId: conversation.id,
                     });
 
                     setNewTaskTitle("");
+                    setNewTaskDueDate("Hoy");
+                    setCustomDueDateTime("");
                   }}
                 >
                   Crear Tarea
@@ -849,18 +964,57 @@ export function ChatMessageArea({
             </DialogContent>
           </Dialog>
 
+          {/* Reminder: quick presets + clear. Shows a dot indicator when a
+              reminder is active. We don't wrap this in a Radix Tooltip because
+              the trigger is itself a DropdownMenu (a context provider, not a
+              forwardRef component) — stacking TooltipTrigger asChild on top of
+              DropdownMenuTrigger asChild on the same node fails the ref
+              forwarding chain. The native `title` attribute on the Button is
+              good enough for the hover hint here. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 dark:hover:bg-yellow-500/20">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative h-9 w-9 rounded-full bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 dark:hover:bg-yellow-500/20"
+                title={
+                  conversation.activeReminder
+                    ? `Recordatorio: ${conversation.activeReminder}`
+                    : "Establecer recordatorio"
+                }
+              >
                 <Bell className="h-4 w-4" />
+                {conversation.activeReminder && (
+                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-yellow-500 ring-2 ring-card" />
+                )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuContent align="end" className="w-44">
+              {conversation.activeReminder && (
+                <>
+                  <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                    Activo: <span className="font-medium text-foreground">{conversation.activeReminder}</span>
+                  </div>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => {
+                      setActiveReminder(null);
+                      onClearReminder?.(conversation.id);
+                    }}
+                  >
+                    Quitar recordatorio
+                  </DropdownMenuItem>
+                  <div className="h-px bg-muted my-1 mx-1" />
+                </>
+              )}
               {["10 Min", "20 Min", "30 Min", "60 Min", "Personalizado"].map((time) => (
-                <DropdownMenuItem key={time} onClick={() => {
-                  setActiveReminder(time);
-                  onSetReminder?.(conversation.id, time);
-                }}>
+                <DropdownMenuItem
+                  key={time}
+                  onClick={() => {
+                    setActiveReminder(time);
+                    onSetReminder?.(conversation.id, time);
+                  }}
+                >
                   {time}
                 </DropdownMenuItem>
               ))}
