@@ -296,7 +296,15 @@ export default function Index() {
 
           // 2. Upsert the conversation, most-recent-first.
           const inc = event.lead.conversation;
+          // Stub id used for contact-only ContactCreate events that arrive
+          // before any conversation exists in GHL. We use a deterministic
+          // prefix so the row can be replaced when the real conversation
+          // (from the first inbound message) shows up.
+          const stubId = `pending-${event.contactId}`;
           if (inc) {
+            // Real conversation arrived — drop any stub we may have
+            // synthesized earlier so the lead doesn't appear twice.
+            conversations = conversations.filter((c) => c.id !== stubId);
             const idx = conversations.findIndex((c) => c.id === inc.id);
             if (idx === -1) {
               // New conversation — prepend so it appears at the top.
@@ -316,6 +324,33 @@ export default function Index() {
                   existing.scheduledMessages ?? inc.scheduledMessages,
               };
               conversations = moveConversationToFront(conversations, inc.id, merged);
+            }
+          } else {
+            // ContactCreate (or any contact-only webhook) arrived ahead of
+            // the conversation. Synthesize a placeholder so the lead is
+            // visible in the sidebar immediately. Skip if a row for this
+            // contact already exists (real conversation, or earlier stub).
+            const alreadyListed = conversations.some(
+              (c) =>
+                c.id === stubId ||
+                c.contactId === event.contactId ||
+                c.participant.id === event.contactId
+            );
+            if (!alreadyListed) {
+              const stub: Conversation = {
+                id: stubId,
+                contactId: event.contactId,
+                participant: event.lead.contact,
+                // Default to whatsapp — overwritten when the real conversation
+                // lands. Most leads in this CRM arrive over WhatsApp.
+                source: "whatsapp",
+                recipientNumber: "",
+                lastMessage: "",
+                unreadCount: 0,
+                timestamp: "",
+                messages: [],
+              };
+              conversations = [stub, ...conversations];
             }
           }
 
