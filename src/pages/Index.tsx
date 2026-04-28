@@ -630,11 +630,14 @@ export default function Index() {
 
   const handleUpdateStage = useCallback(
     (id: string, stage: Conversation["stage"]) => {
+      if (!stage) return;
       const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
       const conv = cache?.conversations.find((c) => c.id === id);
-      const opp = conv?.contactId
-        ? cache?.opportunities.find((o) => o.contactId === conv.contactId)
+      const contactId = conv?.contactId ?? conv?.participant.id;
+      const opp = contactId
+        ? cache?.opportunities.find((o) => o.contactId === contactId)
         : undefined;
+      const pipeline = cache?.pipelines[0];
 
       updateBootstrap((prev) => ({
         ...prev,
@@ -649,15 +652,50 @@ export default function Index() {
       // updates above so the UI is responsive; flags will start persisting
       // once the real conversation arrives.
       if (!isStubConvId(id)) {
-        api.conversations.patch(id, { stage }).catch((err) => console.error("stage update failed", err));
+        api.conversations
+          .patch(id, { stage })
+          .catch((err) => console.error("stage update failed", err));
       }
-      if (opp && opp.stageId !== stage) {
+
+      if (opp) {
+        // Existing opportunity → move it to the new stage.
+        if (opp.stageId !== stage) {
+          api.opportunities
+            .move(opp.id, stage)
+            .catch((err) => {
+              console.error("opportunity move failed", err);
+              toast({
+                title: "No se pudo actualizar el estado",
+                description: String((err as Error)?.message ?? err),
+                variant: "destructive",
+              });
+            });
+        }
+      } else if (contactId && pipeline) {
+        // No opportunity yet → create one so the stage choice persists across
+        // bootstrap reloads. Without this, stage selection only lives in the
+        // backend's in-memory flagsStore.stageOverride, which resets on every
+        // server restart.
+        const name = conv?.participant.name?.trim() || "Lead";
         api.opportunities
-          .move(opp.id, stage)
-          .catch((err) => console.error("opportunity move failed", err));
+          .create({ name, contactId, pipelineId: pipeline.id, stageId: stage })
+          .then((created) => {
+            updateBootstrap((prev) => ({
+              ...prev,
+              opportunities: [created, ...prev.opportunities],
+            }));
+          })
+          .catch((err) => {
+            console.error("opportunity create failed", err);
+            toast({
+              title: "No se pudo crear la oportunidad",
+              description: String((err as Error)?.message ?? err),
+              variant: "destructive",
+            });
+          });
       }
     },
-    [queryClient, updateBootstrap]
+    [queryClient, toast, updateBootstrap]
   );
 
   const handleClearReminder = useCallback(

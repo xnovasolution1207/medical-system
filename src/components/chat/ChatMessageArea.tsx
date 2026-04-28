@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { ImageLightbox } from "./ImageLightbox";
@@ -107,6 +107,27 @@ const CHANNEL_ORDER: Array<NonNullable<Message["channel"]>> = [
   "internal",
 ];
 
+// Predicates for the message-history filter dropdown ("Todo / Conversaciones /
+// Actividades / SMS / WhatsApp / …"). A message is shown when at least one
+// of the active filter labels has a predicate that returns true. Labels that
+// don't appear here intentionally match nothing — they're GHL-domain types
+// (Pagos, Factura, Citas, AI logs) that aren't surfaced in the chat stream
+// today, so selecting them filters everything out, which is the truthful UX.
+const MESSAGE_FILTER_PREDICATES: Record<string, (m: Message) => boolean> = {
+  Conversaciones: (m) => !m.systemEvent,
+  Actividades: (m) => Boolean(m.systemEvent),
+  SMS: (m) => m.channel === "sms",
+  WhatsApp: (m) => m.channel === "whatsapp",
+  "Comentario interno": (m) => m.channel === "internal" && !m.systemEvent,
+  Oportunidades: (m) => m.systemEvent?.type === "opportunity_moved",
+};
+
+function messageMatchesFilters(message: Message, filters: string[]): boolean {
+  // Empty selection or "Todo" → no filtering.
+  if (filters.length === 0 || filters.includes("Todo")) return true;
+  return filters.some((label) => MESSAGE_FILTER_PREDICATES[label]?.(message) ?? false);
+}
+
 export function ChatMessageArea({
   conversation,
   currentUser,
@@ -161,6 +182,15 @@ export function ChatMessageArea({
   const [editingStageName, setEditingStageName] = useState("");
   const [messageFilters, setMessageFilters] = useState<string[]>(["Todo"]);
   const [filterSearch, setFilterSearch] = useState("");
+
+  // Filtered message list driven by the message-history filter dropdown
+  // ("Todo / Conversaciones / WhatsApp / SMS / …"). The render loop maps over
+  // this list, and `prevMessage` lookups for consecutive grouping use the
+  // same filtered indices so collapsing behavior matches what's on screen.
+  const visibleMessages = useMemo(
+    () => conversation.messages.filter((m) => messageMatchesFilters(m, messageFilters)),
+    [conversation.messages, messageFilters]
+  );
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("Mañana a las 9:00 AM");
@@ -536,22 +566,36 @@ export function ChatMessageArea({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuCheckboxItem checked={messageFilters.includes("Todo")} onCheckedChange={(c) => {
-                if (c) setMessageFilters(["Todo"]);
-                else setMessageFilters([]);
-              }}>
+              <DropdownMenuCheckboxItem
+                checked={messageFilters.includes("Todo")}
+                // Keep the dropdown open after toggling so the agent can stack
+                // several filters without reopening it between each click.
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(c) => {
+                  if (c) setMessageFilters(["Todo"]);
+                  else setMessageFilters([]);
+                }}
+              >
                 Todo
               </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem checked={messageFilters.includes("Conversaciones")} onCheckedChange={(c) => {
-                if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), "Conversaciones"]);
-                else setMessageFilters(prev => prev.filter(f => f !== "Conversaciones"));
-              }}>
+              <DropdownMenuCheckboxItem
+                checked={messageFilters.includes("Conversaciones")}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(c) => {
+                  if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), "Conversaciones"]);
+                  else setMessageFilters(prev => prev.filter(f => f !== "Conversaciones"));
+                }}
+              >
                 Conversaciones
               </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem checked={messageFilters.includes("Actividades")} onCheckedChange={(c) => {
-                if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), "Actividades"]);
-                else setMessageFilters(prev => prev.filter(f => f !== "Actividades"));
-              }}>
+              <DropdownMenuCheckboxItem
+                checked={messageFilters.includes("Actividades")}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(c) => {
+                  if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), "Actividades"]);
+                  else setMessageFilters(prev => prev.filter(f => f !== "Actividades"));
+                }}
+              >
                 Actividades
               </DropdownMenuCheckboxItem>
               
@@ -576,9 +620,10 @@ export function ChatMessageArea({
                   "Contactos", "Citas", "Oportunidades", "Pagos", 
                   "Factura", "Registros de acciones de AI"
                 ].filter(opt => opt.toLowerCase().includes(filterSearch.toLowerCase())).map(opt => (
-                  <DropdownMenuCheckboxItem 
+                  <DropdownMenuCheckboxItem
                     key={opt}
-                    checked={messageFilters.includes(opt)} 
+                    checked={messageFilters.includes(opt)}
+                    onSelect={(e) => e.preventDefault()}
                     onCheckedChange={(c) => {
                       if (c) setMessageFilters(prev => [...prev.filter(f => f !== "Todo"), opt]);
                       else setMessageFilters(prev => prev.filter(f => f !== opt));
@@ -935,7 +980,12 @@ export function ChatMessageArea({
           </div>
         )}
         <div className="flex flex-col gap-4 py-4">
-          {conversation.messages.map((message, index) => {
+          {visibleMessages.length === 0 && conversation.messages.length > 0 && (
+            <div className="flex justify-center py-6 text-xs text-muted-foreground/70">
+              Ningún mensaje coincide con los filtros seleccionados
+            </div>
+          )}
+          {visibleMessages.map((message, index) => {
             // GHL emits this literal body when the inbound WhatsApp message
             // type (sticker, location, contact card, ephemeral, etc.) is not
             // processable by GHL. Render it as a subtle system notice so it
@@ -992,7 +1042,7 @@ export function ChatMessageArea({
             }
 
             const isMe = message.senderId === currentUser.id;
-            const prevMessage = conversation.messages[index - 1];
+            const prevMessage = visibleMessages[index - 1];
             // Consecutive grouping considers the resolved agent identity too,
             // so two back-to-back outbound messages from different agents
             // each get their own avatar header instead of being collapsed.
