@@ -26,11 +26,23 @@ export interface BootstrapPayload {
 const BACKEND_ORIGIN = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/+$/, "");
 const API_BASE = `${BACKEND_ORIGIN}/api`;
 
-// Returns a URL that streams the given media file through the backend proxy.
-// This sidesteps CORS restrictions and auth requirements on GHL's CDN for
-// video and audio resources (which are more strictly enforced than images).
+// Hosts that require backend mediation (Bearer auth on the GHL API).
+// Everything else — public GHL CDN buckets, WhatsApp/Facebook media, etc. —
+// is fetched directly by the browser; round-tripping public CDN bytes
+// through our backend just adds latency and forces us to allow-list every
+// new bucket GHL introduces.
+const AUTH_REQUIRED_HOSTS = new Set(["services.leadconnectorhq.com"]);
+
 export function proxyMediaUrl(url: string): string {
-  return `${API_BASE}/media?url=${encodeURIComponent(url)}`;
+  try {
+    const u = new URL(url);
+    if (AUTH_REQUIRED_HOSTS.has(u.hostname)) {
+      return `${API_BASE}/media?url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    // Malformed/relative URL — fall through and use as-is.
+  }
+  return url;
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
