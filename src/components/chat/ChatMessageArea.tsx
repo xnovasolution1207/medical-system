@@ -129,6 +129,32 @@ function messageMatchesFilters(message: Message, filters: string[]): boolean {
   return filters.some((label) => MESSAGE_FILTER_PREDICATES[label]?.(message) ?? false);
 }
 
+// Attachment types the bubble actually knows how to render. Anything outside
+// this set falls through to `null` in the render switch — without a fallback
+// the bubble shows up empty.
+const RENDERABLE_ATTACHMENT_TYPES: ReadonlySet<NonNullable<Message["attachment"]>["type"]> = new Set([
+  "image",
+  "video",
+  "audio",
+  "file",
+  "document",
+  "link",
+]);
+
+// True when the bubble would otherwise render nothing visible: no text, no
+// system event, not an internal-channel notes bubble, and no attachment with
+// a recognised type. This catches outbound voice notes recorded in the GHL
+// native composer that come through without a body and without a fetchable
+// `attachments[]` URL — without this fallback the chat shows an empty pill.
+function bubbleHasNoVisibleContent(m: Message): boolean {
+  if (m.text) return false;
+  if (m.systemEvent) return false;
+  if (m.channel === "internal") return false; // internal notes have their own
+  // mentions/reminder rendering path that we don't want to override.
+  if (m.attachment && RENDERABLE_ATTACHMENT_TYPES.has(m.attachment.type)) return false;
+  return true;
+}
+
 export function ChatMessageArea({
   conversation,
   currentUser,
@@ -1338,7 +1364,14 @@ export function ChatMessageArea({
                       </div>
                     )}
                     {message.text && <span className="whitespace-pre-wrap leading-relaxed">{message.text}</span>}
-                    
+
+                    {bubbleHasNoVisibleContent(message) && (
+                      <div className="flex items-center gap-3 min-w-[180px] py-1">
+                        <Mic className="h-5 w-5 shrink-0 opacity-70" />
+                        <span className="text-sm italic opacity-80">Mensaje de voz</span>
+                      </div>
+                    )}
+
                     {message.channel === "internal" && (message.mentions?.length || message.reminder) ? (
                       <div className="flex items-center gap-3 mt-2 pt-2 border-t border-amber-200/50 dark:border-amber-500/30 text-xs text-amber-700 dark:text-amber-400 font-medium">
                         {message.mentions && message.mentions.length > 0 && (
