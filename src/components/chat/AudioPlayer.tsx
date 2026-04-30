@@ -1,16 +1,20 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Pause, Loader2, AlertCircle } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Loader2, Pause, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AudioPlayerProps {
   src: string;
-  // "isMe" chat bubbles invert the palette (light marks on the primary
-  // background). Inbound bubbles use the regular foreground palette.
+  // "light" inverts the palette for outbound bubbles where the surrounding
+  // background is the primary purple. "dark" is for inbound bubbles on a
+  // muted background.
   variant?: "light" | "dark";
   // Fallback duration shown before the audio has loaded its metadata.
   fallbackDuration?: string;
   className?: string;
 }
+
+const BAR_COUNT = 40;
+const SPEEDS = [1, 1.5, 2] as const;
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -19,9 +23,39 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// Shared audio message player. Uses a single <audio> element per message —
-// browsers will lazy-load the stream on first play and pause releases the
-// connection. Parallel players are allowed (each instance is independent).
+// Deterministic waveform from the source URL — we don't decode the audio to
+// get a real waveform (that would require Web Audio API and an extra fetch),
+// just generate a stable per-message pattern so the bars look "shaped" but
+// don't reshuffle on every render.
+function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function generateBars(seed: string): number[] {
+  let s = hashSeed(seed) || 1;
+  const out: number[] = [];
+  for (let i = 0; i < BAR_COUNT; i++) {
+    // LCG step
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    const r = (s % 10000) / 10000;
+    // Bias the centre to be taller and the edges to be shorter for a more
+    // "voice-note" look. Range 30%–100%.
+    const centreBoost = 1 - Math.abs(i - BAR_COUNT / 2) / (BAR_COUNT / 2);
+    const h = 0.3 + r * 0.55 + centreBoost * 0.15;
+    out.push(Math.max(0.18, Math.min(1, h)));
+  }
+  return out;
+}
+
+// Voice-note style audio player. Renders a stable waveform of vertical bars,
+// a circular play/pause control, current-time + duration, and a speed-cycle
+// pill ("1x" → "1.5x" → "2x"). Uses a single <audio> element per message —
+// browsers lazy-load on first play and pause releases the connection.
 export function AudioPlayer({
   src,
   variant = "dark",
@@ -32,12 +66,13 @@ export function AudioPlayer({
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  // Initially undefined — we don't know the real duration until the browser
-  // fires `loadedmetadata`. `fallbackDuration` (a string like "0:45" captured
-  // server-side) fills the UI until then.
   const [duration, setDuration] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [errored, setErrored] = useState(false);
+  const [speedIdx, setSpeedIdx] = useState(0);
+
+  const bars = useMemo(() => generateBars(src), [src]);
+  const speed = SPEEDS[speedIdx];
 
   useEffect(() => {
     const el = audioRef.current;
@@ -82,8 +117,8 @@ export function AudioPlayer({
     };
   }, []);
 
-  // Reset playback state when the source changes (e.g. the same component
-  // gets reused across messages during virtualization).
+  // Reset playback state when the source changes (e.g. component reuse during
+  // virtualization). Speed selection is intentionally preserved.
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
@@ -93,6 +128,13 @@ export function AudioPlayer({
     setDuration(undefined);
     setErrored(false);
   }, [src]);
+
+  // Apply the selected playback speed whenever it changes.
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    el.playbackRate = speed;
+  }, [speed]);
 
   const toggle = useCallback(() => {
     const el = audioRef.current;
@@ -125,20 +167,29 @@ export function AudioPlayer({
     [duration]
   );
 
-  const progress = duration && duration > 0 ? (currentTime / duration) * 100 : 0;
+  const cycleSpeed = useCallback(() => {
+    setSpeedIdx((i) => (i + 1) % SPEEDS.length);
+  }, []);
+
+  const progressRatio =
+    duration && duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+  const activeBars = Math.floor(progressRatio * bars.length);
 
   const isLight = variant === "light";
-  const btnClasses = isLight
-    ? "bg-white/20 hover:bg-white/30 text-white disabled:bg-white/10"
-    : "bg-primary/10 hover:bg-primary/20 text-primary disabled:bg-primary/5";
-  const trackBg = isLight ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.1)";
-  const fillClass = isLight ? "bg-white" : "bg-primary";
+  const playBtn = isLight
+    ? "bg-white text-primary hover:bg-white/90"
+    : "bg-primary text-primary-foreground hover:bg-primary/90";
+  const barActive = isLight ? "bg-white" : "bg-primary";
+  const barInactive = isLight ? "bg-white/40" : "bg-primary/30";
+  const speedPill = isLight
+    ? "bg-white/20 hover:bg-white/30 text-white"
+    : "bg-primary/15 hover:bg-primary/25 text-primary";
+  const timeText = isLight ? "text-white/90" : "text-foreground/70";
 
   return (
     <div
       className={cn(
-        "flex items-center gap-4 min-w-[220px] sm:min-w-[280px] py-1.5",
-        isLight ? "text-primary-foreground" : "text-foreground",
+        "flex items-center gap-3 min-w-[280px] sm:min-w-[320px] py-1",
         className
       )}
     >
@@ -147,10 +198,12 @@ export function AudioPlayer({
         type="button"
         onClick={toggle}
         disabled={errored}
-        aria-label={errored ? "No se pudo cargar el audio" : playing ? "Pausar" : "Reproducir"}
+        aria-label={
+          errored ? "No se pudo cargar el audio" : playing ? "Pausar" : "Reproducir"
+        }
         className={cn(
-          "flex items-center justify-center h-12 w-12 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-          btnClasses,
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+          playBtn,
           errored && "cursor-not-allowed opacity-60"
         )}
       >
@@ -161,10 +214,11 @@ export function AudioPlayer({
         ) : playing ? (
           <Pause className="h-5 w-5" fill="currentColor" />
         ) : (
-          <Play className="h-5 w-5 ml-1" fill="currentColor" />
+          <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
         )}
       </button>
-      <div className="flex-1 flex flex-col justify-center gap-2">
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div
           ref={trackRef}
           role="slider"
@@ -185,27 +239,44 @@ export function AudioPlayer({
               setCurrentTime(el.currentTime);
             }
           }}
-          className="w-full h-1.5 rounded-full relative mt-1 cursor-pointer"
-          style={{ backgroundColor: trackBg }}
+          className="flex h-7 w-full cursor-pointer items-center gap-[2px]"
         >
-          <div
-            className={cn("absolute left-0 top-0 bottom-0 rounded-full transition-[width] duration-100", fillClass)}
-            style={{ width: `${progress}%` }}
-          />
-          <div
-            className={cn("absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full shadow-sm transition-[left] duration-100", fillClass)}
-            style={{ left: `calc(${progress}% - 7px)` }}
-          />
+          {bars.map((h, i) => (
+            <div
+              key={i}
+              className={cn(
+                "flex-1 rounded-full transition-colors duration-100",
+                i < activeBars ? barActive : barInactive
+              )}
+              style={{ height: `${h * 100}%` }}
+            />
+          ))}
         </div>
-        <div className="flex justify-between items-center text-[11px] font-medium opacity-80 tabular-nums">
+
+        <div className={cn("flex items-center justify-between text-[11px] font-medium tabular-nums", timeText)}>
           <span>{formatTime(currentTime)}</span>
-          <span>
-            {errored
-              ? "Error"
-              : duration
-              ? formatTime(duration)
-              : fallbackDuration ?? "--:--"}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={cycleSpeed}
+              disabled={errored}
+              aria-label={`Velocidad ${speed}x`}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                speedPill,
+                errored && "cursor-not-allowed opacity-60"
+              )}
+            >
+              {speed}x
+            </button>
+            <span>
+              {errored
+                ? "Error"
+                : duration
+                ? formatTime(duration)
+                : fallbackDuration ?? "--:--"}
+            </span>
+          </div>
         </div>
       </div>
     </div>
