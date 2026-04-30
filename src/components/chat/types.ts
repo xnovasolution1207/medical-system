@@ -34,6 +34,9 @@ export type Message = {
   senderAvatar?: string;
   text: string;
   timestamp: string;
+  // Raw ISO timestamp from GHL's `dateAdded`. The SPA uses this to group
+  // messages by day for the "Hoy" / "Ayer" / "DD Mmm YYYY" separators.
+  date?: string;
   isRead: boolean;
   channel?: "sms" | "email" | "whatsapp" | "instagram" | "messenger" | "tiktok" | "internal";
   status?: "sent" | "delivered" | "read" | "error";

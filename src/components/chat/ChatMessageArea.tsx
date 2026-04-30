@@ -141,6 +141,35 @@ const RENDERABLE_ATTACHMENT_TYPES: ReadonlySet<NonNullable<Message["attachment"]
   "link",
 ]);
 
+// Spanish month abbreviations for the date-separator pills.
+const MONTHS_ES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+// Stable per-day key so we can detect when the day changes between two
+// adjacent messages and inject a separator. Returns "" when the date isn't
+// resolvable so messages without a `date` field don't trigger spurious
+// separators.
+function dayKey(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// "Hoy" / "Ayer" / "DD Mmm YYYY" — matches the WhatsApp-style separator the
+// app uses elsewhere. Falls back to an empty string for unresolvable inputs.
+function formatDateLabel(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const that = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - that.getTime()) / (24 * 3600 * 1000));
+  if (diffDays === 0) return "Hoy";
+  if (diffDays === 1) return "Ayer";
+  return `${d.getDate()} ${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 // True when the bubble would otherwise render nothing visible: no text, no
 // system event, not an internal-channel notes bubble, and no attachment with
 // a recognised type. This catches outbound voice notes recorded in the GHL
@@ -1166,6 +1195,23 @@ export function ChatMessageArea({
             </div>
           )}
           {visibleMessages.map((message, index) => {
+            // Day-change separator: emit a "Hoy" / "Ayer" / "DD Mmm YYYY"
+            // pill before any message whose day differs from the previous
+            // one's. Messages without a resolvable date get no separator
+            // (they collapse into whatever group the surrounding messages
+            // form).
+            const prevMessage = visibleMessages[index - 1];
+            const prevDay = dayKey(prevMessage?.date);
+            const curDay = dayKey(message.date);
+            const dateSeparator =
+              curDay && curDay !== prevDay ? (
+                <div key={`day-${curDay}-${message.id}`} className="flex w-full justify-center my-3">
+                  <span className="px-3 py-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100/80 dark:bg-slate-800/60 rounded-full select-none">
+                    {formatDateLabel(message.date)}
+                  </span>
+                </div>
+              ) : null;
+
             // GHL emits this literal body when the inbound WhatsApp message
             // type (sticker, location, contact card, ephemeral, etc.) is not
             // processable by GHL. Render it as a subtle system notice so it
@@ -1176,58 +1222,49 @@ export function ChatMessageArea({
               /message type (is currently |)not supported/i.test(message.text)
             ) {
               return (
-                <div key={message.id} className="flex justify-center w-full my-1">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/50 italic px-3 py-1 bg-muted/30 rounded-full border border-muted/50 select-none">
-                    <AlertCircle className="h-3 w-3 shrink-0" />
-                    Tipo de mensaje no compatible
-                  </span>
-                </div>
+                <React.Fragment key={message.id}>
+                  {dateSeparator}
+                  <div className="flex justify-center w-full my-1">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/50 italic px-3 py-1 bg-muted/30 rounded-full border border-muted/50 select-none">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      Tipo de mensaje no compatible
+                    </span>
+                  </div>
+                </React.Fragment>
               );
             }
 
             if (message.systemEvent && message.systemEvent.type === "opportunity_moved") {
               return (
-                <div key={message.id} className="flex justify-center w-full my-4">
-                  <div className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 bg-slate-50/80 dark:bg-slate-900/40 rounded-full border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 tracking-tight">
-                    <div className="flex items-center flex-wrap justify-center gap-1.5">
-                      <div className="flex items-center justify-center text-slate-400 dark:text-slate-500 mr-0.5">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                          <circle cx="9" cy="7" r="4" />
-                          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                        </svg>
-                      </div>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">Opportunity {message.systemEvent.opportunityName} moved</span>
-                      <span>from</span>
-                      <div className="flex items-center gap-1">
-                        <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">{message.systemEvent.oldStage}</span>
-                      </div>
-                      <span className="mx-0.5">→</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px]">{message.systemEvent.newStage === 'Calientes' ? '🔥' : message.systemEvent.newStage === 'Agendados' ? '📅' : message.systemEvent.newStage === 'Frío' ? '❄️' : '🟡'}</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">{message.systemEvent.newStage}</span>
-                      </div>
-                      <span>in {message.systemEvent.pipeline}</span>
-                    </div>
-                    <div className="flex items-center flex-wrap justify-center gap-1.5 mt-0.5">
-                      <span>por <span className="font-semibold text-slate-800 dark:text-slate-200">{message.systemEvent.user}</span></span>
-                      <button className="text-blue-500 dark:text-blue-400 font-medium ml-1 hover:underline">Detalles</button>
-                      <span className="ml-1">{message.timestamp}</span>
+                <React.Fragment key={message.id}>
+                  {dateSeparator}
+                  <div className="flex w-full justify-center my-3">
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      <CornerUpLeft className="h-3 w-3 -scale-x-100 text-slate-400 dark:text-slate-500" />
+                      <span className="font-medium text-slate-700 dark:text-slate-200">{message.systemEvent.opportunityName}</span>
+                      <span>movido</span>
+                      <span className="line-through opacity-70">{message.systemEvent.oldStage}</span>
+                      <span className="text-slate-400">→</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-200">{message.systemEvent.newStage}</span>
+                      <span className="opacity-40">·</span>
+                      <span>{message.systemEvent.user}</span>
+                      <span className="opacity-40">·</span>
+                      <span>{message.timestamp}</span>
                     </div>
                   </div>
-                </div>
+                </React.Fragment>
               );
             }
 
             const isMe = message.senderId === currentUser.id;
-            const prevMessage = visibleMessages[index - 1];
             // Consecutive grouping considers the resolved agent identity too,
             // so two back-to-back outbound messages from different agents
             // each get their own avatar header instead of being collapsed.
+            // Treat a day-change separator as a soft reset so the first
+            // message of a new day gets its own avatar header.
             const isConsecutive =
               prevMessage &&
+              !dateSeparator &&
               prevMessage.senderId === message.senderId &&
               prevMessage.senderName === message.senderName &&
               !prevMessage.systemEvent;
@@ -1239,14 +1276,15 @@ export function ChatMessageArea({
             const outboundAvatar = message.senderAvatar ?? currentUser.avatar;
 
             return (
-              <div
-                key={message.id}
-                className={cn(
-                  "flex w-full items-end gap-2 group",
-                  isMe ? "justify-end" : "justify-start",
-                  isConsecutive ? "mt-1" : "mt-4"
-                )}
-              >
+              <React.Fragment key={message.id}>
+                {dateSeparator}
+                <div
+                  className={cn(
+                    "flex w-full items-end gap-2 group",
+                    isMe ? "justify-end" : "justify-start",
+                    isConsecutive ? "mt-1" : "mt-4"
+                  )}
+                >
                 {!isMe && (
                   <div className={cn(isConsecutive ? "invisible" : "visible", "shrink-0")}>
                     {/* ChannelAvatar already renders a hover tooltip with the name. */}
@@ -1470,7 +1508,8 @@ export function ChatMessageArea({
                     </Tooltip>
                   </div>
                 )}
-              </div>
+                </div>
+              </React.Fragment>
             );
           })}
         </div>
