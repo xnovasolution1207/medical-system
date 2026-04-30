@@ -1205,10 +1205,12 @@ export function ChatMessageArea({
             const curDay = dayKey(message.date);
             const dateSeparator =
               curDay && curDay !== prevDay ? (
-                <div key={`day-${curDay}-${message.id}`} className="flex w-full justify-center my-3">
+                <div key={`day-${curDay}-${message.id}`} className="flex w-full items-center gap-3 my-3">
+                  <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
                   <span className="px-3 py-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100/80 dark:bg-slate-800/60 rounded-full select-none">
                     {formatDateLabel(message.date)}
                   </span>
+                  <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
                 </div>
               ) : null;
 
