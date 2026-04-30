@@ -144,6 +144,44 @@ const RENDERABLE_ATTACHMENT_TYPES: ReadonlySet<NonNullable<Message["attachment"]
 // Spanish month abbreviations for the date-separator pills.
 const MONTHS_ES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
+// Curated emoji set for the message-composer picker. Grouped roughly by
+// expression → gesture → heart → object / weather, but rendered as a single
+// flat grid to keep the picker small and fast (no library, no font fetch).
+const EMOJI_SET: ReadonlyArray<{ label: string; emojis: string[] }> = [
+  {
+    label: "Caras",
+    emojis: [
+      "😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊",
+      "😋", "😎", "😍", "😘", "🥰", "🤗", "🤔", "🤨", "😐", "😶",
+      "🙄", "😏", "😣", "😮", "😯", "😪", "🥱", "😴", "😌", "😛",
+      "😜", "🤤", "😒", "😓", "🙂", "🙃", "😞", "😟", "😢", "😭",
+      "😨", "😱", "🤯", "🥳", "🤩", "🥺", "😇", "🤓", "😬", "🤐",
+    ],
+  },
+  {
+    label: "Gestos",
+    emojis: [
+      "👍", "👎", "👌", "🤞", "🤟", "🤘", "🤙", "👏", "🙌", "🙏",
+      "💪", "👋", "🤝", "✌️", "👀", "💯", "💥", "✨", "🎉", "🎊",
+    ],
+  },
+  {
+    label: "Corazones",
+    emojis: [
+      "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔",
+      "💖", "💗", "💓", "💞", "💝", "💘", "💕", "💟", "🌹", "🌷",
+    ],
+  },
+  {
+    label: "Símbolos",
+    emojis: [
+      "✅", "❌", "⚠️", "🔥", "🌟", "⭐", "💧", "🌈", "☀️", "🌙",
+      "⏰", "📅", "💼", "📞", "📧", "💰", "💊", "🩺", "🏥", "🦷",
+    ],
+  },
+];
+
+
 // Stable per-day key so we can detect when the day changes between two
 // adjacent messages and inject a separator. Returns "" when the date isn't
 // resolvable so messages without a `date` field don't trigger spurious
@@ -409,6 +447,27 @@ export function ChatMessageArea({
         description: `El mensaje se enviará: ${scheduleDate}`,
       });
     }
+  };
+
+  // Insert an emoji at the textarea's caret position (or append when there's
+  // no caret yet). Mirrors the cursor-aware pattern in `insertTemplate` so the
+  // picker behaves the same as quick-replies.
+  const insertEmoji = (emoji: string) => {
+    const textarea = document.querySelector('textarea');
+    const cursorPosition = textarea?.selectionStart ?? inputText.length;
+    const before = inputText.substring(0, cursorPosition);
+    const after = inputText.substring(cursorPosition);
+    const newText = before + emoji + after;
+    setInputText(newText);
+    setTimeout(() => {
+      textarea?.focus();
+      const next = cursorPosition + emoji.length;
+      try {
+        textarea?.setSelectionRange(next, next);
+      } catch {
+        /* ignore — textarea may have been unmounted */
+      }
+    }, 0);
   };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -1696,9 +1755,37 @@ export function ChatMessageArea({
                   accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
                 />
                 
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Emoji">
-                  <Smile className="h-4 w-4" />
-                </Button>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Emoji">
+                      <Smile className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="start" className="w-80 p-2">
+                    <div className="max-h-72 overflow-y-auto pr-1">
+                      {EMOJI_SET.map((group) => (
+                        <div key={group.label} className="mb-2 last:mb-0">
+                          <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {group.label}
+                          </div>
+                          <div className="grid grid-cols-10 gap-0.5">
+                            {group.emojis.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => insertEmoji(emoji)}
+                                className="flex h-7 w-7 items-center justify-center rounded text-lg leading-none transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                aria-label={`Insertar ${emoji}`}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Nota de voz">
                   <Mic className="h-4 w-4" />
                 </Button>
