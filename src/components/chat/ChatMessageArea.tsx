@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Mic, Zap, Contact, Waypoints, Delete } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
@@ -1327,18 +1327,28 @@ export function ChatMessageArea({
                             fallbackDuration={message.attachment.duration}
                           />
                         ) : (message.attachment.type === "file" || message.attachment.type === "document") ? (
-                          <div className={cn(
-                            "flex items-center gap-2 rounded-lg border p-3",
-                            isMe ? "bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground" : "bg-background border-border text-foreground"
-                          )}>
+                          <a
+                            href={proxyMediaUrl(message.attachment.url)}
+                            download={message.attachment.name}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Descargar ${message.attachment.name}`}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg border p-3 transition-colors",
+                              isMe
+                                ? "bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/20"
+                                : "bg-background border-border text-foreground hover:bg-accent/60"
+                            )}
+                          >
                             <FileIcon className="h-5 w-5 shrink-0" />
-                            <div className="flex flex-col overflow-hidden">
+                            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                               <span className="truncate text-sm font-medium">{message.attachment.name}</span>
                               {message.attachment.size && (
                                 <span className="text-[10px] opacity-70">{message.attachment.size}</span>
                               )}
                             </div>
-                          </div>
+                            <Download className="h-4 w-4 shrink-0 opacity-70" />
+                          </a>
                         ) : message.attachment.type === "link" ? (
                           <a href={message.attachment.url} target="_blank" rel="noopener noreferrer" className={cn(
                             "flex flex-col overflow-hidden rounded-lg border bg-background text-foreground hover:bg-accent/80 transition-colors max-w-xs sm:max-w-sm",
