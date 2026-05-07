@@ -510,46 +510,46 @@ export function ChatMessageArea({
   };
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-background">
+    <div className="flex h-full flex-1 flex-col min-w-0 bg-background">
       {/* Header */}
-      <div className="flex h-[68px] items-center justify-between border-b bg-card/50 px-4 py-3 backdrop-blur-sm">
-        <div className="flex items-center gap-3">
+      <div className="flex h-[68px] items-center justify-between gap-2 border-b bg-card/50 px-4 py-3 backdrop-blur-sm overflow-hidden">
+        <div className="flex items-center gap-3 min-w-0 shrink">
           {onBack && (
             <Button
               variant="ghost"
               size="icon"
-              className="mr-1 sm:hidden"
+              className="mr-1 md:hidden shrink-0"
               onClick={onBack}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
           )}
-          <ChannelAvatar 
-            name={conversation.participant.name} 
-            src={conversation.participant.avatar} 
-            channel={conversation.source} 
+          <ChannelAvatar
+            name={conversation.participant.name}
+            src={conversation.participant.avatar}
+            channel={conversation.source}
             status={conversation.participant.status}
-            className="h-10 w-10"
+            className="h-10 w-10 shrink-0"
           />
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-foreground">
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-semibold text-foreground truncate">
                 {conversation.participant.name}
               </span>
             </div>
-            <span className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
-              <span className="capitalize font-medium">{conversation.source}</span>
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/50" />
-              <span>{conversation.recipientNumber}</span>
+            <span className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5 min-w-0">
+              <span className="capitalize font-medium truncate">{conversation.source}</span>
+              <span className="h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+              <span className="truncate">{conversation.recipientNumber}</span>
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 overflow-x-auto -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {/* Status Dropdown */}
           <Popover open={isStagesOpen} onOpenChange={setIsStagesOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" className="h-9 text-[13px] font-medium border-slate-200 bg-slate-50 hover:bg-slate-100 focus:ring-0 w-[120px] rounded-full px-3 shadow-none text-slate-700 dark:bg-muted/50 dark:border-border dark:text-foreground transition-colors mr-1 justify-between">
+              <Button variant="outline" className="h-9 text-[13px] font-medium border-slate-200 bg-slate-50 hover:bg-slate-100 focus:ring-0 w-[110px] sm:w-[120px] shrink-0 rounded-full px-3 shadow-none text-slate-700 dark:bg-muted/50 dark:border-border dark:text-foreground transition-colors mr-1 justify-between">
                 <div className="flex items-center gap-2 truncate">
                   <div className={cn("h-2 w-2 shrink-0 rounded-full", stages.find(s => s.id === conversation.stage)?.color || "bg-slate-500")} />
                   <span className="truncate">{stages.find(s => s.id === conversation.stage)?.label || "Estado"}</span>
@@ -696,7 +696,7 @@ export function ChatMessageArea({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-12 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20">
+              <Button variant="ghost" size="icon" className="hidden xl:inline-flex h-9 w-12 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20">
                 <MessageCircle className="h-4 w-4" />
                 <ChevronDown className="h-3 w-3 ml-0.5" />
               </Button>
@@ -771,13 +771,14 @@ export function ChatMessageArea({
               </ScrollArea>
             </DropdownMenuContent>
           </DropdownMenu>
-          {/* Call: opens the OS tel: handler. Disabled when the contact has no phone. */}
+          {/* Call: opens the OS tel: handler. Disabled when the contact has no phone.
+              Hidden below xl — also reachable from the contact sidebar. */}
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 disabled:opacity-40"
+                className="hidden 2xl:inline-flex h-9 w-9 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 disabled:opacity-40"
                 disabled={!conversation.participant.phone}
                 onClick={() => {
                   if (conversation.participant.phone) {
@@ -818,13 +819,14 @@ export function ChatMessageArea({
             </TooltipContent>
           </Tooltip>
 
-          {/* Email: opens the OS mailto: handler. Disabled when the contact has no email. */}
+          {/* Email: opens the OS mailto: handler. Disabled when the contact has no email.
+              Hidden below xl — also reachable from the contact sidebar. */}
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 disabled:opacity-40"
+                className="hidden 2xl:inline-flex h-9 w-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 disabled:opacity-40"
                 disabled={!conversation.participant.email}
                 onClick={() => {
                   if (conversation.participant.email) {
@@ -1090,7 +1092,7 @@ export function ChatMessageArea({
               <Button
                 variant="ghost"
                 size="icon"
-                className="relative h-9 w-9 rounded-full bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 dark:hover:bg-yellow-500/20"
+                className="relative hidden lg:inline-flex h-9 w-9 rounded-full bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 dark:hover:bg-yellow-500/20"
                 title={
                   conversation.activeReminder
                     ? `Recordatorio: ${conversation.activeReminder}`
@@ -1137,7 +1139,7 @@ export function ChatMessageArea({
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20"
+            className="hidden lg:inline-flex h-9 w-9 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20"
             onClick={() => setIsDeleteDialogOpen(true)}
             title="Eliminar lead"
           >
@@ -1145,10 +1147,10 @@ export function ChatMessageArea({
           </Button>
 
           {onToggleContactSidebar && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className={cn("h-9 w-9 rounded-full ml-1 hidden lg:flex", isContactSidebarOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted")}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("h-9 w-9 shrink-0 rounded-full ml-1", isContactSidebarOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted")}
               onClick={onToggleContactSidebar}
               title="Alternar panel de contacto"
             >

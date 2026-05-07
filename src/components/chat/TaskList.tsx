@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { CheckCircle2, Circle, Clock, User as UserIcon, Edit2, LayoutList, AlignJustify, List } from "lucide-react";
+import { CheckCircle2, Circle, Clock, User as UserIcon, Edit2, LayoutList, AlignJustify, List, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +15,10 @@ interface TaskListProps {
   selectedUsers: string[];
   onSelectConversation: (id: string) => void;
   activeConversationId: string;
+  onOpenMobileNav?: () => void;
 }
 
-export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSelectConversation, activeConversationId }: TaskListProps) {
+export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSelectConversation, activeConversationId, onOpenMobileNav }: TaskListProps) {
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
 
   const filteredTasks = tasks.filter(t => {
@@ -40,11 +41,24 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
 
   return (
     <TooltipProvider>
-      <div className="flex h-full w-full flex-col border-r bg-card text-card-foreground sm:w-80 lg:w-[350px]">
+      <div className="flex h-full w-full flex-col border-r bg-card text-card-foreground md:w-72 lg:w-80 xl:w-[350px]">
         <div className="flex flex-col border-b">
-          <div className="flex h-[68px] items-center justify-between px-4 py-3">
-            <h2 className="text-lg font-bold tracking-tight">Tareas</h2>
-            <div className="flex items-center gap-3">
+          <div className="flex h-[68px] items-center justify-between gap-2 px-4 py-3">
+            <div className="flex items-center gap-2 min-w-0">
+              {onOpenMobileNav && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="md:hidden h-8 w-8 rounded-full shrink-0"
+                  onClick={onOpenMobileNav}
+                  aria-label="Abrir navegación"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+              )}
+              <h2 className="text-lg font-bold tracking-tight truncate">Tareas</h2>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
               <div className="flex items-center gap-0.5 bg-muted/50 p-0.5 rounded-md">
                 <Tooltip>
                   <TooltipTrigger asChild>

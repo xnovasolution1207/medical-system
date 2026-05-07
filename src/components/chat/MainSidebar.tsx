@@ -25,10 +25,13 @@ interface MainSidebarProps {
   taskUserFilters: string[];
   setTaskUserFilters: (filters: string[]) => void;
   onDeleteView?: (id: string) => void;
+  forceExpanded?: boolean;
 }
 
-export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab, onSelectTab, taskUserFilters, setTaskUserFilters, onDeleteView }: MainSidebarProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab, onSelectTab, taskUserFilters, setTaskUserFilters, onDeleteView, forceExpanded = false }: MainSidebarProps) {
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const isExpanded = forceExpanded || internalExpanded;
+  const setIsExpanded = setInternalExpanded;
   const [isVistasOpen, setIsVistasOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [dateRange, setDateRange] = useState<any>();
@@ -94,14 +97,16 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
     >
       <div className="flex h-[68px] items-center justify-between border-b px-4">
         {isExpanded && <span className="font-semibold text-foreground truncate pl-1">Vistas</span>}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn("h-8 w-8 shrink-0", !isExpanded && "mx-auto")}
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          {isExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </Button>
+        {!forceExpanded && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("h-8 w-8 shrink-0", !isExpanded && "mx-auto")}
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            {isExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </Button>
+        )}
       </div>
 
       <div className="flex-1 py-4 flex flex-col gap-2 px-3 overflow-y-auto">

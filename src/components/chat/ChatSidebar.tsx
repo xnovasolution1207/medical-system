@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2 } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +72,9 @@ interface ChatSidebarProps {
   // We await it so the dialog stays open ("Eliminando…") until the work
   // finishes.
   onDeleteConversation?: (id: string) => void | Promise<void>;
+  // Opens the MainSidebar drawer on screens below `md`. Index.tsx provides it;
+  // the hamburger button below renders only when this prop is set.
+  onOpenMobileNav?: () => void;
 }
 
 export function ChatSidebar({
@@ -92,6 +95,7 @@ export function ChatSidebar({
   onSearchChange,
   isSearching = false,
   onDeleteConversation,
+  onOpenMobileNav,
 }: ChatSidebarProps) {
   const [filter, setFilter] = useState<"all" | "unread" | "recent" | "favorites">("all");
   // Fallback local search for standalone/test usage when the parent doesn't
@@ -232,11 +236,24 @@ export function ChatSidebar({
   };
 
   return (
-    <div className="flex h-full w-full flex-col border-r bg-card text-card-foreground sm:w-80 lg:w-[350px]">
+    <div className="flex h-full w-full flex-col border-r bg-card text-card-foreground md:w-72 lg:w-80 xl:w-[350px]">
       {/* Sidebar Header */}
-      <div className="flex h-[68px] items-center justify-between border-b px-4 py-3">
-        <h2 className="text-lg font-bold tracking-tight">Conversaciones</h2>
-        <div className="flex gap-1">
+      <div className="flex h-[68px] items-center justify-between gap-2 border-b px-4 py-3">
+        <div className="flex items-center gap-2 min-w-0">
+          {onOpenMobileNav && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-8 w-8 rounded-full shrink-0"
+              onClick={onOpenMobileNav}
+              aria-label="Abrir navegación"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
+          <h2 className="text-lg font-bold tracking-tight truncate">Conversaciones</h2>
+        </div>
+        <div className="flex gap-1 shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">

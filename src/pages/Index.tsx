@@ -13,6 +13,7 @@ import {
   Task,
   User,
 } from "@/components/chat/types";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { api, BootstrapPayload } from "@/lib/api";
 import { subscribe } from "@/lib/socket";
@@ -178,7 +179,35 @@ export default function Index() {
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [activeMainTab, setActiveMainTab] = useState("todos");
   const [taskUserFilters, setTaskUserFilters] = useState<string[]>([]);
-  const [isContactSidebarOpen, setIsContactSidebarOpen] = useState(true);
+  // Default the contact sidebar open only on screens wide enough to host
+  // every column comfortably. Below 2xl (1536px) the four-region shell would
+  // squeeze the message area and cause the chat header buttons to spill into
+  // the contact panel — so we keep it collapsed and let the user toggle it
+  // on demand. SSR-safe: window may be undefined.
+  const [isContactSidebarOpen, setIsContactSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(min-width: 1536px)").matches;
+  });
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isContactSheetOpen, setIsContactSheetOpen] = useState(false);
+
+  const handleToggleContactSidebar = useCallback(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
+      setIsContactSidebarOpen((prev) => !prev);
+    } else {
+      setIsContactSheetOpen(true);
+    }
+  }, []);
+
+  const handleSelectMainTab = useCallback((id: string) => {
+    setActiveMainTab(id);
+    setIsMobileNavOpen(false);
+  }, []);
+
+  const handleSelectViewMobile = useCallback((id: string | null) => {
+    setActiveViewId(id);
+    setIsMobileNavOpen(false);
+  }, []);
 
   const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
   const [loadingOlderFor, setLoadingOlderFor] = useState<string | null>(null);
@@ -1078,6 +1107,23 @@ export default function Index() {
         />
       </div>
 
+      <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+        <SheetContent side="left" className="p-0 w-auto max-w-none border-r-0">
+          <SheetTitle className="sr-only">Navegación</SheetTitle>
+          <MainSidebar
+            savedViews={savedViews}
+            activeViewId={activeViewId}
+            onSelectView={handleSelectViewMobile}
+            activeTab={activeMainTab}
+            onSelectTab={handleSelectMainTab}
+            taskUserFilters={taskUserFilters}
+            setTaskUserFilters={setTaskUserFilters}
+            onDeleteView={handleDeleteView}
+            forceExpanded
+          />
+        </SheetContent>
+      </Sheet>
+
       {activeMainTab !== "oportunidades" && (
         <div className={`h-full shrink-0 ${activeId ? "hidden md:block" : "block w-full md:w-auto"}`}>
           {activeMainTab.startsWith("tareas-") ? (
@@ -1088,6 +1134,7 @@ export default function Index() {
               selectedUsers={taskUserFilters}
               onSelectConversation={setActiveId}
               activeConversationId={activeId || ""}
+              onOpenMobileNav={() => setIsMobileNavOpen(true)}
             />
           ) : (
             <ChatSidebar
@@ -1107,6 +1154,7 @@ export default function Index() {
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               isSearching={isSearching}
+              onOpenMobileNav={() => setIsMobileNavOpen(true)}
               onDeleteConversation={(id) => {
                 handleDeleteLead(id).catch((err) => {
                   console.error("delete from sidebar failed", err);
@@ -1130,6 +1178,7 @@ export default function Index() {
             conversations={conversations}
             onMoveOpportunity={handleMoveOpportunity}
             onCreateOpportunity={handleCreateOpportunity}
+            onOpenMobileNav={() => setIsMobileNavOpen(true)}
           />
         </div>
       ) : (
@@ -1152,7 +1201,7 @@ export default function Index() {
               onClearReminder={handleClearReminder}
               onSetReminder={handleSetReminder}
               isContactSidebarOpen={isContactSidebarOpen}
-              onToggleContactSidebar={() => setIsContactSidebarOpen(!isContactSidebarOpen)}
+              onToggleContactSidebar={handleToggleContactSidebar}
               hasOlderMessages={Boolean(activeConversation.messagesHasMore)}
               isLoadingOlderMessages={loadingOlderFor === activeId}
               onLoadOlderMessages={handleLoadOlderMessages}
@@ -1188,10 +1237,10 @@ export default function Index() {
         <div
           className={cn(
             "h-full shrink-0 hidden lg:block transition-all duration-300 ease-in-out",
-            isContactSidebarOpen ? "w-80 xl:w-96 border-l" : "w-0 overflow-hidden border-none"
+            isContactSidebarOpen ? "w-72 xl:w-80 2xl:w-96 border-l" : "w-0 overflow-hidden border-none"
           )}
         >
-          <div className="w-80 xl:w-96 h-full">
+          <div className="w-72 xl:w-80 2xl:w-96 h-full">
             <ContactSidebar
               contact={activeConversation.participant}
               conversation={activeConversation}
@@ -1202,6 +1251,21 @@ export default function Index() {
           </div>
         </div>
       )}
+
+      <Sheet open={isContactSheetOpen} onOpenChange={setIsContactSheetOpen}>
+        <SheetContent side="right" className="p-0 w-[85vw] sm:w-96 max-w-none border-l-0 lg:hidden">
+          <SheetTitle className="sr-only">Detalles del contacto</SheetTitle>
+          {activeConversation && (
+            <ContactSidebar
+              contact={activeConversation.participant}
+              conversation={activeConversation}
+              onUpdateContactName={(newName) =>
+                handleUpdateContactName(activeConversation.participant.id, newName)
+              }
+            />
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

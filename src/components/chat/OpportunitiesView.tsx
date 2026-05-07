@@ -12,6 +12,7 @@ import {
   Calendar as CalendarIcon,
   Globe,
   Check,
+  Menu,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,7 @@ interface OpportunitiesViewProps {
     stageId: string;
     monetaryValue?: number;
   }) => void | Promise<void>;
+  onOpenMobileNav?: () => void;
 }
 
 type SortKey =
@@ -95,6 +97,7 @@ export function OpportunitiesView({
   conversations,
   onMoveOpportunity,
   onCreateOpportunity,
+  onOpenMobileNav,
 }: OpportunitiesViewProps) {
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
@@ -253,10 +256,23 @@ export function OpportunitiesView({
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
       {/* Header */}
-      <div className="flex h-[68px] items-center justify-between px-4 border-b shrink-0 gap-4 overflow-x-auto bg-white dark:bg-slate-950">
-        <h1 className="text-xl font-semibold">Oportunidades</h1>
-        <div className="flex items-center gap-2">
-          <div className="relative w-64 shrink-0">
+      <div className="flex min-h-[68px] flex-wrap items-center justify-between gap-3 px-4 py-3 border-b shrink-0 bg-white dark:bg-slate-950 lg:flex-nowrap lg:gap-4 lg:py-0">
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          {onOpenMobileNav && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-8 w-8 rounded-full shrink-0"
+              onClick={onOpenMobileNav}
+              aria-label="Abrir navegación"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
+          <h1 className="text-xl font-semibold truncate">Oportunidades</h1>
+        </div>
+        <div className="flex flex-1 items-center gap-2 flex-wrap justify-end lg:flex-nowrap">
+          <div className="relative flex-1 min-w-[160px] sm:flex-initial sm:w-56 xl:w-64 shrink-0">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar oportunidad..."
@@ -269,11 +285,12 @@ export function OpportunitiesView({
           {/* Filtros Avanzados */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" className="gap-2 shrink-0">
+              <Button variant="outline" size="icon" className="md:size-auto md:px-3 md:gap-2 shrink-0 relative">
                 <Filter className="h-4 w-4" />
-                Filtros Avanzados
+                <span className="hidden md:inline">Filtros</span>
+                <span className="hidden xl:inline">Avanzados</span>
                 {activeFilterCount > 0 && (
-                  <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                  <span className="absolute -top-1 -right-1 md:static md:ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
                     {activeFilterCount}
                   </span>
                 )}
@@ -361,9 +378,9 @@ export function OpportunitiesView({
           {/* Ordenar */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2 shrink-0">
+              <Button variant="outline" size="icon" className="md:size-auto md:px-3 md:gap-2 shrink-0">
                 <ArrowUpDown className="h-4 w-4" />
-                Ordenar
+                <span className="hidden md:inline">Ordenar</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
@@ -383,21 +400,24 @@ export function OpportunitiesView({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Importar — stubbed (no GHL bulk-create endpoint exposed) */}
-          <Button variant="outline" className="gap-2 shrink-0" onClick={handleComingSoon}>
+          {/* Importar — stubbed (no GHL bulk-create endpoint exposed).
+              Hidden below xl to keep the primary actions visible. */}
+          <Button variant="outline" className="hidden xl:inline-flex gap-2 shrink-0" onClick={handleComingSoon}>
             <Download className="h-4 w-4" />
             Importar
           </Button>
 
-          {/* Gestionar campos — stubbed (GHL pipeline-stage CRUD isn't in the v2 API) */}
-          <Button variant="outline" className="gap-2 shrink-0" onClick={handleComingSoon}>
+          {/* Gestionar campos — stubbed (GHL pipeline-stage CRUD isn't in the v2 API).
+              Hidden below xl to keep the primary actions visible. */}
+          <Button variant="outline" className="hidden xl:inline-flex gap-2 shrink-0" onClick={handleComingSoon}>
             <Settings className="h-4 w-4" />
             Gestionar campos
           </Button>
 
-          {/* Crear oportunidad */}
+          {/* Crear oportunidad — primary action, always visible. Label collapses on small screens. */}
           <Button
-            className="gap-2 shrink-0"
+            size="icon"
+            className="md:size-auto md:px-4 md:gap-2 shrink-0"
             onClick={() => {
               if (!pipeline) {
                 toast({
@@ -411,7 +431,8 @@ export function OpportunitiesView({
             }}
           >
             <Plus className="h-4 w-4" />
-            Crear oportunidad
+            <span className="hidden md:inline">Crear</span>
+            <span className="hidden lg:inline">oportunidad</span>
           </Button>
 
           <div className="flex items-center bg-muted/50 rounded-md p-1 shrink-0">

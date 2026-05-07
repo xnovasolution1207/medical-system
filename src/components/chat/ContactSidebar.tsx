@@ -133,7 +133,7 @@ export function ContactSidebar({ contact, conversation, onUpdateContactName }: C
     setTags(tags.filter(tag => tag !== tagToRemove));
   };
   return (
-    <div className="flex h-full w-full flex-col border-l bg-card text-card-foreground sm:w-80 lg:w-96 overflow-hidden">
+    <div className="flex h-full w-full flex-col border-l bg-card text-card-foreground overflow-hidden">
       <ScrollArea className="flex-1">
         <div className="flex flex-col items-center p-6 text-center">
           <ChannelAvatar 
