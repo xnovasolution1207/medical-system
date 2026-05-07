@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: [".modal.host"],
+    allowedHosts: ["www.coaccrm.com"],
     hmr: {
       overlay: false,
     },
