@@ -190,6 +190,10 @@ export default function Index() {
   });
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isContactSheetOpen, setIsContactSheetOpen] = useState(false);
+  // Lead-list drawer for screens below `md`. Mirrors the second column
+  // (ChatSidebar / TaskList) so the agent can pick a different conversation
+  // without exiting the active chat. Auto-closes once a row is tapped.
+  const [isChatListSheetOpen, setIsChatListSheetOpen] = useState(false);
 
   const handleToggleContactSidebar = useCallback(() => {
     if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
@@ -207,6 +211,14 @@ export default function Index() {
   const handleSelectViewMobile = useCallback((id: string | null) => {
     setActiveViewId(id);
     setIsMobileNavOpen(false);
+  }, []);
+
+  // Wraps `setActiveId` so that picking a row in the mobile lead-list drawer
+  // also dismisses the drawer — otherwise the user has to tap outside the
+  // sheet after every selection.
+  const handleSelectConversationMobile = useCallback((id: string) => {
+    setActiveId(id);
+    setIsChatListSheetOpen(false);
   }, []);
 
   const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
@@ -1124,6 +1136,65 @@ export default function Index() {
         </SheetContent>
       </Sheet>
 
+      {/* Lead-list drawer (mobile). Mirrors the second column so the agent
+          can browse other conversations / tasks while keeping the active
+          chat open underneath. Hidden by `md:hidden` on the trigger side;
+          on md+ the second column is part of the persistent layout. */}
+      <Sheet open={isChatListSheetOpen} onOpenChange={setIsChatListSheetOpen}>
+        <SheetContent side="left" className="p-0 w-[88vw] sm:w-96 max-w-none border-r-0 md:hidden">
+          <SheetTitle className="sr-only">
+            {activeMainTab.startsWith("tareas-") ? "Tareas" : "Conversaciones"}
+          </SheetTitle>
+          {activeMainTab.startsWith("tareas-") ? (
+            <TaskList
+              tasks={tasks}
+              onToggleTask={handleToggleTask}
+              filterType={activeMainTab}
+              selectedUsers={taskUserFilters}
+              onSelectConversation={handleSelectConversationMobile}
+              activeConversationId={activeId || ""}
+              onOpenMobileNav={() => {
+                setIsChatListSheetOpen(false);
+                setIsMobileNavOpen(true);
+              }}
+            />
+          ) : (
+            <ChatSidebar
+              conversations={displayConversations}
+              tasks={tasks}
+              activeConversationId={activeId || ""}
+              onSelectConversation={handleSelectConversationMobile}
+              onToggleFavorite={handleToggleFavorite}
+              activeViewId={activeViewId}
+              savedViews={savedViews}
+              onSaveView={handleSaveView}
+              stages={stages}
+              activeTab={activeMainTab}
+              onLoadMore={handleLoadMoreConversations}
+              hasMore={(isSearchActive ? searchNextCursor : conversationsNextCursor) !== null}
+              isLoadingMore={isLoadingMoreConversations}
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              isSearching={isSearching}
+              onOpenMobileNav={() => {
+                setIsChatListSheetOpen(false);
+                setIsMobileNavOpen(true);
+              }}
+              onDeleteConversation={(id) => {
+                handleDeleteLead(id).catch((err) => {
+                  console.error("delete from sidebar failed", err);
+                  toast({
+                    title: "No se pudo eliminar el lead",
+                    description: String(err),
+                    variant: "destructive",
+                  });
+                });
+              }}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+
       {activeMainTab !== "oportunidades" && (
         <div className={`h-full shrink-0 ${activeId ? "hidden md:block" : "block w-full md:w-auto"}`}>
           {activeMainTab.startsWith("tareas-") ? (
@@ -1208,6 +1279,7 @@ export default function Index() {
               onDeleteLead={handleDeleteLead}
               onToggleFavorite={handleToggleFavorite}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
+              onOpenChatList={() => setIsChatListSheetOpen(true)}
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center bg-muted/30 p-8 text-center">

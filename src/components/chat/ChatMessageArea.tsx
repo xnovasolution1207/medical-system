@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Menu, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
@@ -47,6 +47,9 @@ interface ChatMessageAreaProps {
   // Opens the MainSidebar drawer on screens below `md`. Index.tsx provides it
   // so the user can reach navigation while a conversation is open on mobile.
   onOpenMobileNav?: () => void;
+  // Opens the lead-list drawer on screens below `md`. Lets the agent pick a
+  // different conversation without leaving the active chat.
+  onOpenChatList?: () => void;
 }
 
 // Video message thumbnail. Attempts to show the first frame via
@@ -248,6 +251,7 @@ export function ChatMessageArea({
   onLoadOlderMessages,
   onDeleteLead,
   onOpenMobileNav,
+  onOpenChatList,
 }: ChatMessageAreaProps) {
   const [inputText, setInputText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -527,6 +531,17 @@ export function ChatMessageArea({
               aria-label="Abrir navegación"
             >
               <Menu className="h-5 w-5" />
+            </Button>
+          )}
+          {onOpenChatList && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-8 w-8 rounded-full shrink-0"
+              onClick={onOpenChatList}
+              aria-label="Ver lista de conversaciones"
+            >
+              <Inbox className="h-5 w-5" />
             </Button>
           )}
           {onBack && (
