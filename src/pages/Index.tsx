@@ -1207,6 +1207,7 @@ export default function Index() {
               onLoadOlderMessages={handleLoadOlderMessages}
               onDeleteLead={handleDeleteLead}
               onToggleFavorite={handleToggleFavorite}
+              onOpenMobileNav={() => setIsMobileNavOpen(true)}
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center bg-muted/30 p-8 text-center">

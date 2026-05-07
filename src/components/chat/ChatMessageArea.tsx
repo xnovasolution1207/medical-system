@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Menu, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,9 @@ interface ChatMessageAreaProps {
   isLoadingOlderMessages?: boolean;
   onLoadOlderMessages?: () => void;
   onDeleteLead?: () => void;
+  // Opens the MainSidebar drawer on screens below `md`. Index.tsx provides it
+  // so the user can reach navigation while a conversation is open on mobile.
+  onOpenMobileNav?: () => void;
 }
 
 // Video message thumbnail. Attempts to show the first frame via
@@ -244,6 +247,7 @@ export function ChatMessageArea({
   isLoadingOlderMessages = false,
   onLoadOlderMessages,
   onDeleteLead,
+  onOpenMobileNav,
 }: ChatMessageAreaProps) {
   const [inputText, setInputText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -514,12 +518,24 @@ export function ChatMessageArea({
       {/* Header */}
       <div className="flex h-[68px] items-center justify-between gap-2 border-b bg-card/50 px-4 py-3 backdrop-blur-sm overflow-hidden">
         <div className="flex items-center gap-3 min-w-0 shrink">
+          {onOpenMobileNav && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-8 w-8 rounded-full shrink-0"
+              onClick={onOpenMobileNav}
+              aria-label="Abrir navegación"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
           {onBack && (
             <Button
               variant="ghost"
               size="icon"
-              className="mr-1 md:hidden shrink-0"
+              className="md:hidden shrink-0"
               onClick={onBack}
+              aria-label="Volver a la lista"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
