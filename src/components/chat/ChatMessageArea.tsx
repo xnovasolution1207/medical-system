@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, ArrowLeft, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
@@ -31,7 +31,6 @@ interface ChatMessageAreaProps {
   onSendMessage: (text: string, attachment?: Message["attachment"], channel?: Message["channel"], mentions?: string[], reminder?: string, replyTo?: Message["replyTo"]) => void;
   onScheduleMessage?: (conversationId: string, text: string, date: string, channel?: Message["channel"]) => void;
   onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
-  onBack?: () => void;
   onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
   onClearReminder?: (id: string) => void;
   onSetReminder?: (id: string, reminder: string) => void;
@@ -237,7 +236,6 @@ export function ChatMessageArea({
   onSendMessage,
   onScheduleMessage,
   onCancelScheduledMessage,
-  onBack,
   onUpdateStage,
   onClearReminder,
   onSetReminder,
@@ -542,17 +540,6 @@ export function ChatMessageArea({
               aria-label="Ver lista de conversaciones"
             >
               <Inbox className="h-5 w-5" />
-            </Button>
-          )}
-          {onBack && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden shrink-0"
-              onClick={onBack}
-              aria-label="Volver a la lista"
-            >
-              <ArrowLeft className="h-5 w-5" />
             </Button>
           )}
           <ChannelAvatar

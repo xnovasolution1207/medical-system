@@ -1267,7 +1267,6 @@ export default function Index() {
               onSendMessage={handleSendMessage}
               onScheduleMessage={handleScheduleMessage}
               onCancelScheduledMessage={handleCancelScheduledMessage}
-              onBack={() => setActiveId(null)}
               onUpdateStage={handleUpdateStage}
               onClearReminder={handleClearReminder}
               onSetReminder={handleSetReminder}
