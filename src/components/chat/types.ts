@@ -7,12 +7,24 @@ export type User = {
   phone?: string;
   tags?: string[];
   assignedTo?: string;
+  // GHL user ids that watch this contact. Local-only on the backend (see
+  // followersStore). Always present (possibly empty) so consumers don't have
+  // to handle `undefined`.
+  followers?: string[];
   dnd?: {
     email: boolean;
     sms: boolean;
     whatsapp: boolean;
     calls: boolean;
   };
+};
+
+// Staff/agent picker entry — populated from the backend bootstrap payload's
+// `users` array. Used by the Propietario / Seguidores dropdowns.
+export type AgentUser = {
+  id: string;
+  name: string;
+  avatar?: string;
 };
 
 export type MessageButton = {

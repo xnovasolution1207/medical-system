@@ -4,6 +4,7 @@
 // on Vercel, backend on Render), set VITE_BACKEND_URL at build time to the
 // backend's absolute URL so fetches target it directly.
 import type {
+  AgentUser,
   Conversation,
   Message,
   Opportunity,
@@ -20,6 +21,9 @@ export interface BootstrapPayload {
   stages: { id: string; label: string; color: string }[];
   opportunities: Opportunity[];
   tasks: Task[];
+  // Roster of GHL staff users for agent-pickers (Propietario / Seguidores).
+  // Empty when the GHL token lacks `users.readonly`.
+  users: AgentUser[];
 }
 
 // Strip any trailing slash so we can always append "/api/..." cleanly.
@@ -110,8 +114,19 @@ export const api = {
   },
 
   contacts: {
-    update: (id: string, patch: { name?: string; email?: string; phone?: string; tags?: string[] }) =>
-      request<User>("PATCH", `/contacts/${id}`, patch),
+    update: (
+      id: string,
+      patch: {
+        name?: string;
+        email?: string;
+        phone?: string;
+        tags?: string[];
+        // GHL user id that owns the contact. Pass null/empty string to clear.
+        assignedTo?: string | null;
+        // Local-only watchlist of GHL user ids. Pass an empty array to clear.
+        followers?: string[];
+      }
+    ) => request<User>("PATCH", `/contacts/${id}`, patch),
     delete: (id: string) => request<void>("DELETE", `/contacts/${id}`),
   },
 

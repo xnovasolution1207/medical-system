@@ -169,6 +169,7 @@ export default function Index() {
   const opportunities = data?.opportunities ?? [];
   const pipelines = data?.pipelines ?? [];
   const stages = data?.stages ?? [];
+  const users = data?.users ?? [];
   const currentUser = data?.currentUser ?? FALLBACK_USER;
   const conversationsNextCursor = data?.conversationsNextCursor ?? null;
 
@@ -401,13 +402,31 @@ export default function Index() {
               const freshMsgs = inc.messages.filter((m) => !existingIds.has(m.id));
               const merged: Conversation = {
                 ...inc,
+                // The conversation mapper only carries id/name/avatar/tags on
+                // the participant — it intentionally drops assignedTo,
+                // followers, email, phone, dnd. Layer the full contact
+                // bundle on top so picking an owner doesn't appear to revert
+                // when the lead.updated webhook echoes back.
+                participant: { ...inc.participant, ...event.lead.contact },
                 messages: freshMsgs.length
                   ? [...existing.messages, ...freshMsgs]
                   : existing.messages,
                 scheduledMessages:
                   existing.scheduledMessages ?? inc.scheduledMessages,
               };
-              conversations = moveConversationToFront(conversations, inc.id, merged);
+              // Only re-sort the list when there's actual new chat activity.
+              // Contact-metadata-only events (owner change, tags, name edit
+              // — they all bounce through `lead.updated` because GHL fires
+              // ContactUpdate) should leave the row in place; otherwise picking
+              // an owner would jump the lead to the top, which the user
+              // explicitly does not want.
+              if (freshMsgs.length > 0) {
+                conversations = moveConversationToFront(conversations, inc.id, merged);
+              } else {
+                conversations = conversations.map((c) =>
+                  c.id === inc.id ? merged : c
+                );
+              }
             }
           } else {
             // ContactCreate (or any contact-only webhook) arrived ahead of
@@ -904,6 +923,49 @@ export default function Index() {
     [toast, updateBootstrap]
   );
 
+  // Owner / followers patch — used by ContactSidebar's Asignación section.
+  // Patches every conversation row whose participant is this contact so the
+  // header and the right panel stay in sync, then writes through to the
+  // backend (`assignedTo` → GHL contact, `followers` → in-memory store).
+  // On failure the optimistic patch is left in place but a toast surfaces the
+  // error — the user can re-pick to retry.
+  const handleUpdateAssignment = useCallback(
+    (
+      contactId: string,
+      patch: { assignedTo?: string | null; followers?: string[] }
+    ) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => {
+          const matches =
+            c.contactId === contactId || c.participant.id === contactId;
+          if (!matches) return c;
+          return {
+            ...c,
+            participant: {
+              ...c.participant,
+              ...(patch.assignedTo !== undefined
+                ? { assignedTo: patch.assignedTo ?? undefined }
+                : {}),
+              ...(patch.followers !== undefined
+                ? { followers: patch.followers }
+                : {}),
+            },
+          };
+        }),
+      }));
+      api.contacts.update(contactId, patch).catch((err) => {
+        console.error("contact assignment update failed", err);
+        toast({
+          title: "No se pudo guardar la asignación",
+          description: String((err as Error)?.message ?? err),
+          variant: "destructive",
+        });
+      });
+    },
+    [toast, updateBootstrap]
+  );
+
   const handleAddTask = useCallback(
     (task: Omit<Task, "id">) => {
       const optimisticId = `t-tmp-${Date.now()}`;
@@ -1319,6 +1381,17 @@ export default function Index() {
               onUpdateContactName={(newName) =>
                 handleUpdateContactName(activeConversation.participant.id, newName)
               }
+              users={users}
+              onUpdateAssignedTo={(userId) =>
+                handleUpdateAssignment(activeConversation.participant.id, {
+                  assignedTo: userId,
+                })
+              }
+              onUpdateFollowers={(ids) =>
+                handleUpdateAssignment(activeConversation.participant.id, {
+                  followers: ids,
+                })
+              }
             />
           </div>
         </div>
@@ -1333,6 +1406,17 @@ export default function Index() {
               conversation={activeConversation}
               onUpdateContactName={(newName) =>
                 handleUpdateContactName(activeConversation.participant.id, newName)
+              }
+              users={users}
+              onUpdateAssignedTo={(userId) =>
+                handleUpdateAssignment(activeConversation.participant.id, {
+                  assignedTo: userId,
+                })
+              }
+              onUpdateFollowers={(ids) =>
+                handleUpdateAssignment(activeConversation.participant.id, {
+                  followers: ids,
+                })
               }
             />
           )}

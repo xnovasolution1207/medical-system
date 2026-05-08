@@ -10,29 +10,47 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { User, Conversation } from "./types";
+import { AgentUser, User, Conversation } from "./types";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play } from "lucide-react";
-
-const MOCK_AGENTS = [
-  { id: "a1", name: "Agente de Ventas", avatar: "https://i.pravatar.cc/150?u=a1" },
-  { id: "a2", name: "María González", avatar: "https://i.pravatar.cc/150?u=a2" },
-  { id: "a3", name: "Carlos López", avatar: "https://i.pravatar.cc/150?u=a3" },
-  { id: "a4", name: "Ana Martínez", avatar: "https://i.pravatar.cc/150?u=a4" },
-];
 
 interface ContactSidebarProps {
   contact: User;
   conversation?: Conversation;
   onUpdateContactName?: (name: string) => void;
+  // Agent roster from the bootstrap payload — populates the Propietario and
+  // Seguidores dropdowns. Empty when GHL token lacks `users.readonly`.
+  users?: AgentUser[];
+  // Persist a change to the contact's owner. `userId` is null when clearing
+  // the assignment (GHL accepts an empty string).
+  onUpdateAssignedTo?: (userId: string | null) => void;
+  // Persist the full new follower set. Always called with the complete list,
+  // not a delta — keeps the backend store cleanly idempotent.
+  onUpdateFollowers?: (userIds: string[]) => void;
 }
 
-export function ContactSidebar({ contact, conversation, onUpdateContactName }: ContactSidebarProps) {
+export function ContactSidebar({
+  contact,
+  conversation,
+  onUpdateContactName,
+  users = [],
+  onUpdateAssignedTo,
+  onUpdateFollowers,
+}: ContactSidebarProps) {
   const [tags, setTags] = useState<string[]>(contact.tags || []);
   const [newTag, setNewTag] = useState("");
   const [isAddingTag, setIsAddingTag] = useState(false);
-  const [selectedFollowers, setSelectedFollowers] = useState<string[]>(["a2"]);
+  // Owner / followers are driven by the live contact prop. We mirror them
+  // into local state for optimistic updates so the dropdowns feel responsive
+  // even before the PATCH round-trips.
+  const [selectedOwner, setSelectedOwner] = useState<string>(contact.assignedTo ?? "");
+  const [selectedFollowers, setSelectedFollowers] = useState<string[]>(contact.followers ?? []);
+  // Convenience map for avatar/name lookups in the trigger renderers.
+  const usersById = React.useMemo(
+    () => new Map(users.map((u) => [u.id, u])),
+    [users]
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const [isEditingFields, setIsEditingFields] = useState(false);
   const [fields, setFields] = useState<any[]>([
@@ -92,6 +110,35 @@ export function ContactSidebar({ contact, conversation, onUpdateContactName }: C
   useEffect(() => {
     setEditedName(contact.name);
   }, [contact.name]);
+
+  // Re-sync owner/followers whenever we switch contacts or a WS event
+  // patches the active one. We do this in a dedicated effect (rather than
+  // initial useState only) so the UI never lags the cache after a webhook
+  // refresh or after the user picks a different lead.
+  useEffect(() => {
+    setSelectedOwner(contact.assignedTo ?? "");
+  }, [contact.id, contact.assignedTo]);
+  useEffect(() => {
+    setSelectedFollowers(contact.followers ?? []);
+  }, [contact.id, contact.followers]);
+
+  const handleOwnerChange = (value: string) => {
+    // The Select fires onValueChange even when the user re-picks the same
+    // entry — guard so we don't spam the backend with no-ops.
+    if (value === selectedOwner) return;
+    setSelectedOwner(value);
+    // Empty string is the "clear owner" sentinel: the backend forwards it as
+    // an empty assignedTo to GHL, which removes the assignment.
+    onUpdateAssignedTo?.(value || null);
+  };
+
+  const handleToggleFollower = (userId: string, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...selectedFollowers, userId]))
+      : selectedFollowers.filter((id) => id !== userId);
+    setSelectedFollowers(next);
+    onUpdateFollowers?.(next);
+  };
 
   const handleNameSave = () => {
     if (editedName.trim() && editedName !== contact.name) {
@@ -440,93 +487,111 @@ export function ContactSidebar({ contact, conversation, onUpdateContactName }: C
 
         <div className="p-4 space-y-4">
           <h3 className="text-sm font-semibold">Asignación</h3>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Propietario</Label>
-              <Select defaultValue="a1">
-                <SelectTrigger className="w-full [&>span]:flex [&>span]:items-center [&>span]:gap-2">
-                  <SelectValue placeholder="Seleccionar propietario" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOCK_AGENTS.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-5 w-5">
-                          <AvatarImage src={agent.avatar} />
-                          <AvatarFallback>{agent.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <span>{agent.name}</span>
-                      </div>
+          {users.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">
+              No hay agentes disponibles. La integración con GoHighLevel aún no
+              expone la lista de usuarios.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Propietario</Label>
+                <Select
+                  value={selectedOwner || "__unassigned__"}
+                  onValueChange={(v) => handleOwnerChange(v === "__unassigned__" ? "" : v)}
+                >
+                  <SelectTrigger className="w-full [&>span]:flex [&>span]:items-center [&>span]:gap-2">
+                    <SelectValue placeholder="Seleccionar propietario" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__unassigned__">
+                      <span className="text-muted-foreground italic">Sin asignar</span>
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Seguidores</Label>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between font-normal px-3 h-10 bg-background hover:bg-background">
-                    <div className="flex items-center gap-2 overflow-hidden truncate">
-                      {selectedFollowers.length > 0 ? (
-                        selectedFollowers.length === 1 ? (
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-5 w-5">
-                              <AvatarImage src={MOCK_AGENTS.find(a => a.id === selectedFollowers[0])?.avatar} />
-                              <AvatarFallback>{MOCK_AGENTS.find(a => a.id === selectedFollowers[0])?.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                            </Avatar>
-                            <span className="truncate">{MOCK_AGENTS.find(a => a.id === selectedFollowers[0])?.name}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <div className="flex -space-x-2">
-                              {selectedFollowers.slice(0, 3).map(id => {
-                                const agent = MOCK_AGENTS.find(a => a.id === id);
-                                return (
-                                  <Avatar key={id} className="h-5 w-5 border-2 border-background">
-                                    <AvatarImage src={agent?.avatar} />
-                                    <AvatarFallback>{agent?.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                    {users.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-5 w-5">
+                            {agent.avatar && <AvatarImage src={agent.avatar} />}
+                            <AvatarFallback>{agent.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <span>{agent.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Seguidores</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between font-normal px-3 h-10 bg-background hover:bg-background">
+                      <div className="flex items-center gap-2 overflow-hidden truncate">
+                        {selectedFollowers.length > 0 ? (
+                          selectedFollowers.length === 1 ? (
+                            (() => {
+                              const agent = usersById.get(selectedFollowers[0]);
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-5 w-5">
+                                    {agent?.avatar && <AvatarImage src={agent.avatar} />}
+                                    <AvatarFallback>
+                                      {(agent?.name ?? "??").substring(0, 2).toUpperCase()}
+                                    </AvatarFallback>
                                   </Avatar>
-                                );
-                              })}
+                                  <span className="truncate">{agent?.name ?? "Usuario"}</span>
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div className="flex -space-x-2">
+                                {selectedFollowers.slice(0, 3).map((id) => {
+                                  const agent = usersById.get(id);
+                                  return (
+                                    <Avatar key={id} className="h-5 w-5 border-2 border-background">
+                                      {agent?.avatar && <AvatarImage src={agent.avatar} />}
+                                      <AvatarFallback>
+                                        {(agent?.name ?? "??").substring(0, 2).toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                  );
+                                })}
+                              </div>
+                              <span className="truncate text-sm">
+                                {selectedFollowers.length} seleccionados
+                              </span>
                             </div>
-                            <span className="truncate text-sm">{selectedFollowers.length} seleccionados</span>
-                          </div>
-                        )
-                      ) : (
-                        <span className="text-muted-foreground">Seleccionar seguidores</span>
-                      )}
-                    </div>
-                    <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-[280px]" align="start">
-                  {MOCK_AGENTS.map((agent) => (
-                    <DropdownMenuCheckboxItem
-                      key={agent.id}
-                      checked={selectedFollowers.includes(agent.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedFollowers([...selectedFollowers, agent.id]);
-                        } else {
-                          setSelectedFollowers(selectedFollowers.filter(id => id !== agent.id));
-                        }
-                      }}
-                      onSelect={(e) => e.preventDefault()}
-                    >
-                      <div className="flex items-center gap-2 ml-2">
-                        <Avatar className="h-5 w-5">
-                          <AvatarImage src={agent.avatar} />
-                          <AvatarFallback>{agent.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <span>{agent.name}</span>
+                          )
+                        ) : (
+                          <span className="text-muted-foreground">Seleccionar seguidores</span>
+                        )}
                       </div>
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-[280px]" align="start">
+                    {users.map((agent) => (
+                      <DropdownMenuCheckboxItem
+                        key={agent.id}
+                        checked={selectedFollowers.includes(agent.id)}
+                        onCheckedChange={(checked) => handleToggleFollower(agent.id, Boolean(checked))}
+                        onSelect={(e) => e.preventDefault()}
+                      >
+                        <div className="flex items-center gap-2 ml-2">
+                          <Avatar className="h-5 w-5">
+                            {agent.avatar && <AvatarImage src={agent.avatar} />}
+                            <AvatarFallback>{agent.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <span>{agent.name}</span>
+                        </div>
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <Separator />
