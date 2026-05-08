@@ -95,7 +95,13 @@ export type Conversation = {
   recipientNumber: string;
   lastMessage: string;
   unreadCount: number;
+  // Display-only formatted time ("01:48 PM"). Use `lastMessageAt` (ISO) for
+  // any date-range comparison.
   timestamp: string;
+  // ISO timestamp of the last message — drives the date-range filter
+  // (Hoy / Ayer / Esta Semana / …). May be missing for stub / never-messaged
+  // conversations.
+  lastMessageAt?: string;
   messages: Message[];
   isFavorite?: boolean;
   activeReminder?: string;

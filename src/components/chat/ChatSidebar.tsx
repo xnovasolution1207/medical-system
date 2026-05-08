@@ -154,6 +154,81 @@ export function ChatSidebar({
   const currentFilters = builderFilters;
   const currentLogic = builderLogic;
 
+  // Resolve the active date filter into a concrete [from, to] epoch-ms
+  // window. The 6 preset labels map to fixed ranges (today / yesterday /
+  // ISO-week / last ISO-week / month / last month). Anything else means the
+  // user picked from the inline calendar — we trust `dateRange.from/to`
+  // directly so we don't have to round-trip the formatted display string.
+  // Returns null when no filter is active.
+  const dateFilterRange = React.useMemo<{ from: number; to: number } | null>(() => {
+    if (!dateFilter && !dateRange?.from) return null;
+    const PRESETS = new Set([
+      "Hoy",
+      "Ayer",
+      "Esta Semana",
+      "Semana pasada",
+      "Este mes",
+      "Mes Pasado",
+    ]);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (dateFilter === "Hoy") {
+      const from = startOfToday.getTime();
+      const to = from + 24 * 60 * 60 * 1000;
+      return { from, to };
+    }
+    if (dateFilter === "Ayer") {
+      const to = startOfToday.getTime();
+      const from = to - 24 * 60 * 60 * 1000;
+      return { from, to };
+    }
+    if (dateFilter === "Esta Semana") {
+      // Spanish-locale week starts on Monday. JS getDay(): Sun=0..Sat=6.
+      const dow = startOfToday.getDay() === 0 ? 7 : startOfToday.getDay();
+      const from = startOfToday.getTime() - (dow - 1) * 24 * 60 * 60 * 1000;
+      const to = from + 7 * 24 * 60 * 60 * 1000;
+      return { from, to };
+    }
+    if (dateFilter === "Semana pasada") {
+      const dow = startOfToday.getDay() === 0 ? 7 : startOfToday.getDay();
+      const thisMonday = startOfToday.getTime() - (dow - 1) * 24 * 60 * 60 * 1000;
+      const from = thisMonday - 7 * 24 * 60 * 60 * 1000;
+      const to = thisMonday;
+      return { from, to };
+    }
+    if (dateFilter === "Este mes") {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+      return { from, to };
+    }
+    if (dateFilter === "Mes Pasado") {
+      const from = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+      const to = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      return { from, to };
+    }
+    // Custom range from the inline calendar: dateFilter is the formatted
+    // display string and the actual Date objects live on `dateRange`.
+    if (!PRESETS.has(dateFilter) && dateRange?.from) {
+      const fromDate = new Date(dateRange.from);
+      const toDate = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from);
+      // Inclusive day boundaries: 00:00:00 of the start day, exclusive end at
+      // 24:00:00 of the end day so the chosen end-day's messages are matched.
+      const from = new Date(
+        fromDate.getFullYear(),
+        fromDate.getMonth(),
+        fromDate.getDate()
+      ).getTime();
+      const to = new Date(
+        toDate.getFullYear(),
+        toDate.getMonth(),
+        toDate.getDate() + 1
+      ).getTime();
+      return { from, to };
+    }
+    return null;
+  }, [dateFilter, dateRange]);
+
   const filteredConversations = conversations.filter((conv) => {
     if (activeTab === "recordatorios" && !conv.activeReminder) {
       return false;
@@ -168,7 +243,18 @@ export function ChatSidebar({
     if (filter === "favorites" && !conv.isFavorite) {
       return false;
     }
-    
+
+    // Date filter: drop conversations whose last message falls outside the
+    // selected window. Conversations with no `lastMessageAt` (stub rows for
+    // contacts that haven't messaged yet) are always excluded when a date
+    // filter is active — there's no last-activity timestamp to compare.
+    if (dateFilterRange) {
+      if (!conv.lastMessageAt) return false;
+      const ts = Date.parse(conv.lastMessageAt);
+      if (Number.isNaN(ts)) return false;
+      if (ts < dateFilterRange.from || ts >= dateFilterRange.to) return false;
+    }
+
     // Advanced filters
     if (currentFilters.length > 0) {
       const passesFilters = currentFilters.map(cond => {
