@@ -1,11 +1,12 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
+import { api } from "@/lib/api";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Conversation } from "./types";
+import { AgentUser, Conversation } from "./types";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -75,6 +76,24 @@ interface ChatSidebarProps {
   // Opens the MainSidebar drawer on screens below `md`. Index.tsx provides it;
   // the hamburger button below renders only when this prop is set.
   onOpenMobileNav?: () => void;
+  // Persists a brand-new contact via POST /api/contacts. Resolves to the
+  // created contact id (or null on failure). Index.tsx provides this so the
+  // SPA can optimistically update the cache while the webhook lands.
+  onCreateContact?: (payload: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  }) => Promise<{ id: string } | null>;
+  // Agent roster from the bootstrap payload — drives the FilterBuilder's
+  // user pickers (Asignado / Seguidor / Mención).
+  users?: AgentUser[];
+  // Advanced filter state (lifted to Index.tsx so the search/fetch
+  // pipeline can forward translatable conditions to GHL). Pass-through
+  // for FilterBuilder.
+  advancedFilters?: FilterCondition[];
+  advancedLogic?: "AND" | "OR";
+  onAdvancedFiltersChange?: (filters: FilterCondition[]) => void;
+  onAdvancedLogicChange?: (logic: "AND" | "OR") => void;
 }
 
 export function ChatSidebar({
@@ -96,6 +115,12 @@ export function ChatSidebar({
   isSearching = false,
   onDeleteConversation,
   onOpenMobileNav,
+  onCreateContact,
+  users = [],
+  advancedFilters,
+  advancedLogic,
+  onAdvancedFiltersChange,
+  onAdvancedLogicChange,
 }: ChatSidebarProps) {
   const [filter, setFilter] = useState<"all" | "unread" | "recent" | "favorites">("all");
   // Fallback local search for standalone/test usage when the parent doesn't
@@ -111,6 +136,60 @@ export function ChatSidebar({
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
+  // Add-contact form state. We keep it locally rather than forwarding the
+  // form object up so the dialog can reset itself on close without parent
+  // entanglement.
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [isCreatingContact, setIsCreatingContact] = useState(false);
+  const resetContactForm = () => {
+    setContactName("");
+    setContactPhone("");
+    setContactEmail("");
+  };
+  // New-conversation search: lets the user pick an existing contact (by name
+  // / phone / email) and navigate to their conversation. Powered by the same
+  // server-side conversation-list query used by the sidebar's main search.
+  const [newConvSearch, setNewConvSearch] = useState("");
+  const [newConvResults, setNewConvResults] = useState<Conversation[]>([]);
+  const [isSearchingNewConv, setIsSearchingNewConv] = useState(false);
+
+  // Debounced server-side search for the Nueva conversación dialog. Skips
+  // when the dialog is closed or the query is short to avoid pinging GHL on
+  // every keystroke. Cancellation guards prevent stale responses from
+  // overwriting newer ones when the user types quickly.
+  useEffect(() => {
+    if (!isNewConversationOpen) return;
+    const q = newConvSearch.trim();
+    if (q.length < 2) {
+      setNewConvResults([]);
+      setIsSearchingNewConv(false);
+      return;
+    }
+    let cancelled = false;
+    setIsSearchingNewConv(true);
+    const timer = window.setTimeout(() => {
+      api.conversations
+        .list({ limit: 25, query: q })
+        .then((result) => {
+          if (cancelled) return;
+          setNewConvResults(result.conversations);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          console.error("new-conversation search failed", err);
+          setNewConvResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearchingNewConv(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isNewConversationOpen, newConvSearch]);
   // Delete-confirmation state. We keep the lead's name alongside the id so
   // the dialog copy can read "Se eliminará a {name}…" without re-deriving it
   // from the conversations array at render time (the row may have already
@@ -119,8 +198,21 @@ export function ChatSidebar({
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
 
-  const [builderFilters, setBuilderFilters] = useState<FilterCondition[]>([]);
-  const [builderLogic, setBuilderLogic] = useState<"AND" | "OR">("AND");
+  // Filter state: prefer parent (Index.tsx) when controlled — that lets the
+  // server-fetch pipeline forward translatable conditions to GHL. Falls back
+  // to local state when the component is rendered standalone (tests, Storybook).
+  const [internalBuilderFilters, setInternalBuilderFilters] = useState<FilterCondition[]>([]);
+  const [internalBuilderLogic, setInternalBuilderLogic] = useState<"AND" | "OR">("AND");
+  const builderFilters = advancedFilters ?? internalBuilderFilters;
+  const builderLogic = advancedLogic ?? internalBuilderLogic;
+  const setBuilderFilters = (f: FilterCondition[]) => {
+    if (onAdvancedFiltersChange) onAdvancedFiltersChange(f);
+    else setInternalBuilderFilters(f);
+  };
+  const setBuilderLogic = (l: "AND" | "OR") => {
+    if (onAdvancedLogicChange) onAdvancedLogicChange(l);
+    else setInternalBuilderLogic(l);
+  };
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const handleScroll = useCallback(
@@ -144,12 +236,74 @@ export function ChatSidebar({
 
   const activeView = savedViews.find(v => v.id === activeViewId);
   
-  React.useEffect(() => {
-    if (activeView) {
-      setBuilderFilters(activeView.filters);
-      setBuilderLogic(activeView.logic);
+  // Human-friendly labels for the active-filter chips. Conditions store
+  // raw GHL ids / channel slugs / direction codes, which are inscrutable
+  // when surfaced directly ("seguidor: BCZIHFSqMNAW3zx7fT2V"). The helpers
+  // below resolve those values back to the names the user sees in the
+  // FilterBuilder dropdowns.
+  const FIELD_LABELS: Record<string, string> = {
+    asignado: "Asignado",
+    seguidor: "Seguidor",
+    mencion: "Mención",
+    direccion_ultimo_mensaje: "Dirección último mensaje",
+    tipo_ultimo_mensaje_saliente: "Tipo último saliente",
+    canal_ultimo_mensaje: "Canal último mensaje",
+    etiqueta: "Etiqueta",
+    ans: "ANS",
+    embudo_actual: "Embudo",
+  };
+  const CHANNEL_LABELS_DICT: Record<string, string> = {
+    whatsapp: "WhatsApp",
+    sms: "SMS",
+    email: "Email",
+    instagram: "Instagram",
+    messenger: "Messenger",
+    tiktok: "TikTok",
+  };
+  const formatConditionValue = (cond: FilterCondition): string => {
+    if (!cond.value) return "";
+    if (
+      cond.field === "asignado" ||
+      cond.field === "seguidor" ||
+      cond.field === "mencion"
+    ) {
+      const u = users.find((u) => u.id === cond.value);
+      return u?.name ?? cond.value;
     }
-  }, [activeView]);
+    if (
+      cond.field === "canal_ultimo_mensaje" ||
+      cond.field === "tipo_ultimo_mensaje_saliente"
+    ) {
+      return CHANNEL_LABELS_DICT[cond.value] ?? cond.value;
+    }
+    if (cond.field === "direccion_ultimo_mensaje") {
+      if (cond.value === "inbound") return "Entrante";
+      if (cond.value === "outbound") return "Saliente";
+      return cond.value;
+    }
+    if (cond.field === "embudo_actual") {
+      return stages.find((s) => s.id === cond.value)?.label ?? cond.value;
+    }
+    return cond.value;
+  };
+  const OPERATOR_SHORT: Record<string, string> = {
+    es: "es",
+    no_es: "no es",
+    contiene: "contiene",
+    no_contiene: "no contiene",
+  };
+
+  // When the component is rendered uncontrolled (no advancedFilters prop),
+  // we still need to hydrate from the active saved view. Index.tsx owns
+  // this effect when controlled — see its `activeViewId` useEffect. The
+  // guard avoids duplicating the patch and racing the parent's update.
+  React.useEffect(() => {
+    if (advancedFilters !== undefined) return;
+    if (activeView) {
+      setInternalBuilderFilters(activeView.filters);
+      setInternalBuilderLogic(activeView.logic);
+    }
+  }, [activeView, advancedFilters]);
 
   const currentFilters = builderFilters;
   const currentLogic = builderLogic;
@@ -255,35 +409,136 @@ export function ChatSidebar({
       if (ts < dateFilterRange.from || ts >= dateFilterRange.to) return false;
     }
 
-    // Advanced filters
+    // Advanced filters — each FilterCondition is evaluated independently;
+    // the active logic (AND / OR) decides how their booleans are combined.
     if (currentFilters.length > 0) {
-      const passesFilters = currentFilters.map(cond => {
+      const usersByName = new Map(
+        users.map((u) => [u.name.toLowerCase(), u.id])
+      );
+      // For text-input asignado/seguidor/mención (when the agent roster
+      // isn't loaded), we compare loosely so the user can type a name and
+      // still match the underlying userId.
+      const resolveUserIds = (raw: string): string[] => {
+        const v = raw.trim();
+        if (!v) return [];
+        const exact = usersByName.get(v.toLowerCase());
+        if (exact) return [exact];
+        // No name match — treat the value itself as a userId (or partial).
+        return [v];
+      };
+
+      const passesFilters = currentFilters.map((cond) => {
         if (!cond.value) return true;
+        const v = cond.value;
+        const valLower = v.toLowerCase();
+        const isNegated =
+          cond.operator === "no_es" || cond.operator === "no_contiene";
+        const isEquality = cond.operator === "es" || cond.operator === "no_es";
+
         let match = false;
-        const valLower = cond.value.toLowerCase();
-        
-        // Mock filtering logic
         switch (cond.field) {
-          case "asignado":
-            match = conv.participant.assignedTo?.toLowerCase().includes(valLower) || false;
+          case "asignado": {
+            const candidates = resolveUserIds(v);
+            const a = conv.participant.assignedTo;
+            if (!a) match = false;
+            else if (isEquality) {
+              match = candidates.includes(a);
+            } else {
+              match = candidates.some((c) =>
+                a.toLowerCase().includes(c.toLowerCase())
+              );
+            }
             break;
+          }
+          case "seguidor": {
+            const candidates = resolveUserIds(v);
+            const followers = conv.participant.followers ?? [];
+            if (followers.length === 0) match = false;
+            else if (isEquality) {
+              match = candidates.some((c) => followers.includes(c));
+            } else {
+              match = candidates.some((c) =>
+                followers.some((f) => f.toLowerCase().includes(c.toLowerCase()))
+              );
+            }
+            break;
+          }
+          case "mencion": {
+            // Messages carry `mentions: string[]` of GHL user ids. We can
+            // only check messages that have been hydrated into the cache —
+            // unloaded conversations are treated as non-matching.
+            const candidates = resolveUserIds(v);
+            const mentioned = conv.messages.flatMap((m) => m.mentions ?? []);
+            if (mentioned.length === 0) match = false;
+            else if (isEquality) {
+              match = candidates.some((c) => mentioned.includes(c));
+            } else {
+              match = candidates.some((c) =>
+                mentioned.some((m) => m.toLowerCase().includes(c.toLowerCase()))
+              );
+            }
+            break;
+          }
+          case "direccion_ultimo_mensaje": {
+            const dir = conv.lastMessageDirection;
+            match = dir === valLower;
+            break;
+          }
+          case "tipo_ultimo_mensaje_saliente": {
+            // The wire conversation only carries the channel of the
+            // *last* message. Only treat it as the last outbound channel
+            // when the last message direction is outbound — otherwise
+            // we don't know and exclude.
+            if (conv.lastMessageDirection !== "outbound") {
+              match = false;
+            } else {
+              match = conv.source === valLower;
+            }
+            break;
+          }
           case "canal_ultimo_mensaje":
             match = conv.source === valLower;
             break;
-          case "etiqueta":
-            match = conv.participant.tags?.some(t => t.toLowerCase().includes(valLower)) || false;
+          case "etiqueta": {
+            const tags = conv.participant.tags ?? [];
+            if (isEquality) {
+              match = tags.some((t) => t.toLowerCase() === valLower);
+            } else {
+              match = tags.some((t) => t.toLowerCase().includes(valLower));
+            }
             break;
-          case "embudo_actual":
-            match = (conv.stage ?? "").toLowerCase().includes(valLower);
+          }
+          case "embudo_actual": {
+            const stage = (conv.stage ?? "").toLowerCase();
+            if (isEquality) {
+              match = stage === valLower;
+            } else {
+              match = stage.includes(valLower);
+            }
             break;
+          }
+          case "ans": {
+            // ANS / SLA: no canonical mapping in the GHL data we surface.
+            // Treat the value as a number-of-hours threshold and pass any
+            // conversation whose last message was older than that — so the
+            // filter is at least usable for "stale leads". Empty / non-
+            // numeric values fall through to a no-op (passes).
+            const hours = Number(v);
+            if (!Number.isFinite(hours) || !conv.lastMessageAt) {
+              match = true;
+              break;
+            }
+            const ageMs = Date.now() - Date.parse(conv.lastMessageAt);
+            const aged = ageMs >= hours * 60 * 60 * 1000;
+            // For ANS, "es N horas" means "stale ≥ N h"; "no es" means fresher.
+            match = aged;
+            break;
+          }
           default:
             match = true;
         }
 
-        if (cond.operator === "no_es" || cond.operator === "no_contiene") {
-          return !match;
-        }
-        return match;
+        return isNegated ? !match : match;
       });
 
       if (currentLogic === "AND") {
@@ -292,7 +547,7 @@ export function ChatSidebar({
         if (!passesFilters.some(Boolean)) return false;
       }
     }
-    
+
     return true;
   });
 
@@ -355,99 +610,210 @@ export function ChatSidebar({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Dialog open={isAddContactOpen} onOpenChange={setIsAddContactOpen}>
+          <Dialog
+            open={isAddContactOpen}
+            onOpenChange={(open) => {
+              setIsAddContactOpen(open);
+              if (!open) resetContactForm();
+            }}
+          >
             <DialogContent className="sm:max-w-[425px] p-6 rounded-[24px]">
               <DialogHeader className="mb-4">
                 <DialogTitle className="text-xl font-semibold">Agregar contacto</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
+              <form
+                className="space-y-4"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  // Required-field check: at least name OR phone must be set
+                  // (matches what the GHL contacts/ POST will accept). Email
+                  // alone also counts since GHL allows email-only contacts,
+                  // but our form leaves email optional below the fold so we
+                  // surface the most-helpful message here.
+                  const hasIdentity =
+                    contactName.trim().length > 0 || contactPhone.trim().length > 0;
+                  if (!hasIdentity) {
+                    toast({
+                      title: "Información incompleta",
+                      description: "Ingresa al menos un nombre o un teléfono.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  if (!onCreateContact) {
+                    toast({
+                      title: "No disponible",
+                      description: "El backend no expone la creación de contactos.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setIsCreatingContact(true);
+                  try {
+                    const created = await onCreateContact({
+                      name: contactName.trim() || undefined,
+                      phone: contactPhone.trim() || undefined,
+                      email: contactEmail.trim() || undefined,
+                    });
+                    if (created) {
+                      toast({
+                        title: "Contacto agregado",
+                        description:
+                          "Aparecerá en la lista cuando GoHighLevel confirme el registro.",
+                      });
+                      setIsAddContactOpen(false);
+                      resetContactForm();
+                    }
+                  } catch (err) {
+                    toast({
+                      title: "No se pudo agregar el contacto",
+                      description: String((err as Error)?.message ?? err),
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsCreatingContact(false);
+                  }
+                }}
+              >
                 <div className="space-y-2">
                   <Label htmlFor="name">Nombre y apellido *</Label>
-                  <Input id="name" placeholder="Ej. Juan Pérez" />
+                  <Input
+                    id="name"
+                    placeholder="Ej. Juan Pérez"
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    autoFocus
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Teléfono *</Label>
-                  <Input id="phone" placeholder="Ej. +1 234 567 8900" />
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="Ej. +1 234 567 8900"
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="address">Dirección</Label>
-                  <Input id="address" placeholder="Ej. Calle 123, Ciudad" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="document">Número de documento</Label>
-                  <div className="flex gap-2">
-                    <Select defaultValue="CC">
-                      <SelectTrigger className="w-[100px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CC">CC</SelectItem>
-                        <SelectItem value="CE">CE</SelectItem>
-                        <SelectItem value="NIT">NIT</SelectItem>
-                        <SelectItem value="Pasaporte">Pasaporte</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input id="document" className="flex-1" placeholder="Número" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="relationship">Parentesco</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar parentesco" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Hijo(a)">Hijo(a)</SelectItem>
-                      <SelectItem value="Padre/Madre">Padre/Madre</SelectItem>
-                      <SelectItem value="Esposo(a)">Esposo(a)</SelectItem>
-                      <SelectItem value="Hermano(a)">Hermano(a)</SelectItem>
-                      <SelectItem value="Otro">Otro</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Ej. juan@example.com"
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                  />
                 </div>
                 <div className="pt-4 flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsAddContactOpen(false)} className="rounded-full">Cancelar</Button>
-                  <Button onClick={() => {
-                    toast({ title: "Contacto agregado", description: "El contacto ha sido agregado exitosamente." });
-                    setIsAddContactOpen(false);
-                  }} className="rounded-full">Guardar contacto</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsAddContactOpen(false)}
+                    className="rounded-full"
+                    disabled={isCreatingContact}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="rounded-full"
+                    disabled={isCreatingContact}
+                  >
+                    {isCreatingContact ? "Guardando…" : "Guardar contacto"}
+                  </Button>
                 </div>
-              </div>
+              </form>
             </DialogContent>
           </Dialog>
-          <Dialog open={isNewConversationOpen} onOpenChange={setIsNewConversationOpen}>
-            <DialogContent className="sm:max-w-[600px] rounded-[24px] p-8 border-none shadow-2xl bg-white dark:bg-slate-950">
-              <DialogHeader className="mb-6">
-                <DialogTitle className="text-2xl font-semibold text-center text-slate-900 dark:text-white">Nueva conversación</DialogTitle>
+          <Dialog
+            open={isNewConversationOpen}
+            onOpenChange={(open) => {
+              setIsNewConversationOpen(open);
+              if (!open) {
+                setNewConvSearch("");
+                setNewConvResults([]);
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-[480px] rounded-[24px] p-6 border-none shadow-2xl bg-white dark:bg-slate-950">
+              <DialogHeader className="mb-4">
+                <DialogTitle className="text-xl font-semibold text-slate-900 dark:text-white">
+                  Nueva conversación
+                </DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button 
-                  className="flex flex-col items-center text-center p-8 rounded-[20px] border-2 border-slate-100 dark:border-slate-800/60 hover:border-primary hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-all group"
-                  onClick={() => setIsNewConversationOpen(false)}
-                >
-                  <div className="h-24 w-24 rounded-full bg-[#f0f5ff] dark:bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300 overflow-hidden border border-primary/10">
-                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix&backgroundColor=transparent" alt="Contacto" className="h-20 w-20 object-cover" />
-                  </div>
-                  <h3 className="font-semibold text-lg mb-2 text-slate-900 dark:text-white">Contacto</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 max-w-[200px]">Iniciar chat con un cliente o lead actual</p>
-                  <div className="mt-auto px-8 py-2.5 rounded-full border-2 border-primary text-primary text-sm font-semibold group-hover:bg-primary group-hover:text-primary-foreground transition-colors w-full">
-                    Seleccionar
-                  </div>
-                </button>
-
-                <button 
-                  className="flex flex-col items-center text-center p-8 rounded-[20px] border-2 border-slate-100 dark:border-slate-800/60 hover:border-primary hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-all group"
-                  onClick={() => setIsNewConversationOpen(false)}
-                >
-                  <div className="h-24 w-24 rounded-full bg-[#f0f5ff] dark:bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300 overflow-hidden border border-primary/10">
-                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=TeamWork&backgroundColor=transparent&glasses=variant02" alt="Miembro del equipo" className="h-20 w-20 object-cover" />
-                  </div>
-                  <h3 className="font-semibold text-lg mb-2 text-slate-900 dark:text-white">Miembro del equipo</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 max-w-[200px]">Chat interno con un compañero de trabajo</p>
-                  <div className="mt-auto px-8 py-2.5 rounded-full border-2 border-primary text-primary text-sm font-semibold group-hover:bg-primary group-hover:text-primary-foreground transition-colors w-full">
-                    Seleccionar
-                  </div>
-                </button>
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    autoFocus
+                    placeholder="Buscar contacto por nombre, teléfono o email…"
+                    value={newConvSearch}
+                    onChange={(e) => setNewConvSearch(e.target.value)}
+                    className="h-10 pl-9 pr-9 bg-muted/40"
+                  />
+                  {isSearchingNewConv && (
+                    <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+                <div className="max-h-[360px] overflow-y-auto -mx-1 px-1">
+                  {newConvSearch.trim().length < 2 ? (
+                    <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                      Escribe al menos 2 caracteres para buscar.
+                    </p>
+                  ) : !isSearchingNewConv && newConvResults.length === 0 ? (
+                    <div className="px-2 py-8 text-center text-sm text-muted-foreground space-y-3">
+                      <p>No se encontraron conversaciones.</p>
+                      {onCreateContact && (
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={() => {
+                            setIsNewConversationOpen(false);
+                            // Pre-fill the add-contact form with whatever the
+                            // user typed so they don't have to re-type the name.
+                            setContactName(newConvSearch.trim());
+                            setIsAddContactOpen(true);
+                          }}
+                        >
+                          Agregar &quot;{newConvSearch.trim()}&quot; como nuevo contacto
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <ul className="space-y-1">
+                      {newConvResults.map((conv) => (
+                        <li key={conv.id}>
+                          <button
+                            type="button"
+                            className="w-full flex items-center gap-3 rounded-xl border border-transparent hover:border-border/60 hover:bg-muted/40 transition-colors p-2.5 text-left"
+                            onClick={() => {
+                              onSelectConversation(conv.id);
+                              setIsNewConversationOpen(false);
+                              setNewConvSearch("");
+                              setNewConvResults([]);
+                            }}
+                          >
+                            <ChannelAvatar
+                              name={conv.participant.name}
+                              src={conv.participant.avatar}
+                              channel={conv.source}
+                              className="h-10 w-10 shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">
+                                {conv.participant.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {conv.participant.phone || conv.participant.email || conv.recipientNumber || conv.source}
+                              </div>
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </DialogContent>
           </Dialog>
@@ -474,7 +840,7 @@ export function ChatSidebar({
                 e.preventDefault();
               }}
             >
-              <FilterBuilder 
+              <FilterBuilder
                 filters={currentFilters}
                 logic={currentLogic}
                 onFiltersChange={setBuilderFilters}
@@ -485,6 +851,7 @@ export function ChatSidebar({
                 stages={stages}
                 activeViewId={activeViewId}
                 initialViewName={activeView?.name}
+                users={users}
               />
             </PopoverContent>
           </Popover>
@@ -609,15 +976,33 @@ export function ChatSidebar({
                   <X className="h-3.5 w-3.5 cursor-pointer opacity-70 hover:opacity-100 transition-opacity" onClick={() => { setDateFilter(""); setDateRange(undefined); }} />
                 </Badge>
               )}
-              {currentFilters.map(cond => (
-                <Badge key={cond.id} variant="secondary" className="text-xs h-6 px-2.5 font-normal flex items-center gap-1.5 rounded-full bg-slate-200/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 border-0">
-                  {cond.field}: {cond.value}
-                  <X className="h-3.5 w-3.5 cursor-pointer opacity-70 hover:opacity-100 transition-opacity" onClick={() => {
-                    const newFilters = currentFilters.filter(f => f.id !== cond.id);
-                    setBuilderFilters(newFilters);
-                  }} />
-                </Badge>
-              ))}
+              {currentFilters.map((cond) => {
+                if (!cond.field || !cond.value) return null;
+                const fieldLabel = FIELD_LABELS[cond.field] ?? cond.field;
+                const opLabel = OPERATOR_SHORT[cond.operator] ?? cond.operator;
+                const valueLabel = formatConditionValue(cond);
+                return (
+                  <Badge
+                    key={cond.id}
+                    variant="secondary"
+                    className="text-xs h-6 px-2.5 font-normal flex items-center gap-1.5 rounded-full bg-slate-200/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 border-0 max-w-[260px]"
+                    title={`${fieldLabel} ${opLabel} ${valueLabel}`}
+                  >
+                    <span className="truncate">
+                      <span className="font-medium">{fieldLabel}</span>
+                      <span className="text-muted-foreground"> {opLabel} </span>
+                      <span>{valueLabel}</span>
+                    </span>
+                    <X
+                      className="h-3.5 w-3.5 cursor-pointer opacity-70 hover:opacity-100 transition-opacity shrink-0"
+                      onClick={() => {
+                        const newFilters = currentFilters.filter((f) => f.id !== cond.id);
+                        setBuilderFilters(newFilters);
+                      }}
+                    />
+                  </Badge>
+                );
+              })}
             </div>
             {!activeViewId && currentFilters.length > 0 && (
               <Button 

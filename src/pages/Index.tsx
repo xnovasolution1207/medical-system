@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { TaskList } from "@/components/chat/TaskList";
@@ -7,6 +7,7 @@ import { ContactSidebar } from "@/components/chat/ContactSidebar";
 import { MainSidebar } from "@/components/chat/MainSidebar";
 import { OpportunitiesView } from "@/components/chat/OpportunitiesView";
 import {
+  FilterCondition,
   Message,
   Conversation,
   SavedView,
@@ -195,6 +196,23 @@ export default function Index() {
   // (ChatSidebar / TaskList) so the agent can pick a different conversation
   // without exiting the active chat. Auto-closes once a row is tapped.
   const [isChatListSheetOpen, setIsChatListSheetOpen] = useState(false);
+  // Advanced filter state (lifted from ChatSidebar so the search/fetch
+  // pipeline below can forward translatable conditions to GHL — searches
+  // run against the entire location instead of only the loaded window).
+  const [advancedFilters, setAdvancedFilters] = useState<FilterCondition[]>([]);
+  const [advancedLogic, setAdvancedLogic] = useState<"AND" | "OR">("AND");
+
+  // Whenever the user picks a saved view in MainSidebar, hydrate the
+  // active filters from it. Clearing the view (activeViewId === null)
+  // intentionally leaves the filters in place so the user can keep editing.
+  useEffect(() => {
+    if (!activeViewId) return;
+    const view = savedViews.find((v) => v.id === activeViewId);
+    if (view) {
+      setAdvancedFilters(view.filters);
+      setAdvancedLogic(view.logic);
+    }
+  }, [activeViewId, savedViews]);
 
   const handleToggleContactSidebar = useCallback(() => {
     if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
@@ -501,10 +519,139 @@ export default function Index() {
       .catch((err) => console.error("conversation fetch failed", err));
   }, [activeId, updateBootstrap]);
 
-  // ---- Server-side search (debounced) ----
+  // Translate the SPA's FilterCondition[] into the native GHL conversation-
+  // search params our /api/conversations endpoint forwards. Only equality
+  // ("es") with a non-empty value is server-translatable; negation /
+  // contains / other-field conditions stay client-side and run inside
+  // ChatSidebar's filteredConversations.
+  //
+  // For OR logic, GHL's `mode=OR` only kicks in when *every* active
+  // condition has a server translation — otherwise excluding even one
+  // untranslatable OR branch would silently drop matching rows. When the
+  // mix is impossible to express on the server we fall back to an empty
+  // params object and let the client filter handle everything (capped at
+  // the locally cached window — that's the trade-off until the SPA gets a
+  // dedicated server-side OR pipeline).
+  const ghlChannelType = (ch: string): string | undefined => {
+    switch (ch) {
+      case "whatsapp": return "TYPE_WHATSAPP";
+      case "sms": return "TYPE_SMS";
+      case "email": return "TYPE_EMAIL";
+      case "instagram": return "TYPE_INSTAGRAM";
+      case "messenger": return "TYPE_FB_MESSENGER";
+      case "tiktok": return "TYPE_TIKTOK";
+      default: return undefined;
+    }
+  };
+  const buildServerFilterParams = useCallback(
+    (
+      filters: FilterCondition[],
+      logic: "AND" | "OR"
+    ): {
+      params: Parameters<typeof api.conversations.list>[0];
+      hasServerParam: boolean;
+    } => {
+      const params: Parameters<typeof api.conversations.list>[0] = {};
+      let translated = 0;
+      let nonTranslatable = 0;
+      for (const cond of filters) {
+        // Skip half-built conditions (no field or no value yet) — the user
+        // is mid-edit, not yet trying to filter. Counting them as
+        // "untranslatable" would block the OR-mode forwarding below and
+        // (worse) flip the UI into "filtered=empty" while the user is
+        // still picking a value.
+        if (!cond.field || !cond.value) continue;
+        // Negation / contains can't be expressed in GHL's query string.
+        // Mark non-translatable so they fall through to client-side
+        // filtering on the fetched window.
+        if (cond.operator !== "es") {
+          nonTranslatable++;
+          continue;
+        }
+        let mapped = true;
+        switch (cond.field) {
+          case "asignado":
+            params.assignedTo = cond.value;
+            break;
+          case "seguidor":
+            // Followers are local-only on the backend — the route handler
+            // intercepts this param, scans the in-memory followersStore for
+            // every contact this user is following, and fans out per-contact
+            // GHL fetches. From the SPA's POV it's still a server fetch that
+            // covers more than the locally cached window.
+            params.followers = cond.value;
+            break;
+          case "mencion":
+            params.mentions = cond.value;
+            break;
+          case "etiqueta":
+            params.tags = cond.value;
+            break;
+          case "canal_ultimo_mensaje": {
+            const t = ghlChannelType(cond.value);
+            if (t) params.lastMessageType = t;
+            else mapped = false;
+            break;
+          }
+          case "tipo_ultimo_mensaje_saliente": {
+            // "Channel of last *outbound* message" = lastMessageType +
+            // lastMessageDirection=outbound. Both are forwarded so GHL
+            // narrows precisely. If a separate `direccion_ultimo_mensaje`
+            // filter is also set, the second pass overwrites — that
+            // contradiction yields 0 results, which is the correct semantic.
+            const t = ghlChannelType(cond.value);
+            if (t) {
+              params.lastMessageType = t;
+              params.lastMessageDirection = "outbound";
+            } else {
+              mapped = false;
+            }
+            break;
+          }
+          case "direccion_ultimo_mensaje":
+            if (cond.value === "inbound" || cond.value === "outbound") {
+              params.lastMessageDirection = cond.value;
+            } else {
+              mapped = false;
+            }
+            break;
+          default:
+            mapped = false;
+        }
+        if (mapped) translated++;
+        else nonTranslatable++;
+      }
+      if (translated === 0) return { params: {}, hasServerParam: false };
+      // OR with mixed translatable+untranslatable conditions can't be
+      // safely forwarded — bail to client-side only.
+      if (logic === "OR" && nonTranslatable > 0) {
+        return { params: {}, hasServerParam: false };
+      }
+      if (logic === "OR") params.mode = "OR";
+      return { params, hasServerParam: true };
+    },
+    []
+  );
+
+  // Memoised server-filter params so render and the search effect agree on
+  // whether a fetch is happening. The effect re-derives independently to
+  // stay self-contained, but this gives `isSearchActive` the same answer.
+  const advancedFilterServerInfo = useMemo(
+    () => buildServerFilterParams(advancedFilters, advancedLogic),
+    [advancedFilters, advancedLogic, buildServerFilterParams]
+  );
+
+  // ---- Server-side search + filter (debounced) ----
+  // Triggers when either the text-search box changes OR the advanced filter
+  // builder produces a server-translatable condition. The same fetch is
+  // reused so the result list always reflects the union of both inputs.
   useEffect(() => {
     const q = searchQuery.trim();
-    if (!q) {
+    const { params: filterParams, hasServerParam } = buildServerFilterParams(
+      advancedFilters,
+      advancedLogic
+    );
+    if (!q && !hasServerParam) {
       setSearchResults(null);
       setSearchNextCursor(null);
       setIsSearching(false);
@@ -514,7 +661,11 @@ export default function Index() {
     setIsSearching(true);
     const handle = window.setTimeout(() => {
       api.conversations
-        .list({ limit: 25, query: q })
+        .list({
+          limit: 25,
+          ...(q ? { query: q } : {}),
+          ...filterParams,
+        })
         .then((result) => {
           if (cancelled) return;
           setSearchResults(result.conversations);
@@ -534,9 +685,16 @@ export default function Index() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [searchQuery]);
+  }, [searchQuery, advancedFilters, advancedLogic, buildServerFilterParams]);
 
-  const isSearchActive = searchQuery.trim().length > 0;
+  // Active iff the search effect is actually fetching: a text query, or at
+  // least one *valued* filter condition that translates to a GHL param.
+  // Half-built filter rows (no value yet, or only client-side fields like
+  // embudo / ans) leave the local cache visible — the alternative was a
+  // blank list while the user was still picking a value, which the previous
+  // implementation suffered from.
+  const isSearchActive =
+    searchQuery.trim().length > 0 || advancedFilterServerInfo.hasServerParam;
   const displayConversations = isSearchActive ? searchResults ?? [] : conversations;
   const activeConversation = conversations.find((c) => c.id === activeId);
 
@@ -929,6 +1087,30 @@ export default function Index() {
   // backend (`assignedTo` → GHL contact, `followers` → in-memory store).
   // On failure the optimistic patch is left in place but a toast surfaces the
   // error — the user can re-pick to retry.
+  // Brand-new contact creation — driven by the sidebar's "Agregar contacto"
+  // dialog. We don't pre-create a stub row here because the GHL ContactCreate
+  // webhook will fire shortly after the API call and the lead.updated handler
+  // already knows how to upsert a new lead. Returning the created contact's
+  // id lets the dialog confirm success while we wait for the webhook to
+  // backfill richer state (assignedTo, opportunities, etc.).
+  const handleCreateContact = useCallback(
+    async (payload: { name?: string; phone?: string; email?: string }) => {
+      try {
+        const created = await api.contacts.create(payload);
+        return { id: created.id };
+      } catch (err) {
+        console.error("contact create failed", err);
+        toast({
+          title: "No se pudo agregar el contacto",
+          description: String((err as Error)?.message ?? err),
+          variant: "destructive",
+        });
+        return null;
+      }
+    },
+    [toast]
+  );
+
   const handleUpdateAssignment = useCallback(
     (
       contactId: string,
@@ -1242,6 +1424,12 @@ export default function Index() {
                 setIsChatListSheetOpen(false);
                 setIsMobileNavOpen(true);
               }}
+              onCreateContact={handleCreateContact}
+              users={users}
+              advancedFilters={advancedFilters}
+              advancedLogic={advancedLogic}
+              onAdvancedFiltersChange={setAdvancedFilters}
+              onAdvancedLogicChange={setAdvancedLogic}
               onDeleteConversation={(id) => {
                 handleDeleteLead(id).catch((err) => {
                   console.error("delete from sidebar failed", err);
@@ -1288,6 +1476,12 @@ export default function Index() {
               onSearchChange={setSearchQuery}
               isSearching={isSearching}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
+              onCreateContact={handleCreateContact}
+              users={users}
+              advancedFilters={advancedFilters}
+              advancedLogic={advancedLogic}
+              onAdvancedFiltersChange={setAdvancedFilters}
+              onAdvancedLogicChange={setAdvancedLogic}
               onDeleteConversation={(id) => {
                 handleDeleteLead(id).catch((err) => {
                   console.error("delete from sidebar failed", err);

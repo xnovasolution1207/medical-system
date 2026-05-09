@@ -68,11 +68,35 @@ export const api = {
   bootstrap: () => request<BootstrapPayload>("GET", "/bootstrap"),
 
   conversations: {
-    list: (params?: { limit?: number; startAfterDate?: number; query?: string }) => {
+    list: (params?: {
+      limit?: number;
+      startAfterDate?: number;
+      query?: string;
+      // Advanced-filter pass-through. Forwarded to GHL's native conversation
+      // search so filtering operates over the whole location, not just the
+      // currently loaded window. Empty / undefined drops the param.
+      assignedTo?: string;
+      followers?: string;
+      mentions?: string;
+      tags?: string;
+      lastMessageType?: string;
+      lastMessageDirection?: "inbound" | "outbound";
+      status?: string;
+      mode?: "AND" | "OR";
+    }) => {
       const qs = new URLSearchParams();
       if (params?.limit != null) qs.set("limit", String(params.limit));
       if (params?.startAfterDate != null) qs.set("startAfterDate", String(params.startAfterDate));
       if (params?.query) qs.set("query", params.query);
+      if (params?.assignedTo) qs.set("assignedTo", params.assignedTo);
+      if (params?.followers) qs.set("followers", params.followers);
+      if (params?.mentions) qs.set("mentions", params.mentions);
+      if (params?.tags) qs.set("tags", params.tags);
+      if (params?.lastMessageType) qs.set("lastMessageType", params.lastMessageType);
+      if (params?.lastMessageDirection)
+        qs.set("lastMessageDirection", params.lastMessageDirection);
+      if (params?.status) qs.set("status", params.status);
+      if (params?.mode) qs.set("mode", params.mode);
       const query = qs.toString();
       return request<{ conversations: Conversation[]; nextCursor: number | null }>(
         "GET",
@@ -114,6 +138,14 @@ export const api = {
   },
 
   contacts: {
+    create: (payload: {
+      name?: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      phone?: string;
+      tags?: string[];
+    }) => request<User>("POST", `/contacts`, payload),
     update: (
       id: string,
       patch: {

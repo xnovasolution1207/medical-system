@@ -102,6 +102,9 @@ export type Conversation = {
   // (Hoy / Ayer / Esta Semana / …). May be missing for stub / never-messaged
   // conversations.
   lastMessageAt?: string;
+  // Direction of the most recent message — drives the
+  // "Dirección del último mensaje" advanced filter.
+  lastMessageDirection?: "inbound" | "outbound";
   messages: Message[];
   isFavorite?: boolean;
   activeReminder?: string;

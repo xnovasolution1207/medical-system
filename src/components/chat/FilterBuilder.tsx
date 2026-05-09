@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FilterCondition } from "./types";
+import { AgentUser, FilterCondition } from "./types";
 import { X, Save } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const FILTER_FIELDS = [
   { value: "asignado", label: "Asignado" },
@@ -17,12 +18,29 @@ const FILTER_FIELDS = [
   { value: "embudo_actual", label: "Embudo actual" }
 ];
 
-const OPERATORS = [
+// Operator menus differ by field type. Free-text fields keep contains/no
+// contains; equality-only selectors (user/channel/stage/direction) drop
+// them so the user can't pick a meaningless combination.
+const TEXT_OPERATORS = [
   { value: "es", label: "Es" },
   { value: "no_es", label: "No es" },
   { value: "contiene", label: "Contiene" },
   { value: "no_contiene", label: "No contiene" }
 ];
+const EQUALITY_OPERATORS = [
+  { value: "es", label: "Es" },
+  { value: "no_es", label: "No es" }
+];
+
+const FIELDS_WITH_EQUALITY_ONLY = new Set([
+  "asignado",
+  "seguidor",
+  "mencion",
+  "direccion_ultimo_mensaje",
+  "tipo_ultimo_mensaje_saliente",
+  "canal_ultimo_mensaje",
+  "embudo_actual",
+]);
 
 const CANAL_VALUES = [
   { value: "whatsapp", label: "WhatsApp" },
@@ -31,6 +49,11 @@ const CANAL_VALUES = [
   { value: "instagram", label: "Instagram" },
   { value: "messenger", label: "Messenger" },
   { value: "tiktok", label: "TikTok" }
+];
+
+const DIRECTION_VALUES = [
+  { value: "inbound", label: "Entrante" },
+  { value: "outbound", label: "Saliente" },
 ];
 
 interface FilterBuilderProps {
@@ -44,6 +67,9 @@ interface FilterBuilderProps {
   stages?: { id: string; label: string; color: string; }[];
   activeViewId?: string | null;
   initialViewName?: string;
+  // Agent roster — drives the user pickers for asignado / seguidor / mención.
+  // Empty when GHL hasn't returned a roster yet.
+  users?: AgentUser[];
 }
 
 export function FilterBuilder({
@@ -56,7 +82,8 @@ export function FilterBuilder({
   onSaveView,
   stages = [],
   activeViewId,
-  initialViewName
+  initialViewName,
+  users = [],
 }: FilterBuilderProps) {
   const [viewName, setViewName] = useState(initialViewName || "");
   const [isSaving, setIsSaving] = useState(false);
@@ -85,7 +112,13 @@ export function FilterBuilder({
   };
 
   const renderValueInput = (condition: FilterCondition) => {
-    if (condition.field === "canal_ultimo_mensaje") {
+    // Channel pickers — used by both "Canal del último mensaje" and
+    // "Tipo del último mensaje saliente" (the latter compares against the
+    // channel of the last outbound message).
+    if (
+      condition.field === "canal_ultimo_mensaje" ||
+      condition.field === "tipo_ultimo_mensaje_saliente"
+    ) {
       return (
         <Select value={condition.value} onValueChange={(val) => updateCondition(condition.id, { value: val })}>
           <SelectTrigger className="h-9">
@@ -120,10 +153,66 @@ export function FilterBuilder({
       );
     }
 
+    if (condition.field === "direccion_ultimo_mensaje") {
+      return (
+        <Select value={condition.value} onValueChange={(val) => updateCondition(condition.id, { value: val })}>
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="Valor" />
+          </SelectTrigger>
+          <SelectContent>
+            {DIRECTION_VALUES.map(opt => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+
+    if (
+      condition.field === "asignado" ||
+      condition.field === "seguidor" ||
+      condition.field === "mencion"
+    ) {
+      // Match by GHL user id — the value is the userId, not the display name.
+      // Falling back to a text input when the roster is empty (GHL token
+      // lacks `users.readonly`) lets the user still type a name to match.
+      if (users.length === 0) {
+        return (
+          <Input
+            placeholder="Nombre o ID"
+            value={condition.value}
+            onChange={(e) => updateCondition(condition.id, { value: e.target.value })}
+            className="h-9"
+          />
+        );
+      }
+      return (
+        <Select value={condition.value} onValueChange={(val) => updateCondition(condition.id, { value: val })}>
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="Seleccionar agente" />
+          </SelectTrigger>
+          <SelectContent>
+            {users.map((u) => (
+              <SelectItem key={u.id} value={u.id}>
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-5 w-5">
+                    {u.avatar && <AvatarImage src={u.avatar} />}
+                    <AvatarFallback>{u.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <span>{u.name}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+
+    // Default: free-text (etiqueta, ans, anything new the menu adds).
     return (
-      <Input 
-        placeholder="Valor" 
-        value={condition.value} 
+      <Input
+        placeholder="Valor"
+        value={condition.value}
         onChange={(e) => updateCondition(condition.id, { value: e.target.value })}
         className="h-9"
       />
@@ -158,7 +247,28 @@ export function FilterBuilder({
           <div key={condition.id} className="relative">
             <div className="flex flex-col gap-2 p-3 border rounded-md bg-muted/30">
               <div className="flex items-center justify-between">
-                <Select value={condition.field} onValueChange={(val) => updateCondition(condition.id, { field: val, value: "" })}>
+                <Select
+                  value={condition.field}
+                  onValueChange={(val) => {
+                    // Reset the value when the field changes — the previous
+                    // value is almost certainly nonsensical for the new
+                    // field's input type. Also clamp the operator to one
+                    // valid for the new field.
+                    const operators = FIELDS_WITH_EQUALITY_ONLY.has(val)
+                      ? EQUALITY_OPERATORS
+                      : TEXT_OPERATORS;
+                    const nextOperator = operators.some(
+                      (o) => o.value === condition.operator
+                    )
+                      ? condition.operator
+                      : operators[0].value;
+                    updateCondition(condition.id, {
+                      field: val,
+                      value: "",
+                      operator: nextOperator,
+                    });
+                  }}
+                >
                   <SelectTrigger className="h-9 w-full bg-background">
                     <SelectValue placeholder="Tipo de filtro" />
                   </SelectTrigger>
@@ -178,7 +288,10 @@ export function FilterBuilder({
                   <SelectValue placeholder="Es" />
                 </SelectTrigger>
                 <SelectContent>
-                  {OPERATORS.map(opt => (
+                  {(FIELDS_WITH_EQUALITY_ONLY.has(condition.field)
+                    ? EQUALITY_OPERATORS
+                    : TEXT_OPERATORS
+                  ).map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
