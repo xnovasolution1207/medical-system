@@ -12,6 +12,7 @@ import type {
   Task,
   User,
 } from "@/components/chat/types";
+import { getAuthToken, setAuthToken } from "./auth";
 
 export interface BootstrapPayload {
   currentUser: User;
@@ -50,11 +51,25 @@ export function proxyMediaUrl(url: string): string {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  // Attach the OAuth-issued JWT when present. Backend's `requireSession`
+  // pulls this off `Authorization: Bearer …` and resolves it to the
+  // session in Redis.
+  const token = getAuthToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401) {
+    // Token expired or session evicted from Redis. Clear it so
+    // AuthProvider re-routes to /login on the next render.
+    if (token) setAuthToken(null);
+    throw new Error(`API ${method} ${path} 401: unauthorized`);
+  }
   if (!res.ok) {
     const errText = await res.text();
     throw new Error(`API ${method} ${path} ${res.status}: ${errText}`);
@@ -66,6 +81,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   bootstrap: () => request<BootstrapPayload>("GET", "/bootstrap"),
+
+  auth: {
+    // Returns the GHL authorize URL the SPA should send the browser to.
+    startLogin: () =>
+      request<{ url: string; state: string }>("GET", "/auth/login"),
+    // Identifies the current session — drives the route guard's
+    // "loaded?authenticated" decision after a reload.
+    me: () =>
+      request<{
+        userId: string;
+        locationId: string;
+        userType: string | null;
+        sessionExpiresAt: number;
+      }>("GET", "/auth/me"),
+    logout: () => request<{ ok: boolean }>("POST", "/auth/logout"),
+  },
 
   conversations: {
     list: (params?: {
