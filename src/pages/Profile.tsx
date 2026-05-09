@@ -50,6 +50,9 @@ export default function Profile() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [original, setOriginal] = useState<ProfileFields>(EMPTY_FIELDS);
   const [form, setForm] = useState<ProfileFields>(EMPTY_FIELDS);
+  // Password fields are kept separate from the main form because they
+  // never round-trip back as state we want to retain — they're cleared
+  // on every save attempt.
   const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
   const [submitting, setSubmitting] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -82,12 +85,16 @@ export default function Profile() {
     };
   }, []);
 
+  const passwordDirty =
+    passwords.current.length > 0 ||
+    passwords.next.length > 0 ||
+    passwords.confirm.length > 0;
   const dirty =
     form.firstName !== original.firstName ||
     form.lastName !== original.lastName ||
     form.email !== original.email ||
     form.phone !== original.phone ||
-    passwords.next.length > 0;
+    passwordDirty;
 
   const handleAvatarPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -128,7 +135,24 @@ export default function Profile() {
   };
 
   const handleSave = async () => {
-    if (passwords.next || passwords.confirm) {
+    // Local password sanity checks — the backend re-validates everything,
+    // these just save a round-trip.
+    if (passwordDirty) {
+      if (!passwords.current) {
+        toast({
+          title: "Falta la contraseña actual",
+          description: "Ingrésala para confirmar el cambio.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!passwords.next || !passwords.confirm) {
+        toast({
+          title: "Faltan campos de contraseña",
+          variant: "destructive",
+        });
+        return;
+      }
       if (passwords.next !== passwords.confirm) {
         toast({
           title: "Las contraseñas no coinciden",
@@ -138,7 +162,14 @@ export default function Profile() {
       }
       if (passwords.next.length < 8) {
         toast({
-          title: "La contraseña debe tener al menos 8 caracteres",
+          title: "La nueva contraseña debe tener al menos 8 caracteres",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (passwords.next === passwords.current) {
+        toast({
+          title: "La nueva contraseña debe ser diferente de la actual",
           variant: "destructive",
         });
         return;
@@ -151,7 +182,8 @@ export default function Profile() {
       if (form.lastName !== original.lastName) patch.lastName = form.lastName;
       if (form.email !== original.email) patch.email = form.email;
       if (form.phone !== original.phone) patch.phone = form.phone;
-      if (passwords.next) {
+      if (passwordDirty) {
+        patch.currentPassword = passwords.current;
         patch.newPassword = passwords.next;
         patch.confirmPassword = passwords.confirm;
       }
@@ -165,6 +197,8 @@ export default function Profile() {
       };
       setOriginal(fields);
       setForm(fields);
+      // Always clear password fields on success — never retain them in
+      // local state across saves.
       setPasswords({ current: "", next: "", confirm: "" });
       toast({ title: "Perfil actualizado correctamente" });
     } catch (err) {
@@ -293,7 +327,9 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Password Section */}
+            {/* Password Section. The backend probes a couple of GHL
+                endpoints; if none accept the change it returns a 501
+                with a clear error message that we surface here. */}
             <div className="bg-card rounded-2xl border p-8 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
                 <Lock className="h-5 w-5 text-primary" />
@@ -304,14 +340,12 @@ export default function Profile() {
                 <div className="space-y-2">
                   <Label htmlFor="currentPassword" className="text-[13px] font-semibold">
                     Contraseña Actual
-                    <span className="ml-2 text-muted-foreground font-normal">
-                      (opcional — solo para confirmación local)
-                    </span>
                   </Label>
                   <Input
                     id="currentPassword"
                     type="password"
                     placeholder="••••••••"
+                    autoComplete="current-password"
                     value={passwords.current}
                     onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
                     className="bg-muted/50 border-none h-11 focus-visible:ring-primary/20"
@@ -327,6 +361,7 @@ export default function Profile() {
                       id="newPassword"
                       type="password"
                       placeholder="••••••••"
+                      autoComplete="new-password"
                       value={passwords.next}
                       onChange={(e) => setPasswords({ ...passwords, next: e.target.value })}
                       className="bg-muted/50 border-none h-11 focus-visible:ring-primary/20"
@@ -340,6 +375,7 @@ export default function Profile() {
                       id="confirmPassword"
                       type="password"
                       placeholder="••••••••"
+                      autoComplete="new-password"
                       value={passwords.confirm}
                       onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
                       className="bg-muted/50 border-none h-11 focus-visible:ring-primary/20"
@@ -347,7 +383,7 @@ export default function Profile() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Mínimo 8 caracteres. Si dejas la contraseña en blanco no se modifica.
+                  Mínimo 8 caracteres. Si dejas los campos en blanco no se modifica.
                 </p>
               </div>
             </div>

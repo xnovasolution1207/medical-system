@@ -148,14 +148,18 @@ export const api = {
           phone: string;
           profilePhoto: string | null;
         }>("GET", "/auth/me/profile"),
-      // Update the GHL user. `newPassword` + `confirmPassword` are sent
-      // together; the backend rejects on mismatch / too-short.
+      // Update the GHL user. Optional `currentPassword` /
+      // `newPassword` / `confirmPassword` trigger the password-change
+      // path on the backend; all three are required together. The
+      // backend probes a couple of GHL endpoints and surfaces a clean
+      // error if none accept the change.
       update: (patch: {
         firstName?: string;
         lastName?: string;
         email?: string;
         phone?: string;
         profilePhoto?: string;
+        currentPassword?: string;
         newPassword?: string;
         confirmPassword?: string;
       }) =>
