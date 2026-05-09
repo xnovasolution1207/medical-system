@@ -15,6 +15,7 @@ import {
   User,
 } from "@/components/chat/types";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { api, BootstrapPayload } from "@/lib/api";
 import { subscribe } from "@/lib/socket";
@@ -196,6 +197,12 @@ export default function Index() {
   // (ChatSidebar / TaskList) so the agent can pick a different conversation
   // without exiting the active chat. Auto-closes once a row is tapped.
   const [isChatListSheetOpen, setIsChatListSheetOpen] = useState(false);
+  // Opportunity → chat modal: stores the contactId of the opportunity the
+  // user clicked in the kanban. We resolve to the matching conversation at
+  // render time so the modal stays in sync with WS-driven cache updates.
+  const [opportunityChatContactId, setOpportunityChatContactId] = useState<
+    string | null
+  >(null);
   // Advanced filter state (lifted from ChatSidebar so the search/fetch
   // pipeline below can forward translatable conditions to GHL — searches
   // run against the entire location instead of only the loaded window).
@@ -1506,6 +1513,7 @@ export default function Index() {
             onMoveOpportunity={handleMoveOpportunity}
             onCreateOpportunity={handleCreateOpportunity}
             onOpenMobileNav={() => setIsMobileNavOpen(true)}
+            onOpenChat={(contactId) => setOpportunityChatContactId(contactId)}
           />
         </div>
       ) : (
@@ -1616,6 +1624,76 @@ export default function Index() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Opportunity → Chat modal. Open from a Kanban card without leaving
+          the board. We resolve the conversation by contactId at render time
+          (rather than capturing it in state) so live WS patches keep the
+          modal's content fresh. */}
+      <Dialog
+        open={opportunityChatContactId !== null}
+        onOpenChange={(open) => {
+          if (!open) setOpportunityChatContactId(null);
+        }}
+      >
+        <DialogContent className="max-w-[1200px] w-[95vw] h-[85vh] p-0 overflow-hidden border-none rounded-xl gap-0 bg-background flex flex-col">
+          <DialogTitle className="sr-only">Conversación de la oportunidad</DialogTitle>
+          {(() => {
+            if (!opportunityChatContactId) return null;
+            const conv = conversations.find(
+              (c) =>
+                c.contactId === opportunityChatContactId ||
+                c.participant.id === opportunityChatContactId
+            );
+            if (!conv) {
+              return (
+                <div className="flex-1 flex items-center justify-center p-8 text-sm text-muted-foreground text-center">
+                  Esta oportunidad aún no tiene una conversación.
+                </div>
+              );
+            }
+            return (
+              <ChatMessageArea
+                key={`opp-${conv.id}`}
+                conversation={conv}
+                currentUser={currentUser}
+                tasks={tasks}
+                stages={stages}
+                setStages={setStages}
+                onAddTask={handleAddTask}
+                onToggleTask={handleToggleTask}
+                onSendMessage={(text, attachment, channel, mentions, reminder, replyTo) => {
+                  // Temporarily route through the same handler — it expects
+                  // the active conversation, so flip activeId for this send
+                  // only when needed. Simpler: directly send here by mirror-
+                  // ing the existing optimistic path. To keep this batch
+                  // small we delegate by switching activeId, sending, then
+                  // restoring. Acceptable because the modal session is short
+                  // and the sidebar selection is hidden behind the dialog.
+                  const previous = activeId;
+                  setActiveId(conv.id);
+                  handleSendMessage(text, attachment, channel, mentions, reminder, replyTo);
+                  // Restore on next tick so the optimistic insert lands
+                  // against `conv.id` before the active selection swaps back.
+                  setTimeout(() => setActiveId(previous), 0);
+                }}
+                onScheduleMessage={handleScheduleMessage}
+                onCancelScheduledMessage={handleCancelScheduledMessage}
+                onUpdateStage={handleUpdateStage}
+                onClearReminder={handleClearReminder}
+                onSetReminder={handleSetReminder}
+                onToggleFavorite={handleToggleFavorite}
+                hasOlderMessages={Boolean(conv.messagesHasMore)}
+                isLoadingOlderMessages={loadingOlderFor === conv.id}
+                onLoadOlderMessages={handleLoadOlderMessages}
+                onDeleteLead={() => {
+                  handleDeleteLead(conv.id);
+                  setOpportunityChatContactId(null);
+                }}
+              />
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

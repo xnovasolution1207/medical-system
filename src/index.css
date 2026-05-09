@@ -73,17 +73,17 @@ All colors MUST be HSL.
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 96%;
 
-    --border: 0 0% 25%;
-    --input: 0 0% 25%;
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
     --ring: 249 45% 55%;
-    
+
     --sidebar-background: 0 0% 12%;
     --sidebar-foreground: 0 0% 96%;
     --sidebar-primary: 249 45% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 0 0% 20%;
     --sidebar-accent-foreground: 0 0% 96%;
-    --sidebar-border: 0 0% 22%;
+    --sidebar-border: 0 0% 16%;
     --sidebar-ring: 249 45% 55%;
   }
 }
@@ -95,30 +95,5 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
-  }
-
-  /* Thin minimal scrollbar (Webkit / Blink) */
-  ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.25);
-    border-radius: 9999px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
-  }
-
-  /* Firefox */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.25) transparent;
   }
 }

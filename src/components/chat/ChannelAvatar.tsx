@@ -1,6 +1,5 @@
 import React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MessageSquare, Mail } from "lucide-react";
 
@@ -88,38 +87,30 @@ export function ChannelAvatar({ name, src, channel, status, className, isActive 
   const avatarUrl = src || getAvatarUrl(name, gender);
 
   return (
-    <Tooltip delayDuration={200}>
-      <TooltipTrigger asChild>
-        <div className={cn("relative inline-block shrink-0", className)}>
-          <Avatar className={cn("h-full w-full border border-border/50 bg-primary/10 transition-shadow duration-300", isActive && "animate-avatar-pop shadow-md ring-2 ring-primary/20 ring-offset-2 ring-offset-background")}>
-            <AvatarImage src={avatarUrl} alt={name} className="object-cover" />
-            <AvatarFallback className="text-muted-foreground font-medium">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
+    <div className={cn("relative inline-block shrink-0", className)}>
+      <Avatar className={cn("h-full w-full border border-border/50 bg-primary/10 transition-shadow duration-300", isActive && "animate-avatar-pop shadow-md ring-2 ring-primary/20 ring-offset-2 ring-offset-background")}>
+        <AvatarImage src={avatarUrl} alt={name} className="object-cover" />
+        <AvatarFallback className="text-muted-foreground font-medium">
+          {initials}
+        </AvatarFallback>
+      </Avatar>
 
-
-          {/* Channel badge - Bottom Right */}
-          {channel && (
-            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-background shadow-sm overflow-hidden z-10">
-              {typeof channelIcons[channel] === "string" ? (
-                <img
-                  src={channelIcons[channel] as string}
-                  alt={channel}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-primary">
-                  {channelIcons[channel] as React.ReactNode}
-                </div>
-              )}
+      {/* Channel badge - Bottom Right */}
+      {channel && (
+        <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-background shadow-sm overflow-hidden z-10">
+          {typeof channelIcons[channel] === "string" ? (
+            <img
+              src={channelIcons[channel] as string}
+              alt={channel}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-primary">
+              {channelIcons[channel] as React.ReactNode}
             </div>
           )}
         </div>
-      </TooltipTrigger>
-      <TooltipContent side="right" className="text-xs font-medium">
-        {name}
-      </TooltipContent>
-    </Tooltip>
+      )}
+    </div>
   );
 }

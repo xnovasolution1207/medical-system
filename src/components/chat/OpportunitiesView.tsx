@@ -65,6 +65,13 @@ interface OpportunitiesViewProps {
     monetaryValue?: number;
   }) => void | Promise<void>;
   onOpenMobileNav?: () => void;
+  // Open the contact's chat in a modal without leaving the kanban. Index.tsx
+  // mounts a Dialog containing ChatMessageArea + ContactSidebar when this
+  // fires; a missing prop just disables the click affordance.
+  onOpenChat?: (contactId: string) => void;
+  // Bulk delete a set of opportunities (cards selected via the checkbox).
+  // Returns a promise so the toolbar can show a loading state if needed.
+  onBulkDeleteOpportunities?: (ids: string[]) => Promise<void> | void;
 }
 
 type SortKey =
@@ -98,11 +105,25 @@ export function OpportunitiesView({
   onMoveOpportunity,
   onCreateOpportunity,
   onOpenMobileNav,
+  onOpenChat,
+  onBulkDeleteOpportunities,
 }: OpportunitiesViewProps) {
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [searchQuery, setSearchQuery] = useState("");
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
+  // Bulk-select scaffold. The toolbar at the top of the board shows when
+  // any card is checked; "Eliminar seleccionadas" calls the parent.
+  const [selectedOppIds, setSelectedOppIds] = useState<Set<string>>(new Set());
+  const toggleOppSelected = (id: string) => {
+    setSelectedOppIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearOppSelection = () => setSelectedOppIds(new Set());
 
   // Filtros Avanzados
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
@@ -463,58 +484,123 @@ export function OpportunitiesView({
             No se encontró un pipeline en GoHighLevel.
           </div>
         ) : viewMode === "board" ? (
-          <div className="flex gap-4 h-full pb-4 w-max">
-            {stages.map((stage) => (
-              <div
-                key={stage.id}
-                className="flex flex-col w-72 bg-muted/30 rounded-lg border shrink-0"
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, stage.id)}
-              >
-                <div className="p-3 border-b bg-muted/50 rounded-t-lg flex items-center justify-between shrink-0">
-                  <h3 className="font-medium text-sm">{stage.label}</h3>
-                  <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border">
-                    {filteredOpps.filter((o) => o.stageId === stage.id).length}
-                  </span>
-                </div>
-                <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-                  {filteredOpps
-                    .filter((o) => o.stageId === stage.id)
-                    .map((opp) => (
-                      <div
-                        key={opp.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, opp.id)}
-                        className="bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer active:cursor-grabbing"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <h4 className="font-medium text-sm">{opp.name}</h4>
-                          <Avatar className="h-6 w-6">
-                            <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                        </div>
-                        <div className="space-y-1.5 mt-3">
-                          <div className="flex items-center text-xs text-muted-foreground">
-                            <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
-                            <span className="truncate">{opp.source}</span>
-                          </div>
-                          {opp.monetaryValue ? (
-                            <div className="flex items-center text-xs text-muted-foreground">
-                              <Phone className="h-3.5 w-3.5 mr-2 shrink-0 opacity-0" />
-                              <span className="truncate">${opp.monetaryValue}</span>
-                            </div>
-                          ) : null}
-                          <div className="flex items-center text-xs text-muted-foreground">
-                            <CalendarIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
-                            <span>{opp.date}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+          <>
+            {selectedOppIds.size > 0 && (
+              <div className="mb-3 flex items-center justify-between rounded-lg border bg-card px-3 py-2 shadow-sm">
+                <span className="text-sm">
+                  <span className="font-semibold">{selectedOppIds.size}</span> seleccionada
+                  {selectedOppIds.size === 1 ? "" : "s"}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={clearOppSelection}>
+                    Limpiar
+                  </Button>
+                  {onBulkDeleteOpportunities && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={async () => {
+                        const ids = Array.from(selectedOppIds);
+                        await onBulkDeleteOpportunities(ids);
+                        clearOppSelection();
+                      }}
+                    >
+                      Eliminar seleccionadas
+                    </Button>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+            <div className="flex gap-4 h-full pb-4 w-max">
+              {stages.map((stage) => {
+                const stageOpps = filteredOpps.filter((o) => o.stageId === stage.id);
+                const stageTotal = stageOpps.reduce(
+                  (sum, opp) => sum + (opp.monetaryValue ?? 0),
+                  0
+                );
+                return (
+                  <div
+                    key={stage.id}
+                    className="flex flex-col w-72 bg-muted/30 rounded-lg border shrink-0"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, stage.id)}
+                  >
+                    <div className="p-3 border-b bg-muted/50 rounded-t-lg shrink-0">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-medium text-sm truncate">{stage.label}</h3>
+                        <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border shrink-0">
+                          {stageOpps.length}
+                        </span>
+                      </div>
+                      {stageTotal > 0 && (
+                        <div className="mt-1 text-[11px] font-medium text-muted-foreground">
+                          ${stageTotal.toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 p-2 space-y-2 overflow-y-auto">
+                      {stageOpps.map((opp) => {
+                        const isSelected = selectedOppIds.has(opp.id);
+                        const canOpenChat = Boolean(onOpenChat && opp.contactId);
+                        return (
+                          <div
+                            key={opp.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, opp.id)}
+                            onClick={() => {
+                              if (canOpenChat) onOpenChat?.(opp.contactId);
+                            }}
+                            className={cn(
+                              "bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-shadow active:cursor-grabbing relative",
+                              canOpenChat ? "cursor-pointer" : "cursor-grab",
+                              isSelected && "ring-2 ring-primary ring-offset-1"
+                            )}
+                          >
+                            {/* Selection checkbox — click without bubbling so the
+                                card's onClick (open chat) doesn't also fire. */}
+                            <div
+                              className={cn(
+                                "absolute top-2 left-2 z-10 transition-opacity",
+                                isSelected ? "opacity-100" : "opacity-0 hover:opacity-100 group-hover:opacity-100"
+                              )}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleOppSelected(opp.id)}
+                              />
+                            </div>
+                            <div className="flex items-start justify-between mb-2 pl-6">
+                              <h4 className="font-medium text-sm truncate">{opp.name}</h4>
+                              <Avatar className="h-6 w-6 shrink-0">
+                                <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                            </div>
+                            <div className="space-y-1.5 mt-3">
+                              <div className="flex items-center text-xs text-muted-foreground">
+                                <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
+                                <span className="truncate">{opp.source}</span>
+                              </div>
+                              {opp.monetaryValue ? (
+                                <div className="flex items-center text-xs text-muted-foreground">
+                                  <Phone className="h-3.5 w-3.5 mr-2 shrink-0 opacity-0" />
+                                  <span className="truncate">${opp.monetaryValue}</span>
+                                </div>
+                              ) : null}
+                              <div className="flex items-center text-xs text-muted-foreground">
+                                <CalendarIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
+                                <span>{opp.date}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         ) : (
           <div className="border rounded-lg bg-card max-w-6xl mx-auto">
             <Table>

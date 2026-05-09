@@ -1405,11 +1405,6 @@ export function ChatMessageArea({
                     isMe ? "items-end" : "items-start"
                   )}
                 >
-                  {!isConsecutive && isMe && (
-                    <span className="text-[11px] text-muted-foreground font-medium px-2 mb-0.5">
-                      {outboundName}
-                    </span>
-                  )}
                   <div
                     className={cn(
                       "shadow-sm transition-all animate-in fade-in slide-in-from-bottom-2",
@@ -1542,11 +1537,6 @@ export function ChatMessageArea({
                       <Clock className="h-3.5 w-3.5 opacity-70" />
                       {message.timestamp}
                     </span>
-                    {message.channel && (
-                      <span className="uppercase text-[10px] font-bold bg-slate-100/80 text-slate-500 dark:bg-slate-800 dark:text-slate-400 px-2.5 py-0.5 rounded-full tracking-wider">
-                        {message.channel}
-                      </span>
-                    )}
                   </div>
                 </div>
 
