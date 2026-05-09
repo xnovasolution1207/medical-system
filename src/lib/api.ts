@@ -84,8 +84,7 @@ export const api = {
 
   auth: {
     // Returns the GHL authorize URL the SPA should send the browser to.
-    startLogin: () =>
-      request<{ url: string; state: string }>("GET", "/auth/login"),
+    startLogin: () => request<{ url: string }>("GET", "/auth/login"),
     // Identifies the current session — drives the route guard's
     // "loaded?authenticated" decision after a reload.
     me: () =>
