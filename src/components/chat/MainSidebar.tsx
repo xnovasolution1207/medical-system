@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban } from "lucide-react";
+import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut } from "lucide-react";
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/lib/authContext";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -33,6 +35,8 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
   const isExpanded = forceExpanded || internalExpanded;
   const setIsExpanded = setInternalExpanded;
   const [isVistasOpen, setIsVistasOpen] = useState(true);
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [dateRange, setDateRange] = useState<any>();
 
@@ -529,7 +533,26 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
         )}
       </div>
 
-      <div className="p-3 border-t">
+      <div className="p-3 border-t flex flex-col gap-1">
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn(
+                "justify-start h-10 w-full transition-all relative",
+                isExpanded ? "px-3" : "px-0 justify-center"
+              )}
+              onClick={() => navigate("/profile")}
+            >
+              <UserCog className={cn("h-5 w-5 shrink-0 text-muted-foreground", isExpanded && "mr-3")} />
+              {isExpanded && (
+                <span className="truncate flex-1 text-left">Mi Perfil</span>
+              )}
+            </Button>
+          </TooltipTrigger>
+          {!isExpanded && <TooltipContent side="right">Mi Perfil</TooltipContent>}
+        </Tooltip>
+
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>
             <Button
@@ -553,6 +576,28 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
               {isDarkMode ? "Modo Claro" : "Modo Oscuro"}
             </TooltipContent>
           )}
+        </Tooltip>
+
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn(
+                "justify-start h-10 w-full transition-all relative text-destructive hover:bg-destructive/10 hover:text-destructive",
+                isExpanded ? "px-3" : "px-0 justify-center"
+              )}
+              onClick={async () => {
+                await logout();
+                navigate("/login", { replace: true });
+              }}
+            >
+              <LogOut className={cn("h-5 w-5 shrink-0", isExpanded && "mr-3")} />
+              {isExpanded && (
+                <span className="truncate flex-1 text-left">Cerrar sesión</span>
+              )}
+            </Button>
+          </TooltipTrigger>
+          {!isExpanded && <TooltipContent side="right">Cerrar sesión</TooltipContent>}
         </Tooltip>
       </div>
     </div>

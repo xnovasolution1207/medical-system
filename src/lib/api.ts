@@ -95,6 +95,63 @@ export const api = {
         sessionExpiresAt: number;
       }>("GET", "/auth/me"),
     logout: () => request<{ ok: boolean }>("POST", "/auth/logout"),
+    profile: {
+      // Full GHL user record — drives the Profile form. Returns empty
+      // strings (not null) for missing fields so the form can use them
+      // as controlled input values directly.
+      get: () =>
+        request<{
+          id: string;
+          firstName: string;
+          lastName: string;
+          email: string;
+          phone: string;
+          profilePhoto: string | null;
+        }>("GET", "/auth/me/profile"),
+      // Update the GHL user. `newPassword` + `confirmPassword` are sent
+      // together; the backend rejects on mismatch / too-short.
+      update: (patch: {
+        firstName?: string;
+        lastName?: string;
+        email?: string;
+        phone?: string;
+        profilePhoto?: string;
+        newPassword?: string;
+        confirmPassword?: string;
+      }) =>
+        request<{
+          id: string;
+          firstName: string;
+          lastName: string;
+          email: string;
+          phone: string;
+          profilePhoto: string | null;
+        }>("PATCH", "/auth/me/profile", patch),
+      // Upload a new avatar via multipart. Bypasses the JSON `request`
+      // helper because the body is FormData — but mirrors its 401-handling.
+      uploadAvatar: async (file: File): Promise<{ profilePhoto: string }> => {
+        const form = new FormData();
+        form.append("file", file);
+        const headers: Record<string, string> = {};
+        const token = getAuthToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE}/auth/me/avatar`, {
+          method: "POST",
+          headers,
+          body: form,
+        });
+        if (res.status === 401) {
+          if (token) setAuthToken(null);
+          throw new Error("API POST /auth/me/avatar 401: unauthorized");
+        }
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`API POST /auth/me/avatar ${res.status}: ${errText}`);
+        }
+        const json = await res.json();
+        return (json && "data" in json ? json.data : json) as { profilePhoto: string };
+      },
+    },
   },
 
   conversations: {
