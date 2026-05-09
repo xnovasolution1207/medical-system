@@ -36,7 +36,16 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
   const setIsExpanded = setInternalExpanded;
   const [isVistasOpen, setIsVistasOpen] = useState(true);
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  // Two-letter initials for the avatar fallback. Falls back to "??" so we
+  // never render an empty pill while the profile fetch is in flight.
+  const accountInitials = (() => {
+    const name = user?.name?.trim();
+    if (!name) return user?.email?.[0]?.toUpperCase() ?? "??";
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  })();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [dateRange, setDateRange] = useState<any>();
 
@@ -534,31 +543,71 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
       </div>
 
       <div className="p-3 border-t flex flex-col gap-1">
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
+        {/* Compact account block — avatar (or initials) + name + status,
+            opens a dropdown with the two account actions. Mirrors the
+            preview's layout. The trigger collapses to an avatar-only
+            button when the rail is in its narrow mode. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               className={cn(
-                "justify-start h-10 w-full transition-all relative",
-                isExpanded ? "px-3" : "px-0 justify-center"
+                "h-12 w-full transition-all relative rounded-xl hover:bg-accent/50",
+                isExpanded ? "justify-start px-2" : "justify-center px-0"
               )}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <Avatar className="h-8 w-8 shrink-0">
+                  {user?.avatar && <AvatarImage src={user.avatar} alt={user.name ?? ""} />}
+                  <AvatarFallback className="text-xs font-semibold">
+                    {accountInitials}
+                  </AvatarFallback>
+                </Avatar>
+                {isExpanded && (
+                  <div className="flex flex-col items-start overflow-hidden">
+                    <span className="text-[13px] font-semibold truncate w-full text-foreground">
+                      {user?.name ?? "Mi cuenta"}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium truncate w-full">
+                      En línea
+                    </span>
+                  </div>
+                )}
+              </div>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            side="right"
+            className="w-56 mb-2 ml-2 p-2 rounded-2xl shadow-xl"
+          >
+            <DropdownMenuItem
+              className="rounded-xl cursor-pointer py-2.5"
               onClick={() => navigate("/profile")}
             >
-              <UserCog className={cn("h-5 w-5 shrink-0 text-muted-foreground", isExpanded && "mr-3")} />
-              {isExpanded && (
-                <span className="truncate flex-1 text-left">Mi Perfil</span>
-              )}
-            </Button>
-          </TooltipTrigger>
-          {!isExpanded && <TooltipContent side="right">Mi Perfil</TooltipContent>}
-        </Tooltip>
+              <UserCog className="mr-2 h-4 w-4" />
+              <span>Mi Perfil</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-1" />
+            <DropdownMenuItem
+              className="rounded-xl text-destructive focus:text-destructive cursor-pointer py-2.5"
+              onClick={async () => {
+                await logout();
+                navigate("/login", { replace: true });
+              }}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Cerrar sesión</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               className={cn(
-                "justify-start h-10 w-full transition-all relative",
+                "justify-start h-10 w-full transition-all relative rounded-xl",
                 isExpanded ? "px-3" : "px-0 justify-center"
               )}
               onClick={toggleTheme}
@@ -576,28 +625,6 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
               {isDarkMode ? "Modo Claro" : "Modo Oscuro"}
             </TooltipContent>
           )}
-        </Tooltip>
-
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              className={cn(
-                "justify-start h-10 w-full transition-all relative text-destructive hover:bg-destructive/10 hover:text-destructive",
-                isExpanded ? "px-3" : "px-0 justify-center"
-              )}
-              onClick={async () => {
-                await logout();
-                navigate("/login", { replace: true });
-              }}
-            >
-              <LogOut className={cn("h-5 w-5 shrink-0", isExpanded && "mr-3")} />
-              {isExpanded && (
-                <span className="truncate flex-1 text-left">Cerrar sesión</span>
-              )}
-            </Button>
-          </TooltipTrigger>
-          {!isExpanded && <TooltipContent side="right">Cerrar sesión</TooltipContent>}
         </Tooltip>
       </div>
     </div>

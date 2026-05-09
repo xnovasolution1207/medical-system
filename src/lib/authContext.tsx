@@ -26,6 +26,12 @@ export interface AuthUser {
   userId: string;
   locationId: string;
   userType: string | null;
+  // Display fields populated from `/auth/me/profile` after the session
+  // verify resolves. Kept optional so consumers can render fallbacks
+  // (initials, generic icon) before the second fetch lands.
+  name?: string;
+  avatar?: string;
+  email?: string;
 }
 
 interface AuthContextValue {
@@ -99,13 +105,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setInitialising(true);
     api.auth
       .me()
-      .then((me) => {
+      .then(async (me) => {
         if (cancelled) return;
+        // Set the bare identity first so route guards can render. Then
+        // best-effort fetch the profile for display fields (name, avatar)
+        // — failures here are non-fatal (the user is still logged in).
         setUser({
           userId: me.userId,
           locationId: me.locationId,
           userType: me.userType,
         });
+        try {
+          const profile = await api.auth.profile.get();
+          if (cancelled) return;
+          const fullName =
+            [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() ||
+            profile.email ||
+            me.userId;
+          setUser({
+            userId: me.userId,
+            locationId: me.locationId,
+            userType: me.userType,
+            name: fullName,
+            avatar: profile.profilePhoto ?? undefined,
+            email: profile.email || undefined,
+          });
+        } catch (err) {
+          console.warn("[auth] /auth/me/profile failed:", err);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
