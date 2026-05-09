@@ -50,6 +50,46 @@ export function proxyMediaUrl(url: string): string {
   return url;
 }
 
+// Backend errors come back as JSON `{ error: "...", stack?: "..." }`.
+// We extract just the `error` field for display so the toast doesn't
+// dump a stack trace (or the raw response body) into the user's face.
+// Logged in full to the console for debugging — the message stays clean
+// but a developer can still inspect the response.
+async function parseErrorMessage(
+  res: Response,
+  method: string,
+  path: string
+): Promise<string> {
+  const text = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = text ? JSON.parse(text) : undefined;
+  } catch {
+    parsed = text;
+  }
+  if (parsed && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    const direct =
+      typeof obj.error === "string"
+        ? obj.error
+        : typeof obj.message === "string"
+          ? obj.message
+          : null;
+    if (direct) {
+      console.error(`[api] ${method} ${path} ${res.status}:`, parsed);
+      return direct;
+    }
+  }
+  // Couldn't extract a user-facing message — fall back to status + a
+  // short generic line. Still log the body for diagnosis.
+  console.error(`[api] ${method} ${path} ${res.status}:`, text || "(empty body)");
+  if (res.status >= 500) return `Error del servidor (${res.status}).`;
+  if (res.status === 404) return "El recurso no existe.";
+  if (res.status === 403) return "No tienes permiso para esta acción.";
+  if (res.status === 400) return "Solicitud inválida.";
+  return `Error ${res.status}.`;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -68,11 +108,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     // Token expired or session evicted from Redis. Clear it so
     // AuthProvider re-routes to /login on the next render.
     if (token) setAuthToken(null);
-    throw new Error(`API ${method} ${path} 401: unauthorized`);
+    throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
   }
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API ${method} ${path} ${res.status}: ${errText}`);
+    const message = await parseErrorMessage(res, method, path);
+    throw new Error(message);
   }
   if (res.status === 204) return undefined as T;
   const json = await res.json();
@@ -128,7 +168,8 @@ export const api = {
           profilePhoto: string | null;
         }>("PATCH", "/auth/me/profile", patch),
       // Upload a new avatar via multipart. Bypasses the JSON `request`
-      // helper because the body is FormData — but mirrors its 401-handling.
+      // helper because the body is FormData — but mirrors its 401-handling
+      // and uses the same `parseErrorMessage` for clean toast text.
       uploadAvatar: async (file: File): Promise<{ profilePhoto: string }> => {
         const form = new FormData();
         form.append("file", file);
@@ -142,11 +183,10 @@ export const api = {
         });
         if (res.status === 401) {
           if (token) setAuthToken(null);
-          throw new Error("API POST /auth/me/avatar 401: unauthorized");
+          throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
         }
         if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`API POST /auth/me/avatar ${res.status}: ${errText}`);
+          throw new Error(await parseErrorMessage(res, "POST", "/auth/me/avatar"));
         }
         const json = await res.json();
         return (json && "data" in json ? json.data : json) as { profilePhoto: string };
