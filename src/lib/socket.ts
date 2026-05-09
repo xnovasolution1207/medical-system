@@ -1,6 +1,7 @@
 // Thin WebSocket subscriber. Reconnects with exponential backoff so a backend
 // restart during dev doesn't require a page reload.
 import type { Conversation, LeadBundle, Message, Opportunity, Task, User } from "@/components/chat/types";
+import { getAuthToken } from "./auth";
 
 export type WsEvent =
   | { type: "hello"; clientId: string }
@@ -28,7 +29,7 @@ export function subscribe(listener: WsListener): Subscription {
   // and the Vite dev server proxies /ws to the backend. In production, it must
   // be set to the backend's absolute URL (http(s)://...); we swap the scheme
   // to ws(s):// and append /ws.
-  const wsUrl = (() => {
+  const baseWsUrl = (() => {
     const backend = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/+$/, "");
     if (backend) {
       return `${backend.replace(/^http/i, "ws")}/ws`;
@@ -37,9 +38,21 @@ export function subscribe(listener: WsListener): Subscription {
     return `${proto}//${window.location.host}/ws`;
   })();
 
+  // Appends the current OAuth JWT to the WS URL. Browsers can't add an
+  // Authorization header to a WebSocket handshake; the backend's `/ws`
+  // server reads `?token=` instead and binds the socket to the user's
+  // location so cross-tenant webhook events can't leak into this client.
+  // We rebuild the URL on every (re)connect so token rotation across
+  // logout/login is picked up automatically.
+  function buildAuthedUrl(): string {
+    const token = getAuthToken();
+    if (!token) return baseWsUrl;
+    return `${baseWsUrl}?token=${encodeURIComponent(token)}`;
+  }
+
   function connect() {
     if (closed) return;
-    socket = new WebSocket(wsUrl);
+    socket = new WebSocket(buildAuthedUrl());
     socket.onopen = () => {
       attempts = 0;
     };
