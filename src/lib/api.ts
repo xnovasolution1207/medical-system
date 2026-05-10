@@ -235,6 +235,11 @@ export const api = {
       );
     },
     get: (id: string) => request<Conversation>("GET", `/conversations/${id}`),
+    // Total unread-conversation count across the whole GHL location.
+    // Drives the "No leídos" sidebar badge so the number reflects every
+    // unread lead in the tenant, not just the locally-loaded page.
+    unreadCount: () =>
+      request<{ total: number }>("GET", "/conversations/unread-count"),
     messages: (id: string, params?: { lastMessageId?: string; limit?: number }) => {
       const qs = new URLSearchParams();
       if (params?.lastMessageId) qs.set("lastMessageId", params.lastMessageId);

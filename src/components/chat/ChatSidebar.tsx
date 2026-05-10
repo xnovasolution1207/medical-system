@@ -94,6 +94,16 @@ interface ChatSidebarProps {
   advancedLogic?: "AND" | "OR";
   onAdvancedFiltersChange?: (filters: FilterCondition[]) => void;
   onAdvancedLogicChange?: (logic: "AND" | "OR") => void;
+  // Total count of unread conversations across the entire GHL location
+  // (not just the locally-loaded page). Index.tsx queries the backend
+  // and refreshes on `lead.updated` WS events. Falls back to summing
+  // local `conversations` when undefined.
+  totalUnread?: number;
+  // Notifies the parent when the user switches between the "No leídos"
+  // / "Todos" / "Recientes" / "Favoritos" tabs. Index.tsx uses this to
+  // refetch from GHL with `status=unread` so the unread tab shows every
+  // unread lead, not just those in the locally-loaded page.
+  onFilterChange?: (filter: "all" | "unread" | "recent" | "favorites") => void;
 }
 
 export function ChatSidebar({
@@ -121,8 +131,16 @@ export function ChatSidebar({
   advancedLogic,
   onAdvancedFiltersChange,
   onAdvancedLogicChange,
+  totalUnread: totalUnreadFromParent,
+  onFilterChange,
 }: ChatSidebarProps) {
   const [filter, setFilter] = useState<"all" | "unread" | "recent" | "favorites">("all");
+  // Forward any filter change so the parent can refetch from GHL when
+  // the unread tab activates. Internal state stays the source of truth
+  // for the in-component filter logic; the callback is purely a notice.
+  useEffect(() => {
+    onFilterChange?.(filter);
+  }, [filter, onFilterChange]);
   // Fallback local search for standalone/test usage when the parent doesn't
   // control the search input; the parent in Index.tsx always provides it.
   const [internalSearch, setInternalSearch] = useState("");
@@ -568,7 +586,12 @@ export function ChatSidebar({
   };
 
   const hasActiveFilters = currentFilters.length > 0 || dateFilter !== "";
-  const totalUnread = conversations.reduce((acc, curr) => acc + (curr.unreadCount || 0), 0);
+  // Prefer the GHL-wide count from the parent — sums of locally-loaded
+  // conversations only count what's been hydrated. Fallback keeps the
+  // component usable in standalone tests where Index.tsx isn't wrapping it.
+  const totalUnread =
+    totalUnreadFromParent ??
+    conversations.reduce((acc, curr) => acc + (curr.unreadCount || 0), 0);
 
   const clearFilters = () => {
     setBuilderFilters([]);

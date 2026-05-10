@@ -81,6 +81,11 @@ function applyStageColorOverrides<T extends { label: string; color: string }>(
 // backend is webhook-driven, so the WS stream is the only update channel).
 const BOOTSTRAP_QUERY_KEY = ["bootstrap"] as const;
 
+// Separate cache slot for the GHL-wide unread-conversation count behind
+// the "No leídos" badge. Module-scope so the WS subscription closure
+// captures a stable reference for queryClient.invalidateQueries.
+const UNREAD_COUNT_QUERY_KEY = ["conversations", "unread-count"] as const;
+
 // Conversation rows we synthesize for ContactCreate webhooks that fire
 // before any GHL conversation exists yet. They use this id prefix so we can
 // recognise them and avoid hitting GHL with a non-existent conversation id.
@@ -201,6 +206,22 @@ export default function Index() {
     retry: 1,
   });
 
+  // GHL-wide unread-conversation count for the "No leídos" sidebar badge.
+  // Refetched whenever a `lead.updated` WS event lands (see the WS effect
+  // below) so the badge stays in sync with inbound traffic, even for
+  // conversations the SPA hasn't lazy-hydrated yet.
+  const { data: unreadCountData } = useQuery<{ total: number }>({
+    queryKey: UNREAD_COUNT_QUERY_KEY,
+    queryFn: () => api.conversations.unreadCount(),
+    // Inexpensive (limit=1 against GHL); still cached so React Query
+    // dedupes parallel mounts. WS-driven invalidation does the rest.
+    staleTime: 60_000,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+  const totalUnread = unreadCountData?.total ?? 0;
+
   // Strongly-typed setter helper. No-ops when the cache is empty (still loading).
   const updateBootstrap = useCallback(
     (mutator: (prev: BootstrapPayload) => BootstrapPayload) => {
@@ -311,6 +332,13 @@ export default function Index() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
+  // When the user clicks the "No leídos" tab in ChatSidebar we fetch the
+  // GHL-wide unread set (status=unread) and store it here. This lets the
+  // sidebar surface every unread lead — not just the ones that happen to
+  // sit in the locally-loaded paginated window. Cleared when the user
+  // switches back to "Todos" / "Recientes".
+  const [unreadResults, setUnreadResults] = useState<Conversation[] | null>(null);
+  const [unreadFilterActive, setUnreadFilterActive] = useState(false);
   const [searchNextCursor, setSearchNextCursor] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -447,6 +475,11 @@ export default function Index() {
           tasks: prev.tasks.map((t) => (t.id === event.task.id ? event.task : t)),
         }));
       } else if (event.type === "lead.updated") {
+        // Inbound or read-state-changing events bump the GHL-wide unread
+        // count. Drop the cached value so the badge refetches against
+        // GHL on the next render — cheap (limit=1) and keeps the badge
+        // accurate without us having to mirror GHL's unread bookkeeping.
+        queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
         // Stub id used for contact-only ContactCreate events that arrive
         // before any conversation exists in GHL. We use a deterministic
         // prefix so the row can be replaced when the real conversation
@@ -761,7 +794,41 @@ export default function Index() {
   // implementation suffered from.
   const isSearchActive =
     searchQuery.trim().length > 0 || advancedFilterServerInfo.hasServerParam;
-  const displayConversations = isSearchActive ? searchResults ?? [] : conversations;
+  // Fetch the GHL-wide unread set whenever the No leídos tab activates.
+  // Re-runs when the unread badge invalidates (i.e. on any lead.updated
+  // WS event) so the list stays current with new inbound traffic.
+  useEffect(() => {
+    if (!unreadFilterActive) {
+      setUnreadResults(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await api.conversations.list({
+          status: "unread",
+          // 100 covers the practical case (GHL search caps page size at
+          // ~100). If a tenant ever has more, we still show the first
+          // 100 — better than the 3 they'd see otherwise.
+          limit: 100,
+        });
+        if (!cancelled) setUnreadResults(result.conversations);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[unread] fetch failed", err);
+          setUnreadResults([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [unreadFilterActive, totalUnread]);
+  const displayConversations = unreadFilterActive
+    ? unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0)
+    : isSearchActive
+      ? searchResults ?? []
+      : conversations;
   const activeConversation = conversations.find((c) => c.id === activeId);
 
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
@@ -1470,6 +1537,8 @@ export default function Index() {
             />
           ) : (
             <ChatSidebar
+              totalUnread={totalUnread}
+              onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
               conversations={displayConversations}
               tasks={tasks}
               activeConversationId={activeId || ""}
@@ -1525,6 +1594,8 @@ export default function Index() {
             />
           ) : (
             <ChatSidebar
+              totalUnread={totalUnread}
+              onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
               conversations={displayConversations}
               tasks={tasks}
               activeConversationId={activeId || ""}
