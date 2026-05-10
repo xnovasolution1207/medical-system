@@ -1324,7 +1324,8 @@ export function ChatMessageArea({
               return (
                 <React.Fragment key={message.id}>
                   {dateSeparator}
-                  <div className="flex w-full justify-center my-2">
+                  <div className="flex w-full items-center gap-3 my-2">
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
                     <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 shadow-sm">
                       <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
                       <span className="font-semibold text-slate-700 dark:text-slate-200">{ev.opportunityName}</span>
@@ -1354,6 +1355,7 @@ export function ChatMessageArea({
                       <span className="opacity-40">·</span>
                       <span>{message.timestamp}</span>
                     </div>
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
                   </div>
                 </React.Fragment>
               );
@@ -1370,13 +1372,14 @@ export function ChatMessageArea({
               return (
                 <React.Fragment key={message.id}>
                   {dateSeparator}
-                  <div className="flex w-full justify-center my-3">
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  <div className="flex w-full items-center gap-3 my-2">
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+                    <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 shadow-sm">
                       <UserIcon className="h-3 w-3 text-slate-400 dark:text-slate-500" />
                       {!prev && now && (
                         <>
                           <span>Asignado a</span>
-                          <span className="font-medium text-slate-700 dark:text-slate-200">{now}</span>
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{now}</span>
                         </>
                       )}
                       {prev && !now && (
@@ -1391,8 +1394,8 @@ export function ChatMessageArea({
                         <>
                           <span>Asignación:</span>
                           <span className="line-through opacity-70">{prev}</span>
-                          <span className="text-slate-400">→</span>
-                          <span className="font-medium text-slate-700 dark:text-slate-200">{now}</span>
+                          <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{now}</span>
                         </>
                       )}
                       {ev.user && (
@@ -1404,6 +1407,7 @@ export function ChatMessageArea({
                       <span className="opacity-40">·</span>
                       <span>{message.timestamp}</span>
                     </div>
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
                   </div>
                 </React.Fragment>
               );
