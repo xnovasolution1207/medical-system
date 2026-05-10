@@ -31,6 +31,51 @@ const INITIAL_SAVED_VIEWS: SavedView[] = [
 
 const FALLBACK_USER: User = { id: "agent", name: "Agente de Ventas", status: "online" };
 
+// Brand colours for the canonical lead-status labels the team uses in
+// GHL. The backend's hex→Tailwind mapping is necessarily approximate
+// (it only has the hex GHL gives it), so when the GHL pipeline carries
+// one of these well-known names we override the colour to the swatch
+// shown in the agent-facing reference image. Names not in the map keep
+// whatever colour the backend resolved.
+const STAGE_COLOR_OVERRIDES: Record<string, string> = {
+  "lead nuevo": "bg-sky-500",
+  kiwi: "bg-lime-500",
+  tibio: "bg-amber-500",
+  caliente: "bg-orange-500",
+  agendo: "bg-violet-500",
+  consulta: "bg-pink-500",
+  "no asistio": "bg-red-500",
+  "no asistió": "bg-red-500",
+  seguimiento: "bg-purple-400",
+  tratamiento: "bg-blue-500",
+  recuperados: "bg-emerald-500",
+  pacientes: "bg-teal-500",
+};
+
+// Normalise a stage label so the override lookup is forgiving of casing,
+// whitespace, and the difference between accented / unaccented forms
+// (GHL stores whatever the user typed; the override list is canonical).
+function normaliseStageLabel(label: string): string {
+  return label
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase();
+}
+
+function applyStageColorOverrides<T extends { label: string; color: string }>(
+  list: T[]
+): T[] {
+  return list.map((s) => {
+    const override =
+      STAGE_COLOR_OVERRIDES[normaliseStageLabel(s.label)] ??
+      // Also try the accented form so "no asistió" (with accent) matches
+      // the canonical "no asistio" entry without losing the accented copy.
+      STAGE_COLOR_OVERRIDES[s.label.trim().toLowerCase()];
+    return override ? { ...s, color: override } : s;
+  });
+}
+
 // Single React Query key holding the full app payload. WS events mutate the
 // cache via setQueryData; the query itself never refetches on its own (the
 // backend is webhook-driven, so the WS stream is the only update channel).
@@ -169,8 +214,22 @@ export default function Index() {
   const conversations = data?.conversations ?? [];
   const tasks = data?.tasks ?? [];
   const opportunities = data?.opportunities ?? [];
-  const pipelines = data?.pipelines ?? [];
-  const stages = data?.stages ?? [];
+  // Apply the brand-colour overrides at the source so every consumer
+  // (lead-list dot, status dropdown in the chat header, kanban columns)
+  // sees the same colour for a given stage name without having to
+  // re-derive it locally.
+  const pipelines = useMemo(
+    () =>
+      (data?.pipelines ?? []).map((p) => ({
+        ...p,
+        stages: applyStageColorOverrides(p.stages),
+      })),
+    [data?.pipelines]
+  );
+  const stages = useMemo(
+    () => applyStageColorOverrides(data?.stages ?? []),
+    [data?.stages]
+  );
   const users = data?.users ?? [];
   const currentUser = data?.currentUser ?? FALLBACK_USER;
   const conversationsNextCursor = data?.conversationsNextCursor ?? null;
