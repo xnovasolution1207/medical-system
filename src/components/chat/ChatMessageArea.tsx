@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { ImageLightbox } from "./ImageLightbox";
@@ -43,13 +43,16 @@ interface ChatMessageAreaProps {
   isLoadingOlderMessages?: boolean;
   onLoadOlderMessages?: () => void;
   onDeleteLead?: () => void;
-  // Pin / unpin a message in the active conversation. Pin: pass the
-  // message snapshot. Unpin: pass null. Drives the "cintillo superior"
-  // banner shown above the message list.
+  // Pin a message snapshot to the conversation's pinned-message stack
+  // (or, with `null`, clear all pins). Each pin renders as its own
+  // banner above the message list.
   onPinMessage?: (
     conversationId: string,
     pinned: { id: string; text: string; date?: string; senderName?: string; channel?: string } | null
   ) => void;
+  // Remove a single pinned snapshot by its message id (per-banner X
+  // button and the per-message "Desfijar" menu item).
+  onUnpinMessage?: (conversationId: string, messageId: string) => void;
   // Opens the MainSidebar drawer on screens below `md`. Index.tsx provides it
   // so the user can reach navigation while a conversation is open on mobile.
   onOpenMobileNav?: () => void;
@@ -256,6 +259,7 @@ export function ChatMessageArea({
   onLoadOlderMessages,
   onDeleteLead,
   onPinMessage,
+  onUnpinMessage,
   onOpenMobileNav,
   onOpenChatList,
 }: ChatMessageAreaProps) {
@@ -397,6 +401,28 @@ export function ChatMessageArea({
   useEffect(() => {
     if (!isLoadingOlderMessages) requestedOlderRef.current = false;
   }, [isLoadingOlderMessages]);
+
+  // Smooth-scroll the chat to a message by id and briefly highlight it
+  // so the agent can spot the target after the scroll lands. Used by the
+  // pinned-message banners — clicking one jumps to the original message.
+  // The ring fade is driven by a one-shot CSS animation class added for
+  // ~1.5s. If the target isn't currently in the rendered list (older
+  // history not yet hydrated) we fall back to a noop — pin banners
+  // store a snapshot, so the user still sees the content above.
+  const scrollToPinnedMessage = useCallback((messageId: string) => {
+    if (typeof document === "undefined") return;
+    const root = scrollRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(messageId)}"]`
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-amber-400/70", "rounded-lg");
+    window.setTimeout(() => {
+      el.classList.remove("ring-2", "ring-amber-400/70", "rounded-lg");
+    }, 1500);
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1250,42 +1276,53 @@ export function ChatMessageArea({
         </div>
       ))}
 
-      {/* Pinned message banner ("cintillo superior"). Sits above the
-          messages area so the pinned content is always visible while
-          the agent scrolls the thread. */}
-      {conversation.pinnedMessage && (
-        <div className="flex items-center gap-3 border-b border-amber-200/70 bg-amber-50/80 px-4 py-2 text-sm dark:border-amber-500/30 dark:bg-amber-500/10">
-          <Pin className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
-              <span>Mensaje fijado</span>
-              {conversation.pinnedMessage.senderName && (
-                <>
-                  <span className="opacity-50">·</span>
-                  <span className="font-normal normal-case opacity-80">{conversation.pinnedMessage.senderName}</span>
-                </>
-              )}
-              {conversation.pinnedMessage.channel === "internal" && (
-                <Badge variant="outline" className="ml-1 h-4 border-amber-300/60 bg-amber-100/60 px-1 text-[9px] font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-                  interno
-                </Badge>
-              )}
+      {/* Pinned message banners ("cintillos superiores"). One row per
+          pinned snapshot. Clicking a banner smoothly scrolls the chat
+          to the original message and briefly flashes it; the X button
+          unpins just that entry. */}
+      {(conversation.pinnedMessages ?? []).map((pin) => (
+        <div
+          key={pin.id}
+          className="flex items-center gap-3 border-b border-amber-200/70 bg-amber-50/80 px-4 py-2 text-sm dark:border-amber-500/30 dark:bg-amber-500/10"
+        >
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:bg-amber-100/40 dark:hover:bg-amber-500/10 rounded-md px-1 -mx-1 py-0.5 -my-0.5"
+            onClick={() => scrollToPinnedMessage(pin.id)}
+            title="Ir al mensaje"
+          >
+            <Pin className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                <span>Mensaje fijado</span>
+                {pin.senderName && (
+                  <>
+                    <span className="opacity-50">·</span>
+                    <span className="font-normal normal-case opacity-80">{pin.senderName}</span>
+                  </>
+                )}
+                {pin.channel === "internal" && (
+                  <Badge variant="outline" className="ml-1 h-4 border-amber-300/60 bg-amber-100/60 px-1 text-[9px] font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                    interno
+                  </Badge>
+                )}
+              </div>
+              <div className="truncate text-[13px] text-amber-900 dark:text-amber-100">
+                {pin.text || "(sin contenido)"}
+              </div>
             </div>
-            <div className="truncate text-[13px] text-amber-900 dark:text-amber-100">
-              {conversation.pinnedMessage.text || "(sin contenido)"}
-            </div>
-          </div>
+          </button>
           <Button
             variant="ghost"
             size="icon"
             className="h-7 w-7 shrink-0 rounded-full text-amber-800 hover:bg-amber-200/70 dark:text-amber-200 dark:hover:bg-amber-500/20"
-            onClick={() => onPinMessage?.(conversation.id, null)}
+            onClick={() => onUnpinMessage?.(conversation.id, pin.id)}
             title="Desfijar mensaje"
           >
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
-      )}
+      ))}
 
       {/* Messages Area */}
       <div
@@ -1481,8 +1518,9 @@ export function ChatMessageArea({
               <React.Fragment key={message.id}>
                 {dateSeparator}
                 <div
+                  data-message-id={message.id}
                   className={cn(
-                    "flex w-full items-end gap-2 group",
+                    "flex w-full items-end gap-2 group scroll-mt-24",
                     isMe ? "justify-end" : "justify-start",
                     isConsecutive ? "mt-1" : "mt-4"
                   )}
@@ -1511,9 +1549,9 @@ export function ChatMessageArea({
                           <Reply className="h-4 w-4 mr-2" />
                           Responder
                         </DropdownMenuItem>
-                        {conversation.pinnedMessage?.id === message.id ? (
+                        {(conversation.pinnedMessages ?? []).some((p) => p.id === message.id) ? (
                           <DropdownMenuItem
-                            onClick={() => onPinMessage?.(conversation.id, null)}
+                            onClick={() => onUnpinMessage?.(conversation.id, message.id)}
                           >
                             <PinOff className="h-4 w-4 mr-2" />
                             Desfijar
@@ -1699,9 +1737,9 @@ export function ChatMessageArea({
                           <Reply className="h-4 w-4 mr-2" />
                           Responder
                         </DropdownMenuItem>
-                        {conversation.pinnedMessage?.id === message.id ? (
+                        {(conversation.pinnedMessages ?? []).some((p) => p.id === message.id) ? (
                           <DropdownMenuItem
-                            onClick={() => onPinMessage?.(conversation.id, null)}
+                            onClick={() => onUnpinMessage?.(conversation.id, message.id)}
                           >
                             <PinOff className="h-4 w-4 mr-2" />
                             Desfijar

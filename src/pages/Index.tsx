@@ -1225,26 +1225,54 @@ export default function Index() {
 
   // Pin or unpin a message in the active conversation. Optimistically
   // updates the local cache so the banner pops in immediately, then
-  // persists via PATCH /conversations/:id. The backend stores the
-  // snapshot in the in-memory flagsStore (resets on backend restart).
+  // persists via PATCH /conversations/:id. The backend keeps a
+  // capped stack per conversation (in-memory flagsStore — resets on
+  // backend restart).
+  //   - pinned object → add to top of the stack (or refresh existing entry)
+  //   - pinned === null → clear ALL pins for this conversation
   const handlePinMessage = useCallback(
     (
       id: string,
       pinned: { id: string; text: string; date?: string; senderName?: string; channel?: string } | null
     ) => {
-      const snapshot = pinned
-        ? { ...pinned, pinnedAt: Date.now() }
-        : undefined;
       updateBootstrap((prev) => ({
         ...prev,
-        conversations: prev.conversations.map((c) =>
-          c.id === id ? { ...c, pinnedMessage: snapshot } : c
-        ),
+        conversations: prev.conversations.map((c) => {
+          if (c.id !== id) return c;
+          if (pinned === null) return { ...c, pinnedMessages: undefined };
+          const snapshot = { ...pinned, pinnedAt: Date.now() };
+          const rest = (c.pinnedMessages ?? []).filter((p) => p.id !== pinned.id);
+          return { ...c, pinnedMessages: [snapshot, ...rest].slice(0, 10) };
+        }),
       }));
       if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { pinnedMessage: pinned })
         .catch((err) => console.error("pin message failed", err));
+    },
+    [updateBootstrap]
+  );
+
+  // Remove a single pinned snapshot by message id (per-banner X button
+  // and the "Desfijar" menu item both call this). Optimistic update
+  // mirrors the backend's removePinnedMessage helper.
+  const handleUnpinMessage = useCallback(
+    (id: string, messageId: string) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                pinnedMessages: (c.pinnedMessages ?? []).filter((p) => p.id !== messageId),
+              }
+            : c
+        ),
+      }));
+      if (isStubConvId(id)) return;
+      api.conversations
+        .patch(id, { unpinMessageId: messageId })
+        .catch((err) => console.error("unpin message failed", err));
     },
     [updateBootstrap]
   );
@@ -1741,6 +1769,7 @@ export default function Index() {
               onDeleteLead={handleDeleteLead}
               onToggleFavorite={handleToggleFavorite}
               onPinMessage={handlePinMessage}
+              onUnpinMessage={handleUnpinMessage}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
               onOpenChatList={() => setIsChatListSheetOpen(true)}
             />
@@ -1883,6 +1912,7 @@ export default function Index() {
                 onSetReminder={handleSetReminder}
                 onToggleFavorite={handleToggleFavorite}
               onPinMessage={handlePinMessage}
+              onUnpinMessage={handleUnpinMessage}
                 hasOlderMessages={Boolean(conv.messagesHasMore)}
                 isLoadingOlderMessages={loadingOlderFor === conv.id}
                 onLoadOlderMessages={handleLoadOlderMessages}

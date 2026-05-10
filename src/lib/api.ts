@@ -267,8 +267,9 @@ export const api = {
         isFavorite: boolean;
         activeReminder: string | null;
         stage: string;
-        // Pin a message in the conversation (renders as a sticky
-        // banner above the message list). Pass `null` to clear.
+        // Add a snapshot to the conversation's pinned-message stack
+        // (each pin renders as a banner above the chat). Pass `null`
+        // to clear ALL pins (legacy clear-all path).
         pinnedMessage:
           | {
               id: string;
@@ -278,6 +279,8 @@ export const api = {
               channel?: string;
             }
           | null;
+        // Remove a single pin by message id.
+        unpinMessageId: string;
       }>
     ) => request<Record<string, unknown>>("PATCH", `/conversations/${id}`, patch),
     schedule: (
