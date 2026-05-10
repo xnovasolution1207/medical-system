@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
@@ -1315,19 +1315,42 @@ export function ChatMessageArea({
             }
 
             if (message.systemEvent && message.systemEvent.type === "opportunity_moved") {
+              const ev = message.systemEvent;
+              // Funnel-to-funnel transfers are rendered with the
+              // pipeline shown alongside the stage on each side, so the
+              // reader can see *both* the embudo change and the etapa
+              // change in one line.
+              const isFunnelMove = Boolean(ev.previousPipeline);
               return (
                 <React.Fragment key={message.id}>
                   {dateSeparator}
-                  <div className="flex w-full justify-center my-3">
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      <CornerUpLeft className="h-3 w-3 -scale-x-100 text-slate-400 dark:text-slate-500" />
-                      <span className="font-medium text-slate-700 dark:text-slate-200">{message.systemEvent.opportunityName}</span>
+                  <div className="flex w-full justify-center my-2">
+                    <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 shadow-sm">
+                      <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">{ev.opportunityName}</span>
                       <span>movido</span>
-                      <span className="line-through opacity-70">{message.systemEvent.oldStage}</span>
-                      <span className="text-slate-400">→</span>
-                      <span className="font-medium text-slate-700 dark:text-slate-200">{message.systemEvent.newStage}</span>
+                      {isFunnelMove ? (
+                        <>
+                          <span className="line-through opacity-70">
+                            {ev.previousPipeline} / {ev.oldStage}
+                          </span>
+                          <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">
+                            {ev.pipeline} / {ev.newStage}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="line-through opacity-70">{ev.oldStage}</span>
+                          <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{ev.newStage}</span>
+                          {ev.pipeline && (
+                            <span className="opacity-60">en {ev.pipeline}</span>
+                          )}
+                        </>
+                      )}
                       <span className="opacity-40">·</span>
-                      <span>{message.systemEvent.user}</span>
+                      <span>{ev.user}</span>
                       <span className="opacity-40">·</span>
                       <span>{message.timestamp}</span>
                     </div>

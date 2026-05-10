@@ -76,6 +76,8 @@ export type Message = {
         oldStage: string;
         newStage: string;
         pipeline: string;
+        // Set only when the move crossed pipelines (funnel-to-funnel).
+        previousPipeline?: string;
         user: string;
       }
     | {
