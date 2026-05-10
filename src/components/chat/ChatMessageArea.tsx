@@ -545,7 +545,6 @@ export function ChatMessageArea({
           <ChannelAvatar
             name={conversation.participant.name}
             src={conversation.participant.avatar}
-            channel={conversation.source}
             status={conversation.participant.status}
             className="h-10 w-10 shrink-0"
           />
