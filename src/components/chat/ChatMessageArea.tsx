@@ -1337,6 +1337,56 @@ export function ChatMessageArea({
               );
             }
 
+            if (message.systemEvent && message.systemEvent.type === "conversation_taken") {
+              // Three readable variations depending on what GHL gave us:
+              //   - prev empty + new set        → "Asignado a X"
+              //   - prev set   + new empty      → "Sin asignar (antes X)"
+              //   - prev set   + new set        → "Asignación: X → Y"
+              const ev = message.systemEvent;
+              const prev = ev.previousAssignedToName;
+              const now = ev.assignedToName;
+              return (
+                <React.Fragment key={message.id}>
+                  {dateSeparator}
+                  <div className="flex w-full justify-center my-3">
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      <UserIcon className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                      {!prev && now && (
+                        <>
+                          <span>Asignado a</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-200">{now}</span>
+                        </>
+                      )}
+                      {prev && !now && (
+                        <>
+                          <span>Sin asignar</span>
+                          <span className="opacity-60">(antes</span>
+                          <span className="line-through opacity-70">{prev}</span>
+                          <span className="opacity-60">)</span>
+                        </>
+                      )}
+                      {prev && now && (
+                        <>
+                          <span>Asignación:</span>
+                          <span className="line-through opacity-70">{prev}</span>
+                          <span className="text-slate-400">→</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-200">{now}</span>
+                        </>
+                      )}
+                      {ev.user && (
+                        <>
+                          <span className="opacity-40">·</span>
+                          <span>{ev.user}</span>
+                        </>
+                      )}
+                      <span className="opacity-40">·</span>
+                      <span>{message.timestamp}</span>
+                    </div>
+                  </div>
+                </React.Fragment>
+              );
+            }
+
             const isMe = message.senderId === currentUser.id;
             // Consecutive grouping considers the resolved agent identity too,
             // so two back-to-back outbound messages from different agents

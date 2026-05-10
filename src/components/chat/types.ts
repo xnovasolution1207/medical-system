@@ -69,14 +69,24 @@ export type Message = {
   mentions?: string[];
   reminder?: string;
   buttons?: MessageButton[];
-  systemEvent?: {
-    type: "opportunity_moved";
-    opportunityName: string;
-    oldStage: string;
-    newStage: string;
-    pipeline: string;
-    user: string;
-  };
+  systemEvent?:
+    | {
+        type: "opportunity_moved";
+        opportunityName: string;
+        oldStage: string;
+        newStage: string;
+        pipeline: string;
+        user: string;
+      }
+    | {
+        type: "conversation_taken";
+        // Empty string when unassigned.
+        assignedToName: string;
+        // Empty string when there was no previous owner.
+        previousAssignedToName: string;
+        // Empty string when GHL didn't tell us who triggered the change.
+        user: string;
+      };
 };
 
 export type ScheduledMessage = {
