@@ -339,6 +339,10 @@ export default function Index() {
   // switches back to "Todos" / "Recientes".
   const [unreadResults, setUnreadResults] = useState<Conversation[] | null>(null);
   const [unreadFilterActive, setUnreadFilterActive] = useState(false);
+  // Cursor for the next unread page — same shape as `conversationsNextCursor`
+  // (lastMessageDate epoch ms). null = no further pages, undefined = not
+  // yet fetched.
+  const [unreadNextCursor, setUnreadNextCursor] = useState<number | null>(null);
   const [searchNextCursor, setSearchNextCursor] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -794,12 +798,14 @@ export default function Index() {
   // implementation suffered from.
   const isSearchActive =
     searchQuery.trim().length > 0 || advancedFilterServerInfo.hasServerParam;
-  // Fetch the GHL-wide unread set whenever the No leídos tab activates.
-  // Re-runs when the unread badge invalidates (i.e. on any lead.updated
-  // WS event) so the list stays current with new inbound traffic.
+  // Fetch the first GHL-wide unread page whenever the No leídos tab
+  // activates. Subsequent pages are loaded by `handleLoadMoreConversations`
+  // when the user scrolls. Re-runs on `lead.updated` (via `totalUnread`
+  // in the deps) so the list stays current with new inbound traffic.
   useEffect(() => {
     if (!unreadFilterActive) {
       setUnreadResults(null);
+      setUnreadNextCursor(null);
       return;
     }
     let cancelled = false;
@@ -807,16 +813,17 @@ export default function Index() {
       try {
         const result = await api.conversations.list({
           status: "unread",
-          // 100 covers the practical case (GHL search caps page size at
-          // ~100). If a tenant ever has more, we still show the first
-          // 100 — better than the 3 they'd see otherwise.
-          limit: 100,
+          limit: 25,
         });
-        if (!cancelled) setUnreadResults(result.conversations);
+        if (!cancelled) {
+          setUnreadResults(result.conversations);
+          setUnreadNextCursor(result.nextCursor);
+        }
       } catch (err) {
         if (!cancelled) {
           console.warn("[unread] fetch failed", err);
           setUnreadResults([]);
+          setUnreadNextCursor(null);
         }
       }
     })();
@@ -1102,7 +1109,15 @@ export default function Index() {
 
   const handleLoadMoreConversations = useCallback(async () => {
     const q = searchQuery.trim();
-    const cursor = q ? searchNextCursor : conversationsNextCursor;
+    // Mode precedence matches displayConversations:
+    //   1. unread tab  → page through status=unread results
+    //   2. search/filter → page through searchResults
+    //   3. default     → page through the bootstrap list
+    const cursor = unreadFilterActive
+      ? unreadNextCursor
+      : q
+        ? searchNextCursor
+        : conversationsNextCursor;
     if (!cursor || isLoadingMoreConversationsRef.current) return;
     isLoadingMoreConversationsRef.current = true;
     setIsLoadingMoreConversations(true);
@@ -1110,9 +1125,18 @@ export default function Index() {
       const result = await api.conversations.list({
         limit: 25,
         startAfterDate: cursor,
-        query: q || undefined,
+        query: unreadFilterActive ? undefined : q || undefined,
+        status: unreadFilterActive ? "unread" : undefined,
       });
-      if (q) {
+      if (unreadFilterActive) {
+        setUnreadResults((prev) => {
+          const base = prev ?? [];
+          const existingIds = new Set(base.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return fresh.length ? [...base, ...fresh] : base;
+        });
+        setUnreadNextCursor(result.nextCursor);
+      } else if (q) {
         setSearchResults((prev) => {
           const base = prev ?? [];
           const existingIds = new Set(base.map((c) => c.id));
@@ -1137,7 +1161,14 @@ export default function Index() {
       isLoadingMoreConversationsRef.current = false;
       setIsLoadingMoreConversations(false);
     }
-  }, [conversationsNextCursor, searchNextCursor, searchQuery, updateBootstrap]);
+  }, [
+    conversationsNextCursor,
+    searchNextCursor,
+    searchQuery,
+    unreadFilterActive,
+    unreadNextCursor,
+    updateBootstrap,
+  ]);
 
   const handleLoadOlderMessages = useCallback(async () => {
     if (!activeId || loadingOlderForRef.current === activeId) return;
@@ -1188,6 +1219,32 @@ export default function Index() {
       api.conversations
         .patch(id, { isFavorite: nextValue })
         .catch((err) => console.error("toggle favorite failed", err));
+    },
+    [updateBootstrap]
+  );
+
+  // Pin or unpin a message in the active conversation. Optimistically
+  // updates the local cache so the banner pops in immediately, then
+  // persists via PATCH /conversations/:id. The backend stores the
+  // snapshot in the in-memory flagsStore (resets on backend restart).
+  const handlePinMessage = useCallback(
+    (
+      id: string,
+      pinned: { id: string; text: string; date?: string; senderName?: string; channel?: string } | null
+    ) => {
+      const snapshot = pinned
+        ? { ...pinned, pinnedAt: Date.now() }
+        : undefined;
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === id ? { ...c, pinnedMessage: snapshot } : c
+        ),
+      }));
+      if (isStubConvId(id)) return;
+      api.conversations
+        .patch(id, { pinnedMessage: pinned })
+        .catch((err) => console.error("pin message failed", err));
     },
     [updateBootstrap]
   );
@@ -1550,7 +1607,13 @@ export default function Index() {
               stages={stages}
               activeTab={activeMainTab}
               onLoadMore={handleLoadMoreConversations}
-              hasMore={(isSearchActive ? searchNextCursor : conversationsNextCursor) !== null}
+              hasMore={
+                (unreadFilterActive
+                  ? unreadNextCursor
+                  : isSearchActive
+                    ? searchNextCursor
+                    : conversationsNextCursor) !== null
+              }
               isLoadingMore={isLoadingMoreConversations}
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
@@ -1607,7 +1670,13 @@ export default function Index() {
               stages={stages}
               activeTab={activeMainTab}
               onLoadMore={handleLoadMoreConversations}
-              hasMore={(isSearchActive ? searchNextCursor : conversationsNextCursor) !== null}
+              hasMore={
+                (unreadFilterActive
+                  ? unreadNextCursor
+                  : isSearchActive
+                    ? searchNextCursor
+                    : conversationsNextCursor) !== null
+              }
               isLoadingMore={isLoadingMoreConversations}
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
@@ -1671,6 +1740,7 @@ export default function Index() {
               onLoadOlderMessages={handleLoadOlderMessages}
               onDeleteLead={handleDeleteLead}
               onToggleFavorite={handleToggleFavorite}
+              onPinMessage={handlePinMessage}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
               onOpenChatList={() => setIsChatListSheetOpen(true)}
             />
@@ -1812,6 +1882,7 @@ export default function Index() {
                 onClearReminder={handleClearReminder}
                 onSetReminder={handleSetReminder}
                 onToggleFavorite={handleToggleFavorite}
+              onPinMessage={handlePinMessage}
                 hasOlderMessages={Boolean(conv.messagesHasMore)}
                 isLoadingOlderMessages={loadingOlderFor === conv.id}
                 onLoadOlderMessages={handleLoadOlderMessages}

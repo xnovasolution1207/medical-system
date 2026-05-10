@@ -121,6 +121,17 @@ export type Conversation = {
   isFavorite?: boolean;
   activeReminder?: string;
   scheduledMessages?: ScheduledMessage[];
+  // Single pinned message ("cintillo superior"). Local-only — not
+  // modelled by GHL. The SPA renders this as a sticky banner above the
+  // message list.
+  pinnedMessage?: {
+    id: string;
+    text: string;
+    date?: string;
+    senderName?: string;
+    channel?: string;
+    pinnedAt: number;
+  };
   messagesHasMore?: boolean;
   messagesOldestId?: string;
 };

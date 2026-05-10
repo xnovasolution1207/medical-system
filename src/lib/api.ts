@@ -263,7 +263,22 @@ export const api = {
     ) => request<Message>("POST", `/conversations/${id}/messages`, payload),
     patch: (
       id: string,
-      patch: Partial<{ isFavorite: boolean; activeReminder: string | null; stage: string }>
+      patch: Partial<{
+        isFavorite: boolean;
+        activeReminder: string | null;
+        stage: string;
+        // Pin a message in the conversation (renders as a sticky
+        // banner above the message list). Pass `null` to clear.
+        pinnedMessage:
+          | {
+              id: string;
+              text: string;
+              date?: string;
+              senderName?: string;
+              channel?: string;
+            }
+          | null;
+      }>
     ) => request<Record<string, unknown>>("PATCH", `/conversations/${id}`, patch),
     schedule: (
       id: string,

@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
@@ -43,6 +43,13 @@ interface ChatMessageAreaProps {
   isLoadingOlderMessages?: boolean;
   onLoadOlderMessages?: () => void;
   onDeleteLead?: () => void;
+  // Pin / unpin a message in the active conversation. Pin: pass the
+  // message snapshot. Unpin: pass null. Drives the "cintillo superior"
+  // banner shown above the message list.
+  onPinMessage?: (
+    conversationId: string,
+    pinned: { id: string; text: string; date?: string; senderName?: string; channel?: string } | null
+  ) => void;
   // Opens the MainSidebar drawer on screens below `md`. Index.tsx provides it
   // so the user can reach navigation while a conversation is open on mobile.
   onOpenMobileNav?: () => void;
@@ -248,6 +255,7 @@ export function ChatMessageArea({
   isLoadingOlderMessages = false,
   onLoadOlderMessages,
   onDeleteLead,
+  onPinMessage,
   onOpenMobileNav,
   onOpenChatList,
 }: ChatMessageAreaProps) {
@@ -1242,6 +1250,43 @@ export function ChatMessageArea({
         </div>
       ))}
 
+      {/* Pinned message banner ("cintillo superior"). Sits above the
+          messages area so the pinned content is always visible while
+          the agent scrolls the thread. */}
+      {conversation.pinnedMessage && (
+        <div className="flex items-center gap-3 border-b border-amber-200/70 bg-amber-50/80 px-4 py-2 text-sm dark:border-amber-500/30 dark:bg-amber-500/10">
+          <Pin className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
+              <span>Mensaje fijado</span>
+              {conversation.pinnedMessage.senderName && (
+                <>
+                  <span className="opacity-50">·</span>
+                  <span className="font-normal normal-case opacity-80">{conversation.pinnedMessage.senderName}</span>
+                </>
+              )}
+              {conversation.pinnedMessage.channel === "internal" && (
+                <Badge variant="outline" className="ml-1 h-4 border-amber-300/60 bg-amber-100/60 px-1 text-[9px] font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  interno
+                </Badge>
+              )}
+            </div>
+            <div className="truncate text-[13px] text-amber-900 dark:text-amber-100">
+              {conversation.pinnedMessage.text || "(sin contenido)"}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 rounded-full text-amber-800 hover:bg-amber-200/70 dark:text-amber-200 dark:hover:bg-amber-500/20"
+            onClick={() => onPinMessage?.(conversation.id, null)}
+            title="Desfijar mensaje"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div
         ref={scrollRef}
@@ -1466,6 +1511,31 @@ export function ChatMessageArea({
                           <Reply className="h-4 w-4 mr-2" />
                           Responder
                         </DropdownMenuItem>
+                        {conversation.pinnedMessage?.id === message.id ? (
+                          <DropdownMenuItem
+                            onClick={() => onPinMessage?.(conversation.id, null)}
+                          >
+                            <PinOff className="h-4 w-4 mr-2" />
+                            Desfijar
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              onPinMessage?.(conversation.id, {
+                                id: message.id,
+                                text: message.text,
+                                date: message.date,
+                                senderName:
+                                  message.senderName ??
+                                  (message.senderId === currentUser.id ? currentUser.name : conversation.participant.name),
+                                channel: message.channel,
+                              })
+                            }
+                          >
+                            <Pin className="h-4 w-4 mr-2" />
+                            Fijar
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onClick={() => toast({ title: "Detalles del mensaje", description: `Enviado a las ${message.timestamp}` })}>
                           <Info className="h-4 w-4 mr-2" />
                           Ver detalles
@@ -1629,6 +1699,31 @@ export function ChatMessageArea({
                           <Reply className="h-4 w-4 mr-2" />
                           Responder
                         </DropdownMenuItem>
+                        {conversation.pinnedMessage?.id === message.id ? (
+                          <DropdownMenuItem
+                            onClick={() => onPinMessage?.(conversation.id, null)}
+                          >
+                            <PinOff className="h-4 w-4 mr-2" />
+                            Desfijar
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              onPinMessage?.(conversation.id, {
+                                id: message.id,
+                                text: message.text,
+                                date: message.date,
+                                senderName:
+                                  message.senderName ??
+                                  (message.senderId === currentUser.id ? currentUser.name : conversation.participant.name),
+                                channel: message.channel,
+                              })
+                            }
+                          >
+                            <Pin className="h-4 w-4 mr-2" />
+                            Fijar
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onClick={() => toast({ title: "Detalles del mensaje", description: `Recibido a las ${message.timestamp}` })}>
                           <Info className="h-4 w-4 mr-2" />
                           Ver detalles
