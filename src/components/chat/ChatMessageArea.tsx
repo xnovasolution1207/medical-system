@@ -1495,6 +1495,43 @@ export function ChatMessageArea({
               );
             }
 
+            if (message.systemEvent && message.systemEvent.type === "opportunity_activity") {
+              const ev = message.systemEvent;
+              const actionLabel =
+                ev.action === "created"
+                  ? "creada"
+                  : ev.action === "deleted"
+                    ? "eliminada"
+                    : "actualizada";
+              return (
+                <React.Fragment key={message.id}>
+                  {dateSeparator}
+                  <div className="flex w-full items-center gap-3 my-2">
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+                    <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 shadow-sm">
+                      <Waypoints className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                      <span>Oportunidad</span>
+                      {ev.opportunityName && (
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">
+                          {ev.opportunityName}
+                        </span>
+                      )}
+                      <span>{actionLabel}</span>
+                      {ev.user && (
+                        <>
+                          <span className="opacity-40">·</span>
+                          <span>{ev.user}</span>
+                        </>
+                      )}
+                      <span className="opacity-40">·</span>
+                      <span>{message.timestamp}</span>
+                    </div>
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+                  </div>
+                </React.Fragment>
+              );
+            }
+
             const isMe = message.senderId === currentUser.id;
             // Consecutive grouping considers the resolved agent identity too,
             // so two back-to-back outbound messages from different agents

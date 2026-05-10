@@ -88,6 +88,16 @@ export type Message = {
         previousAssignedToName: string;
         // Empty string when GHL didn't tell us who triggered the change.
         user: string;
+      }
+    | {
+        // GHL's bare TYPE_ACTIVITY_OPPORTUNITY entries — public API
+        // returns just "Opportunity created/updated" without the
+        // from→to detail shown in GHL's own UI. Rendered as a compact
+        // pill so the agent at least sees the activity timeline.
+        type: "opportunity_activity";
+        action: "created" | "updated" | "deleted";
+        opportunityName?: string;
+        user: string;
       };
 };
 
