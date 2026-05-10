@@ -106,6 +106,21 @@ export type ScheduledMessage = {
   text: string;
   scheduledFor: string;
   channel: "sms" | "email" | "whatsapp" | "internal";
+  // When the schedule was bound to a saved GHL template (mandatory for
+  // WhatsApp once the 24h window has lapsed), the SPA records the id
+  // and a friendly name so the banner can show "📝 Plantilla: <name>"
+  // instead of the bland body text.
+  templateId?: string;
+  templateName?: string;
+};
+
+// Saved GHL location template / snippet ("plantilla"). Surfaced by the
+// scheduling dialog as a dropdown.
+export type MessageTemplate = {
+  id: string;
+  name: string;
+  type: "sms" | "whatsapp" | "email" | string;
+  body: string;
 };
 
 export type Conversation = {

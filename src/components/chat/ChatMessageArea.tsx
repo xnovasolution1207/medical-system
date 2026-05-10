@@ -14,6 +14,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScheduleMessageDialog } from "./ScheduleMessageDialog";
+import {
+  SCHEDULE_OPTIONS,
+  defaultLocalDatetime,
+  formatScheduleLabel,
+  resolveScheduleOption,
+  type ScheduleOptionId,
+} from "./scheduleOptions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
@@ -29,7 +37,13 @@ interface ChatMessageAreaProps {
   onAddTask: (task: Omit<Task, "id">) => void;
   onToggleTask: (id: string) => void;
   onSendMessage: (text: string, attachment?: Message["attachment"], channel?: Message["channel"], mentions?: string[], reminder?: string, replyTo?: Message["replyTo"]) => void;
-  onScheduleMessage?: (conversationId: string, text: string, date: string, channel?: Message["channel"]) => void;
+  onScheduleMessage?: (
+    conversationId: string,
+    text: string,
+    date: string,
+    channel?: Message["channel"],
+    template?: { id: string; name?: string }
+  ) => void;
   onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
   onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
   onClearReminder?: (id: string) => void;
@@ -325,8 +339,13 @@ export function ChatMessageArea({
     return out;
   }, [conversation.messages, messageFilters]);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+  // Two surfaces drive scheduling now: a small entry Popover (quick
+  // text-message scheduling + button to open the rich dialog) and the
+  // rich WhatsApp template dialog itself.
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState("Mañana a las 9:00 AM");
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+  const [quickScheduleOptionId, setQuickScheduleOptionId] = useState<ScheduleOptionId>("manana_9am");
+  const [quickCustomDatetime, setQuickCustomDatetime] = useState(defaultLocalDatetime);
 
   // Plantillas de mensaje
   const [messageTemplates, setMessageTemplates] = useState([
@@ -477,17 +496,6 @@ export function ChatMessageArea({
     }
   };
 
-  const handleSchedule = () => {
-    if (inputText.trim()) {
-      onScheduleMessage?.(conversation.id, inputText, scheduleDate, activeChannel);
-      setInputText("");
-      setIsScheduleOpen(false);
-      toast({
-        title: "Mensaje programado",
-        description: `El mensaje se enviará: ${scheduleDate}`,
-      });
-    }
-  };
 
   // Insert an emoji at the textarea's caret position (or append when there's
   // no caret yet). Mirrors the cursor-aware pattern in `insertTemplate` so the
@@ -1254,14 +1262,19 @@ export function ChatMessageArea({
         </div>
       )}
 
-      {/* Scheduled Messages Banner */}
+      {/* Scheduled Messages Banner — one row per pending schedule.
+          Shows the message body (or template body) plus a relative
+          "Mañana a las 9:00 AM" badge so the agent can read it at a
+          glance, with an X to cancel. Matches image 8 of the spec. */}
       {conversation.scheduledMessages?.map(msg => (
         <div key={msg.id} className="flex items-center justify-between bg-emerald-50/80 px-4 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200 border-b border-emerald-200 dark:border-emerald-500/30">
           <div className="flex items-center gap-2 font-medium overflow-hidden">
             <Clock className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span className="truncate max-w-[200px] sm:max-w-[400px] text-xs font-normal opacity-80">"{msg.text}"</span>
+            <span className="truncate max-w-[200px] sm:max-w-[400px] text-xs font-normal opacity-80">
+              {msg.templateName ? `Plantilla: ${msg.templateName}` : `"${msg.text}"`}
+            </span>
             <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-emerald-200 dark:border-emerald-500/30 bg-white/50 dark:bg-black/20 shrink-0">
-              {msg.scheduledFor}
+              {formatScheduleLabel(msg.scheduledFor)}
             </Badge>
           </div>
           <Button 
@@ -2072,40 +2085,133 @@ export function ChatMessageArea({
               </div>
               
               <div className="flex items-center gap-2">
+                {/* "Programar" entry. Two-step flow per spec section 1.5:
+                    the popover surfaces a "plantilla de WhatsApp" path
+                    (opens the rich template dialog) AND a quick
+                    "mensaje actual" path (schedules whatever the agent
+                    has typed in the composer). */}
                 <Popover open={isScheduleOpen} onOpenChange={setIsScheduleOpen}>
                   <PopoverTrigger asChild>
-                    <Button type="button" variant="ghost" size="sm" className="h-9 px-4 gap-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full font-medium dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 px-4 gap-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full font-medium dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                      disabled={activeChannel === "internal"}
+                      title={
+                        activeChannel === "internal"
+                          ? "Los comentarios internos no se pueden programar"
+                          : "Programar mensaje"
+                      }
+                    >
                       <Clock className="h-4 w-4" />
                       Programar
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 p-3">
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-sm">Programar mensaje</h4>
-                      <div className="space-y-2">
-                        <Select value={scheduleDate} onValueChange={setScheduleDate}>
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="Selecciona fecha" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Hoy a las 5:00 PM">Hoy a las 5:00 PM</SelectItem>
-                            <SelectItem value="Mañana a las 9:00 AM">Mañana a las 9:00 AM</SelectItem>
-                            <SelectItem value="Lunes a las 9:00 AM">Lunes a las 9:00 AM</SelectItem>
-                            <SelectItem value="Personalizado">Personalizado...</SelectItem>
-                          </SelectContent>
-                        </Select>
+                  <PopoverContent align="end" className="w-72 p-3 space-y-3">
+                    <div className="text-sm font-semibold">Programar envío</div>
+                    {/* Path 1 — rich WhatsApp template dialog */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full h-9 justify-start gap-2 text-slate-700 dark:text-slate-200"
+                      onClick={() => {
+                        setIsScheduleOpen(false);
+                        setIsTemplateDialogOpen(true);
+                      }}
+                    >
+                      <MessageCircle className="h-4 w-4 text-emerald-500" />
+                      Programar plantilla de WhatsApp
+                    </Button>
+                    {/* Path 2 — quick text-message scheduling */}
+                    <div className="space-y-2 pt-1">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Programar mensaje actual
                       </div>
-                      <Button 
-                        size="sm" 
-                        className="w-full h-8 text-xs bg-primary hover:bg-primary/90"
-                        disabled={!inputText.trim()}
-                        onClick={handleSchedule}
+                      <Select
+                        value={quickScheduleOptionId}
+                        onValueChange={(v) => setQuickScheduleOptionId(v as ScheduleOptionId)}
                       >
-                        Programar para enviar
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SCHEDULE_OPTIONS.map((o) => (
+                            <SelectItem key={o.id} value={o.id}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {quickScheduleOptionId === "custom" && (
+                        <Input
+                          type="datetime-local"
+                          value={quickCustomDatetime}
+                          onChange={(e) => setQuickCustomDatetime(e.target.value)}
+                          min={defaultLocalDatetime().slice(0, 16)}
+                          className="h-9 text-sm"
+                        />
+                      )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full h-9 bg-violet-500 hover:bg-violet-600 text-white"
+                        disabled={!inputText.trim()}
+                        onClick={() => {
+                          const date =
+                            quickScheduleOptionId === "custom"
+                              ? new Date(quickCustomDatetime)
+                              : resolveScheduleOption(quickScheduleOptionId);
+                          if (!date || isNaN(date.getTime())) {
+                            toast({
+                              title: "Fecha inválida",
+                              description: "Selecciona una fecha y hora válida.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          onScheduleMessage?.(
+                            conversation.id,
+                            inputText.trim(),
+                            date.toISOString(),
+                            activeChannel
+                          );
+                          setInputText("");
+                          setIsScheduleOpen(false);
+                          toast({
+                            title: "Mensaje programado",
+                            description: `Se enviará el ${date.toLocaleString("es-ES")}`,
+                          });
+                        }}
+                      >
+                        Programar mensaje de texto
                       </Button>
                     </div>
                   </PopoverContent>
                 </Popover>
+                {/* Rich WhatsApp template dialog (image 2-5). Opens
+                    when the agent picks "Programar plantilla de
+                    WhatsApp" from the popover above. */}
+                {activeChannel !== "internal" && (
+                  <ScheduleMessageDialog
+                    open={isTemplateDialogOpen}
+                    onOpenChange={setIsTemplateDialogOpen}
+                    conversation={conversation}
+                    channel={activeChannel}
+                    onSubmit={async (payload) => {
+                      onScheduleMessage?.(
+                        conversation.id,
+                        payload.text,
+                        payload.scheduledFor,
+                        payload.channel,
+                        payload.templateId
+                          ? { id: payload.templateId, name: payload.templateName }
+                          : undefined
+                      );
+                    }}
+                  />
+                )}
 
                 <Button
                   type="submit"

@@ -936,7 +936,13 @@ export default function Index() {
   );
 
   const handleScheduleMessage = useCallback(
-    (conversationId: string, text: string, date: string, channel: Message["channel"]) => {
+    (
+      conversationId: string,
+      text: string,
+      date: string,
+      channel: Message["channel"],
+      template?: { id: string; name?: string }
+    ) => {
       if (isStubConvId(conversationId)) {
         toast({
           title: "Conversación no disponible",
@@ -956,14 +962,27 @@ export default function Index() {
                 ...c,
                 scheduledMessages: [
                   ...(c.scheduledMessages ?? []),
-                  { id: optimisticId, text, scheduledFor: date, channel: localChannel },
+                  {
+                    id: optimisticId,
+                    text,
+                    scheduledFor: date,
+                    channel: localChannel,
+                    templateId: template?.id,
+                    templateName: template?.name,
+                  },
                 ],
               }
             : c
         ),
       }));
       api.conversations
-        .schedule(conversationId, { text, scheduledFor: date, channel: localChannel })
+        .schedule(conversationId, {
+          text,
+          scheduledFor: date,
+          channel: localChannel,
+          templateId: template?.id,
+          templateName: template?.name,
+        })
         .then((saved) => {
           updateBootstrap((prev) => ({
             ...prev,

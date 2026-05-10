@@ -283,12 +283,37 @@ export const api = {
         unpinMessageId: string;
       }>
     ) => request<Record<string, unknown>>("PATCH", `/conversations/${id}`, patch),
+    // Schedule a message into the future. `text` is optional when a
+    // `templateId` is supplied (the backend resolves the body from GHL
+    // at dispatch time so any template edit between now and scheduledFor
+    // is honoured). WhatsApp messages > 24h after the last inbound MUST
+    // pass a templateId per Meta policy — the SPA enforces that.
     schedule: (
       id: string,
-      payload: { text: string; scheduledFor: string; channel?: Message["channel"] }
+      payload: {
+        scheduledFor: string;
+        channel?: Message["channel"];
+        text?: string;
+        templateId?: string;
+        templateName?: string;
+      }
     ) => request<{ id: string }>("POST", `/conversations/${id}/scheduled`, payload),
     cancelScheduled: (id: string, messageId: string) =>
       request<{ ok: boolean }>("DELETE", `/conversations/${id}/scheduled/${messageId}`),
+  },
+
+  // Saved GHL location templates / snippets. Used by the scheduling
+  // dialog so the agent can pick a Meta-approved WhatsApp template
+  // (mandatory for WhatsApp after 24h of conversation silence).
+  templates: {
+    list: (params?: { type?: "sms" | "whatsapp" | "email" }) => {
+      const qs = new URLSearchParams();
+      if (params?.type) qs.set("type", params.type);
+      const q = qs.toString();
+      return request<{
+        templates: { id: string; name: string; type: string; body: string }[];
+      }>("GET", `/templates${q ? `?${q}` : ""}`);
+    },
   },
 
   contacts: {
