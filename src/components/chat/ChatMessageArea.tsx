@@ -339,6 +339,34 @@ export function ChatMessageArea({
     return out;
   }, [conversation.messages, messageFilters]);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+
+  // Meta WhatsApp 24h policy: once the customer has been silent for >24h
+  // the agent can only re-engage by sending a Meta-approved template.
+  // We surface this as a sticky "Ventana de 24h expirada" banner above
+  // the chat AND lock the composer so the agent can't accidentally send
+  // a free-form message that WhatsApp would reject.
+  const isWhatsApp24hWindowExpired = useMemo(() => {
+    if (conversation.source !== "whatsapp") return false;
+    // Walk backward to find the most recent INBOUND message (sender
+    // is the contact, not "agent" / "system"). System events and
+    // outbound messages don't reset Meta's 24h window.
+    let lastInboundIso: string | null = null;
+    for (let i = conversation.messages.length - 1; i >= 0; i--) {
+      const m = conversation.messages[i];
+      if (m.systemEvent) continue;
+      if (m.senderId !== "agent" && m.senderId !== "system") {
+        lastInboundIso = m.date ?? null;
+        break;
+      }
+    }
+    // No inbound has ever arrived → treat as expired (a brand-new
+    // conversation can't be opened with a free-form message anyway).
+    if (!lastInboundIso) return true;
+    const lastInboundMs = new Date(lastInboundIso).getTime();
+    if (!Number.isFinite(lastInboundMs)) return true;
+    return Date.now() - lastInboundMs > 24 * 60 * 60 * 1000;
+  }, [conversation.source, conversation.messages]);
+
   // Two surfaces drive scheduling now: a small entry Popover (quick
   // text-message scheduling + button to open the rich dialog) and the
   // rich WhatsApp template dialog itself.
@@ -1337,6 +1365,68 @@ export function ChatMessageArea({
         </div>
       ))}
 
+      {/* WhatsApp template dialog. Always mounted at the panel
+          level (not inside the composer Popover) so the
+          "Reabrir chat" button can open it even when the composer
+          is replaced by the 24h-expired lock placeholder. */}
+      <ScheduleMessageDialog
+        open={isTemplateDialogOpen}
+        onOpenChange={setIsTemplateDialogOpen}
+        conversation={conversation}
+        channel={activeChannel === "internal" ? "whatsapp" : activeChannel}
+        onSubmit={async (payload) => {
+          onScheduleMessage?.(
+            conversation.id,
+            payload.text,
+            payload.scheduledFor,
+            payload.channel,
+            payload.templateId
+              ? { id: payload.templateId, name: payload.templateName }
+              : undefined
+          );
+        }}
+      />
+
+      {/* WhatsApp 24h-window expired banner. Sticky at the top of the
+          chat so the agent can't miss it. The "Reabrir chat" button
+          opens the same WhatsApp template dialog used for normal
+          scheduling — sending an approved template is the only Meta-
+          sanctioned way to re-open a conversation past 24h. */}
+      {isWhatsApp24hWindowExpired && (
+        <div className="flex items-center justify-between gap-3 border-b border-amber-200/70 bg-amber-50/80 px-4 py-2.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-200/70 dark:bg-amber-500/20">
+              <Clock className="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-amber-900 dark:text-amber-100">
+                Ventana de 24h expirada
+              </div>
+              <div className="text-[11px] text-amber-800/80 dark:text-amber-200/80">
+                Usa una plantilla para contactar al cliente
+              </div>
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-300/60 shadow-none dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-500/30"
+            onClick={() => {
+              // Force the WhatsApp channel before opening so the
+              // template dialog filters templates correctly even if
+              // the agent had switched to Internal / SMS / Email
+              // tabs (the dialog reads `channel` from props at open
+              // time and templates are scoped per channel).
+              setActiveChannel("whatsapp");
+              setIsTemplateDialogOpen(true);
+            }}
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            Reabrir chat
+          </Button>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div
         ref={scrollRef}
@@ -1966,6 +2056,18 @@ export function ChatMessageArea({
             </div>
           )}
           
+          {/* Block the WhatsApp composer when Meta's 24h window has
+              elapsed. The agent must switch to a different channel or
+              click "Reabrir chat" in the top banner to send an
+              approved template. Channels other than WhatsApp stay
+              fully functional so the agent can still leave internal
+              notes or send via SMS / email. */}
+          {isWhatsApp24hWindowExpired && activeChannel === "whatsapp" ? (
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-[13px] text-muted-foreground dark:border-slate-700 dark:bg-slate-800/40">
+              <Clock className="h-4 w-4 opacity-60" />
+              <span>Conversación bloqueada temporalmente</span>
+            </div>
+          ) : (
           <form
             onSubmit={handleSend}
             className={cn(
@@ -2190,28 +2292,12 @@ export function ChatMessageArea({
                     </div>
                   </PopoverContent>
                 </Popover>
-                {/* Rich WhatsApp template dialog (image 2-5). Opens
-                    when the agent picks "Programar plantilla de
-                    WhatsApp" from the popover above. */}
-                {activeChannel !== "internal" && (
-                  <ScheduleMessageDialog
-                    open={isTemplateDialogOpen}
-                    onOpenChange={setIsTemplateDialogOpen}
-                    conversation={conversation}
-                    channel={activeChannel}
-                    onSubmit={async (payload) => {
-                      onScheduleMessage?.(
-                        conversation.id,
-                        payload.text,
-                        payload.scheduledFor,
-                        payload.channel,
-                        payload.templateId
-                          ? { id: payload.templateId, name: payload.templateName }
-                          : undefined
-                      );
-                    }}
-                  />
-                )}
+                {/* WhatsApp template dialog used to be mounted here
+                    but the composer is replaced by the lock
+                    placeholder when WhatsApp + 24h-expired, which
+                    would unmount the dialog and break the
+                    "Reabrir chat" flow. It's now mounted once at the
+                    top of the chat panel — see below. */}
 
                 <Button
                   type="submit"
@@ -2225,6 +2311,7 @@ export function ChatMessageArea({
               </div>
             </div>
           </form>
+          )}
         </div>
       </div>
 
