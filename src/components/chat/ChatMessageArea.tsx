@@ -28,7 +28,7 @@ import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, User, Task } from "./types";
 import { cn } from "@/lib/utils";
-import { proxyMediaUrl } from "@/lib/api";
+import { proxyMediaUrl, api } from "@/lib/api";
 
 interface ChatMessageAreaProps {
   conversation: Conversation;
@@ -375,19 +375,52 @@ export function ChatMessageArea({
   const [quickScheduleOptionId, setQuickScheduleOptionId] = useState<ScheduleOptionId>("manana_9am");
   const [quickCustomDatetime, setQuickCustomDatetime] = useState(defaultLocalDatetime);
 
-  // Plantillas de mensaje
-  const [messageTemplates, setMessageTemplates] = useState([
-    { id: "1", title: "Saludo", text: "¡Hola! ¿En qué puedo ayudarte hoy?" },
-    { id: "2", title: "Despedida", text: "Gracias por contactarnos. ¡Que tengas un excelente día!" },
-    { id: "3", title: "Seguimiento", text: "Hola, te escribo para hacer seguimiento a nuestra conversación anterior." }
-  ]);
+  // "Plantillas rápidas" — agent's local canned messages. Now backed
+  // by Prisma/SQLite per-location on the backend so they survive
+  // reloads + restarts. State here is a hydrated cache; every CRUD
+  // op hits `/api/quick-templates/…` and reconciles the cache from
+  // the response.
+  const [messageTemplates, setMessageTemplates] = useState<
+    { id: string; title: string; text: string; category: string }[]
+  >([]);
   const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
   const [templateSearch, setTemplateSearch] = useState("");
+  // Active category in the Plantillas rápidas popover sidebar.
+  // "" / "Todas" means "no filter — show every template".
+  const [templateCategory, setTemplateCategory] = useState<string>("");
+
+  // Hydrate from the backend once on mount. Failures fall back to an
+  // empty list and the agent can still create new templates — they'll
+  // appear once the backend recovers and the user reopens the popover.
+  useEffect(() => {
+    let cancelled = false;
+    api.quickTemplates
+      .list()
+      .then((res) => {
+        if (cancelled) return;
+        setMessageTemplates(
+          res.templates.map((t) => ({
+            id: t.id,
+            title: t.title,
+            text: t.body,
+            category: t.category,
+          }))
+        );
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[quick-templates] load failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [manageTemplateSearch, setManageTemplateSearch] = useState("");
   const [isManageTemplatesOpen, setIsManageTemplatesOpen] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [editingTemplateTitle, setEditingTemplateTitle] = useState("");
   const [editingTemplateText, setEditingTemplateText] = useState("");
+  const [editingTemplateCategory, setEditingTemplateCategory] = useState("General");
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -2006,53 +2039,123 @@ export function ChatMessageArea({
           )}
 
           {isTemplateMenuOpen && (
-            <div className="absolute bottom-full left-4 mb-2 w-80 rounded-xl border bg-card p-1 shadow-lg z-50 animate-in slide-in-from-bottom-2 fade-in">
-              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex justify-between items-center">
-                <span>Plantillas rápidas</span>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
-                  setIsManageTemplatesOpen(true);
-                  setIsTemplateMenuOpen(false);
-                }}>
-                  <Edit2 className="h-3 w-3" />
-                </Button>
-              </div>
-              <div className="px-2 pb-2 pt-1 border-b mb-1">
-                <div className="relative">
-                  <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input 
-                    placeholder="Buscar plantilla..." 
-                    className="h-7 pl-7 text-xs bg-background" 
-                    value={templateSearch}
-                    onChange={(e) => setTemplateSearch(e.target.value)}
-                    autoFocus
-                    onKeyDown={(e) => e.stopPropagation()}
-                  />
+            <div className="absolute bottom-full left-4 mb-2 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border bg-card shadow-xl z-50 animate-in slide-in-from-bottom-2 fade-in overflow-hidden">
+              {/* Two-column layout: Categorías sidebar (left) +
+                  templates list (right). Matches the spec mockup for
+                  section 2.1. */}
+              <div className="grid grid-cols-[150px_1fr] divide-x">
+                {/* Categories sidebar */}
+                <div className="bg-muted/30 py-3">
+                  <div className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Categorías
+                  </div>
+                  <div className="flex flex-col gap-0.5 px-2">
+                    {(() => {
+                      // "Todas" + deduped category list derived from the
+                      // template data — empty string is the "Todas"
+                      // sentinel so the sidebar always has it first.
+                      const cats = [
+                        "",
+                        ...Array.from(
+                          new Set(
+                            messageTemplates
+                              .map((t) => t.category)
+                              .filter((c): c is string => Boolean(c))
+                          )
+                        ).sort(),
+                      ];
+                      return cats.map((cat) => {
+                        const isActive = templateCategory === cat;
+                        return (
+                          <button
+                            key={cat || "__all__"}
+                            type="button"
+                            className={cn(
+                              "w-full rounded-md px-3 py-2 text-left text-[13px] font-medium transition-colors",
+                              isActive
+                                ? "bg-violet-500 text-white shadow-sm"
+                                : "text-slate-700 hover:bg-accent dark:text-slate-200"
+                            )}
+                            onClick={() => setTemplateCategory(cat)}
+                          >
+                            {cat || "Todas"}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+                {/* Templates list */}
+                <div className="flex flex-col">
+                  <div className="flex items-center justify-between px-4 pt-3 pb-1">
+                    <span className="text-sm font-semibold">Plantillas rápidas</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground"
+                      onClick={() => {
+                        setIsManageTemplatesOpen(true);
+                        setIsTemplateMenuOpen(false);
+                      }}
+                      title="Gestionar plantillas"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="px-3 pb-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar plantilla..."
+                        className="h-9 pl-9 text-sm bg-muted/50 border-none rounded-full focus-visible:ring-1 focus-visible:ring-primary"
+                        value={templateSearch}
+                        onChange={(e) => setTemplateSearch(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  {(() => {
+                    const q = templateSearch.toLowerCase();
+                    const filtered = messageTemplates.filter((t) => {
+                      if (templateCategory && t.category !== templateCategory) return false;
+                      if (!q) return true;
+                      return (
+                        t.title.toLowerCase().includes(q) ||
+                        t.text.toLowerCase().includes(q)
+                      );
+                    });
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+                          No se encontraron plantillas.
+                        </div>
+                      );
+                    }
+                    return (
+                      <ScrollArea className="max-h-[320px]">
+                        <div className="px-2 pb-3 space-y-0.5">
+                          {filtered.map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              className="w-full text-left rounded-md px-3 py-2 hover:bg-accent transition-colors"
+                              onClick={() => insertTemplate(template.text)}
+                            >
+                              <div className="text-[14px] font-semibold text-foreground">
+                                {template.title}
+                              </div>
+                              <div className="text-[12px] text-muted-foreground line-clamp-2 mt-0.5">
+                                {template.text}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    );
+                  })()}
                 </div>
               </div>
-              <ScrollArea className="max-h-[200px]">
-                {messageTemplates.filter(t => 
-                  t.title.toLowerCase().includes(templateSearch.toLowerCase()) || 
-                  t.text.toLowerCase().includes(templateSearch.toLowerCase())
-                ).map(template => (
-                  <button
-                    key={template.id}
-                    type="button"
-                    className="w-full text-left px-2 py-1.5 text-sm hover:bg-accent rounded-md flex flex-col gap-0.5"
-                    onClick={() => insertTemplate(template.text)}
-                  >
-                    <span className="font-medium text-foreground">{template.title}</span>
-                    <span className="text-xs text-muted-foreground truncate">{template.text}</span>
-                  </button>
-                ))}
-                {messageTemplates.filter(t => 
-                  t.title.toLowerCase().includes(templateSearch.toLowerCase()) || 
-                  t.text.toLowerCase().includes(templateSearch.toLowerCase())
-                ).length === 0 && (
-                  <div className="px-2 py-3 text-xs text-center text-muted-foreground">
-                    No se encontraron plantillas. Escribe para buscar.
-                  </div>
-                )}
-              </ScrollArea>
             </div>
           )}
           
@@ -2157,32 +2260,62 @@ export function ChatMessageArea({
                     </div>
                   </PopoverContent>
                 </Popover>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Nota de voz">
+                {/* Spec §2.1 — toolbar has exactly five actions:
+                    Emoji (above), Nota de voz, Adjuntar documento,
+                    Plantillas internas (Zap), Plantillas WhatsApp
+                    (MessageCircle). Anything else was removed in this
+                    pass. */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground"
+                  title="Nota de voz"
+                  onClick={() => toast({ title: "Nota de voz", description: "La grabación de notas de voz se habilitará próximamente." })}
+                >
                   <Mic className="h-4 w-4" />
                 </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Adjuntar archivo" onClick={() => fileInputRef.current?.click()}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground"
+                  title="Adjuntar documento"
+                  onClick={() => fileInputRef.current?.click()}
+                >
                   <Paperclip className="h-4 w-4" />
                 </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Documento">
-                  <FileText className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Respuestas rápidas">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-8 w-8 text-muted-foreground",
+                    isTemplateMenuOpen && "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
+                  )}
+                  title="Plantillas internas"
+                  onClick={() => setIsTemplateMenuOpen((o) => !o)}
+                >
                   <Zap className="h-4 w-4" />
                 </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Valores Personalizados">
-                  <Tag className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Solicitar Pago">
-                  <DollarSign className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Contacto">
-                  <Contact className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Flujo">
-                  <Waypoints className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Eliminar">
-                  <Delete className="h-4 w-4" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-8 w-8 text-muted-foreground",
+                    isTemplateDialogOpen && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                  )}
+                  title="Plantillas WhatsApp"
+                  onClick={() => {
+                    // Force WhatsApp channel before opening so the
+                    // dialog fetches the right template type, even if
+                    // the agent had switched to Internal/SMS/Email.
+                    if (activeChannel === "internal") setActiveChannel("whatsapp");
+                    setIsTemplateDialogOpen(true);
+                  }}
+                >
+                  <MessageCircle className="h-4 w-4" />
                 </Button>
               </div>
               
@@ -2337,8 +2470,23 @@ export function ChatMessageArea({
                   </div>
                 </div>
                 <div className="space-y-1.5">
+                  <Label>Categoría</Label>
+                  <Input
+                    value={editingTemplateCategory}
+                    onChange={(e) => setEditingTemplateCategory(e.target.value)}
+                    placeholder="General / Ventas / Soporte / …"
+                    className="h-9"
+                    list="template-category-suggestions"
+                  />
+                  <datalist id="template-category-suggestions">
+                    {Array.from(new Set(messageTemplates.map((t) => t.category).filter(Boolean))).map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                </div>
+                <div className="space-y-1.5">
                   <Label>Contenido del mensaje</Label>
-                  <textarea 
+                  <textarea
                     value={editingTemplateText}
                     onChange={(e) => setEditingTemplateText(e.target.value)}
                     className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
@@ -2349,25 +2497,49 @@ export function ChatMessageArea({
                   <Button variant="outline" size="sm" onClick={() => setEditingTemplateId(null)}>
                     Cancelar
                   </Button>
-                  <Button size="sm" onClick={() => {
-                    if (editingTemplateTitle.trim() && editingTemplateText.trim()) {
+                  <Button size="sm" onClick={async () => {
+                    if (!editingTemplateTitle.trim() || !editingTemplateText.trim()) return;
+                    const category = editingTemplateCategory.trim() || "General";
+                    try {
                       if (editingTemplateId === 'new') {
-                        setMessageTemplates([...messageTemplates, {
-                          id: Date.now().toString(),
+                        // Persist to the backend FIRST so the id we
+                        // hold in state is the real durable id (so a
+                        // subsequent edit/delete targets the right
+                        // row).
+                        const saved = await api.quickTemplates.create({
                           title: editingTemplateTitle.trim(),
-                          text: editingTemplateText.trim()
+                          body: editingTemplateText.trim(),
+                          category,
+                        });
+                        setMessageTemplates((prev) => [...prev, {
+                          id: saved.id,
+                          title: saved.title,
+                          text: saved.body,
+                          category: saved.category,
                         }]);
                       } else {
-                        setMessageTemplates(messageTemplates.map(t => 
-                          t.id === editingTemplateId ? {
-                            ...t,
-                            title: editingTemplateTitle.trim(),
-                            text: editingTemplateText.trim()
+                        const saved = await api.quickTemplates.update(editingTemplateId!, {
+                          title: editingTemplateTitle.trim(),
+                          body: editingTemplateText.trim(),
+                          category,
+                        });
+                        setMessageTemplates((prev) => prev.map((t) =>
+                          t.id === saved.id ? {
+                            id: saved.id,
+                            title: saved.title,
+                            text: saved.body,
+                            category: saved.category,
                           } : t
                         ));
                       }
                       setEditingTemplateId(null);
                       toast({ title: editingTemplateId === 'new' ? "Plantilla creada" : "Plantilla actualizada" });
+                    } catch (err) {
+                      toast({
+                        title: "No se pudo guardar",
+                        description: (err as Error)?.message ?? String(err),
+                        variant: "destructive",
+                      });
                     }
                   }}>
                     Guardar
@@ -2400,13 +2572,28 @@ export function ChatMessageArea({
                             setEditingTemplateId(template.id);
                             setEditingTemplateTitle(template.title);
                             setEditingTemplateText(template.text);
+                            setEditingTemplateCategory(template.category || "General");
                           }}>
                             <Edit2 className="h-3.5 w-3.5" />
                           </Button>
                           <div className="w-px h-4 bg-border mx-0.5" />
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10" onClick={() => {
-                            setMessageTemplates(messageTemplates.filter(t => t.id !== template.id));
-                            toast({ title: "Plantilla eliminada" });
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10" onClick={async () => {
+                            // Optimistic local removal — re-add on
+                            // server failure so the agent's view stays
+                            // consistent with the DB.
+                            const snapshot = messageTemplates;
+                            setMessageTemplates((prev) => prev.filter((t) => t.id !== template.id));
+                            try {
+                              await api.quickTemplates.remove(template.id);
+                              toast({ title: "Plantilla eliminada" });
+                            } catch (err) {
+                              setMessageTemplates(snapshot);
+                              toast({
+                                title: "No se pudo eliminar",
+                                description: (err as Error)?.message ?? String(err),
+                                variant: "destructive",
+                              });
+                            }
                           }}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -2430,6 +2617,7 @@ export function ChatMessageArea({
                   setEditingTemplateId('new');
                   setEditingTemplateTitle('');
                   setEditingTemplateText('');
+                  setEditingTemplateCategory('General');
                 }}>
                   <span className="mr-2">+</span> Crear nueva plantilla
                 </Button>
