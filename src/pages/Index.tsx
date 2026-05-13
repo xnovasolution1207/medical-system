@@ -1769,6 +1769,7 @@ export default function Index() {
               key={activeConversation.id}
               conversation={activeConversation}
               currentUser={currentUser}
+              users={users}
               tasks={tasks}
               stages={stages}
               setStages={setStages}
@@ -1904,6 +1905,7 @@ export default function Index() {
                 key={`opp-${conv.id}`}
                 conversation={conv}
                 currentUser={currentUser}
+                users={users}
                 tasks={tasks}
                 stages={stages}
                 setStages={setStages}

@@ -26,13 +26,17 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Label } from "@/components/ui/label";
 import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Conversation, Message, User, Task } from "./types";
+import { Conversation, Message, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
 import { proxyMediaUrl, api } from "@/lib/api";
 
 interface ChatMessageAreaProps {
   conversation: Conversation;
   currentUser: User;
+  // Staff roster used by the internal-note "@" mention picker. Empty when
+  // the GHL token lacks `users.readonly` — in that case the picker simply
+  // doesn't open and mentions fall back to the legacy word-only regex.
+  users?: AgentUser[];
   tasks: Task[];
   onAddTask: (task: Omit<Task, "id">) => void;
   onToggleTask: (id: string) => void;
@@ -237,6 +241,35 @@ function formatDateLabel(iso?: string): string {
   return `${d.getDate()} ${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Split an internal-note body around the staff names captured in
+// `mentions` and wrap each `@Name` token in a styled pill. Names are
+// matched longest-first so "@Ana Martínez" beats a bare "@Ana" when both
+// are in the roster.
+function renderTextWithMentions(text: string, mentions: string[]): React.ReactNode {
+  const names = mentions.filter(Boolean);
+  if (names.length === 0) return text;
+  const sorted = [...new Set(names)].sort((a, b) => b.length - a.length);
+  const escaped = sorted.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`@(${escaped.join("|")})`, "g");
+  const out: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) out.push(text.slice(lastIndex, match.index));
+    out.push(
+      <span
+        key={`mention-${match.index}`}
+        className="inline rounded px-1 py-px font-semibold text-amber-800 bg-amber-200/60 dark:text-amber-200 dark:bg-amber-500/25"
+      >
+        @{match[1]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) out.push(text.slice(lastIndex));
+  return out;
+}
+
 // True when the bubble would otherwise render nothing visible: no text, no
 // system event, not an internal-channel notes bubble, and no attachment with
 // a recognised type. This catches outbound voice notes recorded in the GHL
@@ -254,6 +287,7 @@ function bubbleHasNoVisibleContent(m: Message): boolean {
 export function ChatMessageArea({
   conversation,
   currentUser,
+  users = [],
   tasks,
   onAddTask,
   onToggleTask,
@@ -388,6 +422,15 @@ export function ChatMessageArea({
   // Active category in the Plantillas rápidas popover sidebar.
   // "" / "Todas" means "no filter — show every template".
   const [templateCategory, setTemplateCategory] = useState<string>("");
+
+  // Internal-note "@" mention picker. Only opens on the internal channel —
+  // outbound channels don't get a roster popup because the recipient is the
+  // lead, not a staff user. `mentionAnchor` is the index of the `@` in the
+  // current `inputText`; we use it to replace `@<partial>` on selection.
+  const [isMentionMenuOpen, setIsMentionMenuOpen] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState("");
+  const [mentionAnchor, setMentionAnchor] = useState<number | null>(null);
+  const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
 
   // Hydrate from the backend once on mount. Failures fall back to an
   // empty list and the agent can still create new templates — they'll
@@ -569,10 +612,27 @@ export function ChatMessageArea({
 
     let mentions: string[] = [];
     if (activeChannel === "internal") {
-      const mentionRegex = /@(\w+)/g;
-      const matches = inputText.match(mentionRegex);
-      if (matches) {
-        mentions = matches.map(m => m.substring(1));
+      // Prefer roster-aware matching when we have a user list — names can
+      // contain spaces ("Ana Martínez"), which the legacy \w+ regex would
+      // truncate to the first word. We scan longest names first so a
+      // mention of "Ana Martínez" isn't mis-captured as just "Ana".
+      if (users.length > 0) {
+        const sorted = [...users].sort((a, b) => b.name.length - a.name.length);
+        const seen = new Set<string>();
+        for (const u of sorted) {
+          if (!u.name) continue;
+          if (inputText.includes(`@${u.name}`) && !seen.has(u.name)) {
+            mentions.push(u.name);
+            seen.add(u.name);
+          }
+        }
+      }
+      if (mentions.length === 0) {
+        // Fallback: no roster (or no name matched) — capture single-word
+        // tokens so the existing "Asignado a @Foo" footer still works.
+        const mentionRegex = /@(\w+)/g;
+        const matches = inputText.match(mentionRegex);
+        if (matches) mentions = matches.map((m) => m.substring(1));
       }
     }
 
@@ -608,18 +668,85 @@ export function ChatMessageArea({
     const value = e.target.value;
     setInputText(value);
 
-    // Check if the cursor is right after a word starting with /
     const cursorPosition = e.target.selectionStart;
     const textBeforeCursor = value.substring(0, cursorPosition);
-    const match = textBeforeCursor.match(/(?:^|\s)\/([^\s]*)$/);
 
-    if (match) {
+    // Slash-trigger for "Plantillas rápidas".
+    const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([^\s]*)$/);
+    if (slashMatch) {
       setIsTemplateMenuOpen(true);
-      setTemplateSearch(match[1]);
+      setTemplateSearch(slashMatch[1]);
     } else {
       setIsTemplateMenuOpen(false);
     }
+
+    // At-trigger for internal-note mentions. Anchored at start-of-line or
+    // after whitespace so an email address (`foo@bar`) doesn't fire it.
+    // The capture group allows spaces inside the query so multi-word names
+    // ("Ana Mart…") can be searched without the menu closing on the space.
+    if (activeChannel === "internal" && users.length > 0) {
+      const atMatch = textBeforeCursor.match(/(?:^|\s)@([^\n@]{0,40})$/);
+      if (atMatch) {
+        const anchor = cursorPosition - atMatch[1].length - 1;
+        setIsMentionMenuOpen(true);
+        setMentionSearch(atMatch[1]);
+        setMentionAnchor(anchor);
+        setMentionSelectedIdx(0);
+      } else if (isMentionMenuOpen) {
+        setIsMentionMenuOpen(false);
+        setMentionAnchor(null);
+      }
+    } else if (isMentionMenuOpen) {
+      setIsMentionMenuOpen(false);
+      setMentionAnchor(null);
+    }
   };
+
+  // Replace `@<partial>` (from `mentionAnchor` to the current caret) with
+  // `@<full name> ` and close the picker. The textarea may have been moved
+  // since the menu opened, so we re-read the caret rather than trusting the
+  // stale `mentionSearch.length` math.
+  const insertMention = (user: AgentUser) => {
+    if (mentionAnchor === null) {
+      setIsMentionMenuOpen(false);
+      return;
+    }
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      'textarea[data-composer="true"]'
+    );
+    const caret = textarea?.selectionStart ?? mentionAnchor + 1 + mentionSearch.length;
+    const before = inputText.substring(0, mentionAnchor);
+    const after = inputText.substring(caret);
+    const insertion = `@${user.name} `;
+    const next = before + insertion + after;
+    setInputText(next);
+    setIsMentionMenuOpen(false);
+    setMentionAnchor(null);
+    setMentionSearch("");
+
+    setTimeout(() => {
+      textarea?.focus();
+      const pos = before.length + insertion.length;
+      try {
+        textarea?.setSelectionRange(pos, pos);
+      } catch {
+        /* textarea unmounted */
+      }
+    }, 0);
+  };
+
+  // Roster filtered by what the user has typed after `@`. Match is
+  // case/accent-tolerant via `localeCompare`-style normalization so typing
+  // "ana mart" still surfaces "Ana Martínez".
+  const filteredMentionUsers = useMemo(() => {
+    if (!isMentionMenuOpen) return [] as AgentUser[];
+    const q = mentionSearch.trim().toLowerCase();
+    if (!q) return users.slice(0, 8);
+    const norm = (s: string) =>
+      s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const needle = norm(q);
+    return users.filter((u) => norm(u.name).includes(needle)).slice(0, 8);
+  }, [isMentionMenuOpen, mentionSearch, users]);
 
   const insertTemplate = (templateText: string) => {
     const textarea = document.querySelector('textarea');
@@ -1869,7 +1996,13 @@ export function ChatMessageArea({
                         ) : null}
                       </div>
                     )}
-                    {message.text && <span className="whitespace-pre-wrap leading-relaxed">{message.text}</span>}
+                    {message.text && (
+                      <span className="whitespace-pre-wrap leading-relaxed">
+                        {message.channel === "internal" && message.mentions && message.mentions.length > 0
+                          ? renderTextWithMentions(message.text, message.mentions)
+                          : message.text}
+                      </span>
+                    )}
 
                     {bubbleHasNoVisibleContent(message) && (
                       <div className="flex items-center gap-3 min-w-[180px] py-1">
@@ -2063,6 +2196,62 @@ export function ChatMessageArea({
             </div>
           )}
 
+          {isMentionMenuOpen && (
+            <div
+              className="absolute bottom-full left-4 mb-2 w-[280px] max-w-[calc(100vw-2rem)] rounded-xl border bg-card shadow-xl z-50 animate-in slide-in-from-bottom-2 fade-in overflow-hidden"
+              // Catch the mousedown so the textarea's blur doesn't close the
+              // menu before the click handler on a row gets to fire.
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <div className="px-3 py-2 border-b text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Asignar a un agente
+              </div>
+              {filteredMentionUsers.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                  {users.length === 0
+                    ? "No hay agentes disponibles."
+                    : "Ningún agente coincide."}
+                </div>
+              ) : (
+                <ScrollArea className="max-h-[280px]">
+                  <div className="py-1">
+                    {filteredMentionUsers.map((u, idx) => {
+                      const isActive = idx === mentionSelectedIdx;
+                      const initials = u.name
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((p) => p[0]?.toUpperCase() ?? "")
+                        .join("");
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                            isActive ? "bg-accent" : "hover:bg-accent/60"
+                          )}
+                          onMouseEnter={() => setMentionSelectedIdx(idx)}
+                          onClick={() => insertMention(u)}
+                        >
+                          <Avatar className="h-7 w-7 shrink-0">
+                            {u.avatar && <AvatarImage src={u.avatar} alt={u.name} />}
+                            <AvatarFallback className="text-[11px] bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">
+                              {initials || "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="truncate font-medium text-foreground">
+                            {u.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
+          )}
+
           {isTemplateMenuOpen && (
             <div className="absolute bottom-full left-4 mb-2 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border bg-card shadow-xl z-50 animate-in slide-in-from-bottom-2 fade-in overflow-hidden">
               {/* Two-column layout: Categorías sidebar (left) +
@@ -2211,9 +2400,39 @@ export function ChatMessageArea({
             )}
             
             <textarea
+              data-composer="true"
               value={inputText}
               onChange={handleTextareaChange}
               onKeyDown={(e) => {
+                // Mention picker intercepts navigation keys before the
+                // default Enter-to-send so the agent can pick an entry with
+                // the keyboard. The picker only opens on the internal
+                // channel, so other channels keep their original behavior.
+                if (isMentionMenuOpen && filteredMentionUsers.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setMentionSelectedIdx((i) => (i + 1) % filteredMentionUsers.length);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setMentionSelectedIdx((i) =>
+                      i <= 0 ? filteredMentionUsers.length - 1 : i - 1
+                    );
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    insertMention(filteredMentionUsers[mentionSelectedIdx]);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setIsMentionMenuOpen(false);
+                    setMentionAnchor(null);
+                    return;
+                  }
+                }
                 // Enter sends; Shift+Enter inserts a newline; skip while an
                 // IME (Korean/Japanese/Chinese) composition is active so
                 // confirming a candidate doesn't fire a send.
