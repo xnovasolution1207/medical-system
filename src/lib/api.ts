@@ -413,11 +413,24 @@ export const api = {
     pipelines: () => request<Pipeline[]>("GET", "/opportunities/pipelines"),
     move: (id: string, stageId: string) =>
       request<Opportunity>("PATCH", `/opportunities/${id}`, { stageId }),
+    // Patch fields other than the pipeline stage. Used by the right-rail
+    // status badge (Abierto / Perdido / Ganado / Abandonado) and the
+    // adjacent monetary-value field. Backend broadcasts an
+    // `opportunity.updated` WS event so other clients reconcile.
+    update: (
+      id: string,
+      patch: {
+        status?: Opportunity["status"];
+        monetaryValue?: number;
+        name?: string;
+      }
+    ) => request<Opportunity>("PATCH", `/opportunities/${id}`, patch),
     create: (payload: {
       name: string;
       contactId: string;
       pipelineId: string;
       stageId: string;
+      monetaryValue?: number;
     }) => request<Opportunity>("POST", "/opportunities", payload),
   },
 

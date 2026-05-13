@@ -10,6 +10,7 @@ import {
   FilterCondition,
   Message,
   Conversation,
+  Opportunity,
   SavedView,
   Task,
   User,
@@ -1472,6 +1473,43 @@ export default function Index() {
     [updateBootstrap]
   );
 
+  // Status (open/won/lost/abandoned) + monetaryValue patches for the
+  // right-rail business-status row. The backend PATCH already broadcasts
+  // `opportunity.updated`, so the optimistic write here just smooths over
+  // the round-trip; the WS echo reconciles for other connected clients.
+  const handleUpdateOpportunity = useCallback(
+    (
+      id: string,
+      patch: { status?: Opportunity["status"]; monetaryValue?: number }
+    ) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        opportunities: prev.opportunities.map((o) =>
+          o.id === id ? { ...o, ...patch } : o
+        ),
+      }));
+      api.opportunities
+        .update(id, patch)
+        .then((updated) => {
+          updateBootstrap((prev) => ({
+            ...prev,
+            opportunities: prev.opportunities.map((o) =>
+              o.id === id ? updated : o
+            ),
+          }));
+        })
+        .catch((err) => {
+          console.error("opportunity update failed", err);
+          toast({
+            title: "No se pudo actualizar la oportunidad",
+            description: (err as Error)?.message || "Inténtalo de nuevo.",
+            variant: "destructive",
+          });
+        });
+    },
+    [updateBootstrap, toast]
+  );
+
   const handleCreateOpportunity = useCallback(
     async (payload: {
       name: string;
@@ -1833,6 +1871,10 @@ export default function Index() {
                 handleUpdateContactName(activeConversation.participant.id, newName)
               }
               users={users}
+              opportunity={opportunities.find(
+                (o) => o.contactId === activeConversation.participant.id
+              )}
+              onUpdateOpportunity={handleUpdateOpportunity}
               onUpdateAssignedTo={(userId) =>
                 handleUpdateAssignment(activeConversation.participant.id, {
                   assignedTo: userId,
@@ -1859,6 +1901,10 @@ export default function Index() {
                 handleUpdateContactName(activeConversation.participant.id, newName)
               }
               users={users}
+              opportunity={opportunities.find(
+                (o) => o.contactId === activeConversation.participant.id
+              )}
+              onUpdateOpportunity={handleUpdateOpportunity}
               onUpdateAssignedTo={(userId) =>
                 handleUpdateAssignment(activeConversation.participant.id, {
                   assignedTo: userId,

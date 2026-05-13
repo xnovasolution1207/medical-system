@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AgentUser, User, Conversation } from "./types";
+import { AgentUser, User, Conversation, Opportunity } from "./types";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play } from "lucide-react";
@@ -28,6 +28,48 @@ interface ContactSidebarProps {
   // Persist the full new follower set. Always called with the complete list,
   // not a delta — keeps the backend store cleanly idempotent.
   onUpdateFollowers?: (userIds: string[]) => void;
+  // The opportunity tied to this contact, when one exists. Drives the
+  // business-status badge (Abierto / Perdido / Ganado / Abandonado) and the
+  // adjacent monetary-value field. Undefined when the lead has no opportunity
+  // yet — in that case the row is hidden rather than rendered as a no-op.
+  opportunity?: Opportunity;
+  // Patch one or more fields on an opportunity. The parent owns the optimistic
+  // cache update + the GHL round-trip + the toast on failure.
+  onUpdateOpportunity?: (
+    id: string,
+    patch: { status?: Opportunity["status"]; monetaryValue?: number }
+  ) => void;
+}
+
+// Spanish labels for GHL's four opportunity statuses. "Abandonar" matches the
+// design copy used elsewhere in the SPA (it's the verb infinitive, not the
+// strict participle "Abandonado") so the UI stays consistent.
+const STATUS_LABELS: Record<Opportunity["status"], string> = {
+  open: "Abierto",
+  won: "Ganado",
+  lost: "Perdido",
+  abandoned: "Abandonar",
+};
+
+// Visual treatment per status — kept compact so the badge fits inline next to
+// the contact name. Open is the neutral default; the closed states pick up
+// semantic colors that match the Kanban board elsewhere.
+const STATUS_TRIGGER_CLASS: Record<Opportunity["status"], string> = {
+  open: "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200",
+  won: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300",
+  lost: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300",
+  abandoned: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300",
+};
+
+// "S/ 0.00" — Peruvian Sol formatting. The locale gets thousand separators
+// right; we keep two decimals always so the field doesn't shrink/grow as the
+// user edits adjacent fields.
+function formatMonetary(value: number | undefined): string {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return `S/ ${n.toLocaleString("es-PE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export function ContactSidebar({
@@ -37,7 +79,33 @@ export function ContactSidebar({
   users = [],
   onUpdateAssignedTo,
   onUpdateFollowers,
+  opportunity,
+  onUpdateOpportunity,
 }: ContactSidebarProps) {
+  // Local draft of the monetary value while the input is focused. We commit
+  // (and round-trip to GHL) on blur or Enter — keystroke-level PATCHes would
+  // flood the API. Null = "not editing, display the prop value".
+  const [monetaryDraft, setMonetaryDraft] = useState<string | null>(null);
+  // When the parent prop changes (WS echo, optimistic update settles), drop
+  // the draft so the display falls back to the canonical value.
+  useEffect(() => {
+    setMonetaryDraft(null);
+  }, [opportunity?.id, opportunity?.monetaryValue]);
+
+  const commitMonetary = () => {
+    if (monetaryDraft === null || !opportunity || !onUpdateOpportunity) {
+      setMonetaryDraft(null);
+      return;
+    }
+    // Accept "1,234.56" / "1234.56" / "1234,56"; strip the currency prefix
+    // if the user retyped it.
+    const cleaned = monetaryDraft.replace(/[^\d.,-]/g, "").replace(/,/g, "");
+    const parsed = Number.parseFloat(cleaned);
+    const next = Number.isFinite(parsed) ? parsed : 0;
+    setMonetaryDraft(null);
+    if (next === (opportunity.monetaryValue ?? 0)) return;
+    onUpdateOpportunity(opportunity.id, { monetaryValue: next });
+  };
   const [tags, setTags] = useState<string[]>(contact.tags || []);
   const [newTag, setNewTag] = useState("");
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -208,7 +276,65 @@ export function ContactSidebar({
             </div>
           )}
           <p className="text-sm text-muted-foreground mb-4">Lead</p>
-          
+
+          {opportunity && (
+            <div className="flex items-center justify-center gap-2 w-full mb-4">
+              <Select
+                value={opportunity.status}
+                onValueChange={(v) => {
+                  const next = v as Opportunity["status"];
+                  if (next === opportunity.status || !onUpdateOpportunity) return;
+                  onUpdateOpportunity(opportunity.id, { status: next });
+                }}
+              >
+                <SelectTrigger
+                  className={`h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border px-3 text-sm font-medium ${STATUS_TRIGGER_CLASS[opportunity.status]}`}
+                  aria-label="Estado de la oportunidad"
+                >
+                  <SelectValue>{STATUS_LABELS[opportunity.status]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(STATUS_LABELS) as Opportunity["status"][]).map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={
+                    monetaryDraft !== null
+                      ? monetaryDraft
+                      : formatMonetary(opportunity.monetaryValue)
+                  }
+                  onFocus={(e) => {
+                    setMonetaryDraft(
+                      String(opportunity.monetaryValue ?? 0)
+                    );
+                    // Pre-select so the user can just type to overwrite.
+                    requestAnimationFrame(() => e.target.select());
+                  }}
+                  onChange={(e) => setMonetaryDraft(e.target.value)}
+                  onBlur={commitMonetary}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    } else if (e.key === "Escape") {
+                      setMonetaryDraft(null);
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className="h-9 w-[110px] rounded-md border border-slate-300 bg-slate-50 px-3 text-center text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  aria-label="Valor monetario"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 w-full">
             <Button variant="outline" className="flex-1 gap-2">
               <Phone className="h-4 w-4" />
