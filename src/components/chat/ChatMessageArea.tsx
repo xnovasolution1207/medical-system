@@ -529,32 +529,57 @@ export function ChatMessageArea({
     setReplyingToMessage(null);
   };
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputText.trim() || selectedFile) {
-      let attachment;
-      if (selectedFile) {
-        attachment = {
-          type: selectedFile.type.startsWith("image/") ? "image" as const : "file" as const,
-          url: previewUrl || "", // In a real app, this would be uploaded to a server first
-          name: selectedFile.name,
-        };
-      }
-      
-      let mentions: string[] = [];
-      if (activeChannel === "internal") {
-        const mentionRegex = /@(\w+)/g;
-        const matches = inputText.match(mentionRegex);
-        if (matches) {
-          mentions = matches.map(m => m.substring(1));
-        }
-      }
+  const [isUploading, setIsUploading] = useState(false);
 
-      onSendMessage(inputText, attachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined);
-      setInputText("");
-      handleRemoveFile();
-      // Do not clear activeReminder here, let it stay until user closes it
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!(inputText.trim() || selectedFile)) return;
+    if (isUploading) return;
+
+    let attachment: Message["attachment"] | undefined;
+    if (selectedFile) {
+      setIsUploading(true);
+      try {
+        // Upload to GHL's conversation-attachment endpoint first. Pass
+        // the active conversation id so the resulting URL is one GHL's
+        // send-message handler recognises as proper media — library
+        // URLs make GHL fall through to a text-only Meta payload and
+        // get 400'd with "text.body is required".
+        const uploaded = await api.uploads.create(selectedFile, conversation.id);
+        const mime = uploaded.mimeType || selectedFile.type || "";
+        const type: NonNullable<Message["attachment"]>["type"] = mime.startsWith("image/")
+          ? "image"
+          : mime.startsWith("video/")
+            ? "video"
+            : mime.startsWith("audio/")
+              ? "audio"
+              : "file";
+        attachment = { type, url: uploaded.url, name: uploaded.name };
+      } catch (err) {
+        toast({
+          title: "No se pudo subir el archivo",
+          description: (err as Error).message || "Inténtalo de nuevo.",
+          variant: "destructive",
+        });
+        setIsUploading(false);
+        return;
+      }
+      setIsUploading(false);
     }
+
+    let mentions: string[] = [];
+    if (activeChannel === "internal") {
+      const mentionRegex = /@(\w+)/g;
+      const matches = inputText.match(mentionRegex);
+      if (matches) {
+        mentions = matches.map(m => m.substring(1));
+      }
+    }
+
+    onSendMessage(inputText, attachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined);
+    setInputText("");
+    handleRemoveFile();
+    // Do not clear activeReminder here, let it stay until user closes it
   };
 
 

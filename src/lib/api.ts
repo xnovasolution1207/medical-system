@@ -198,6 +198,45 @@ export const api = {
     },
   },
 
+  // Chat-message attachment uploads. POSTs the file + conversationId as
+  // multipart to the backend, which forwards the bytes to GHL's
+  // conversation-attachment endpoint and returns the URL we then attach
+  // to the outbound message. conversationId is required because GHL
+  // scopes the asset to that conversation; only URLs produced this way
+  // are recognised by GHL's send-message handler as proper media.
+  uploads: {
+    create: async (
+      file: File,
+      conversationId: string
+    ): Promise<{ url: string; name: string; size: number; mimeType: string }> => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("conversationId", conversationId);
+      const headers: Record<string, string> = {};
+      const token = getAuthToken();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/uploads`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      if (res.status === 401) {
+        if (token) setAuthToken(null);
+        throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
+      }
+      if (!res.ok) {
+        throw new Error(await parseErrorMessage(res, "POST", "/uploads"));
+      }
+      const json = await res.json();
+      return (json && "data" in json ? json.data : json) as {
+        url: string;
+        name: string;
+        size: number;
+        mimeType: string;
+      };
+    },
+  },
+
   conversations: {
     list: (params?: {
       limit?: number;
