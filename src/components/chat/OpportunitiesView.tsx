@@ -16,6 +16,7 @@ import {
   CheckSquare,
   Bell,
   Clock,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -628,6 +629,16 @@ export function OpportunitiesView({
                         const taskCount = conv?.id
                           ? pendingTasksByConvId.get(conv.id) ?? 0
                           : 0;
+                        // "Notas internas" — messages on the internal
+                        // channel. Counted off whatever's already in the
+                        // conversation's messages array; for conversations
+                        // the user hasn't opened yet this defaults to 0
+                        // because the SPA hydrates the message list
+                        // lazily. Reading after first chat open reflects
+                        // the real count.
+                        const notesCount =
+                          conv?.messages?.filter((m) => m.channel === "internal")
+                            .length ?? 0;
                         const statusPill = STATUS_PILL[opp.status];
                         return (
                           <div
@@ -651,7 +662,7 @@ export function OpportunitiesView({
                                     {tags.slice(0, 4).map((tag, i) => (
                                       <span
                                         key={`${tag}-${i}`}
-                                        className="text-[10px] px-1.5 py-0.5 rounded-sm bg-secondary text-secondary-foreground font-medium truncate max-w-[100px]"
+                                        className="text-[10px] px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground font-medium truncate max-w-[100px]"
                                       >
                                         {tag}
                                       </span>
@@ -666,7 +677,7 @@ export function OpportunitiesView({
                                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                   <span
                                     className={cn(
-                                      "text-[10px] px-1.5 py-0.5 rounded-sm font-medium",
+                                      "text-[10px] px-2 py-0.5 rounded-md font-medium",
                                       statusPill.cls
                                     )}
                                   >
@@ -745,6 +756,15 @@ export function OpportunitiesView({
                                     >
                                       <Clock className="h-3 w-3" />
                                       <span>{scheduledCount}</span>
+                                    </div>
+                                  )}
+                                  {notesCount > 0 && (
+                                    <div
+                                      className="flex items-center gap-1 text-[10px]"
+                                      title={`${notesCount} nota${notesCount === 1 ? "" : "s"} interna${notesCount === 1 ? "" : "s"}`}
+                                    >
+                                      <MessageSquare className="h-3 w-3" />
+                                      <span>{notesCount}</span>
                                     </div>
                                   )}
                                 </div>
