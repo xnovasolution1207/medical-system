@@ -13,11 +13,14 @@ import {
   Globe,
   Check,
   Menu,
+  CheckSquare,
+  Bell,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
@@ -45,7 +48,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import type { Conversation, Opportunity, Pipeline } from "./types";
+import type { Conversation, Opportunity, Pipeline, Task } from "./types";
 
 interface OpportunitiesViewProps {
   opportunities: Opportunity[];
@@ -56,6 +59,10 @@ interface OpportunitiesViewProps {
   // this is the most pragmatic source. Not provided ⇒ picker shows "no
   // contactos disponibles".
   conversations?: Conversation[];
+  // Task roster for indicator-pill counts on each card. Each opportunity
+  // joins on its linked conversation; pending tasks against that
+  // conversation become the small CheckSquare badge.
+  tasks?: Task[];
   onMoveOpportunity?: (id: string, stageId: string) => void;
   onCreateOpportunity?: (payload: {
     name: string;
@@ -98,10 +105,45 @@ const STATUS_LABELS: Record<Opportunity["status"], string> = {
   abandoned: "Abandonada",
 };
 
+// Spanish status pill — colour-coded to match the prototype. Open/Won
+// pop on success colours; Lost is rose; Abandoned is muted slate.
+const STATUS_PILL: Record<
+  Opportunity["status"],
+  { label: string; cls: string }
+> = {
+  open: {
+    label: "Abierto",
+    cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  },
+  won: {
+    label: "Ganado",
+    cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+  },
+  lost: {
+    label: "Perdido",
+    cls: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
+  },
+  abandoned: {
+    label: "Abandonado",
+    cls: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  },
+};
+
+// "S/ 0,00" — Peruvian Sol; same convention as ContactSidebar so the
+// amount on the kanban card matches the right-rail amount field.
+function formatOppValue(value: number | undefined): string {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return `S/ ${n.toLocaleString("es-PE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export function OpportunitiesView({
   opportunities,
   pipeline,
   conversations,
+  tasks,
   onMoveOpportunity,
   onCreateOpportunity,
   onOpenMobileNav,
@@ -153,6 +195,35 @@ export function OpportunitiesView({
     for (const o of opportunities) if (o.source) set.add(o.source);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [opportunities]);
+
+  // Per-contact conversation lookup so each kanban card can pull its
+  // participant's tags / avatar / phone + count active reminders &
+  // scheduled messages. Keyed by every plausible id flavour (contactId
+  // and participant.id) since older rows used only the participant.
+  const convByContactId = useMemo(() => {
+    const map = new Map<string, Conversation>();
+    for (const c of conversations ?? []) {
+      const cid = c.contactId ?? c.participant.id;
+      if (cid && !map.has(cid)) map.set(cid, c);
+      if (c.participant.id && !map.has(c.participant.id)) map.set(c.participant.id, c);
+    }
+    return map;
+  }, [conversations]);
+
+  // Pending-task count per conversation. The card's CheckSquare badge
+  // shows only when there's at least one outstanding task on the
+  // linked conversation — completed ones don't deserve the visual
+  // noise on the kanban.
+  const pendingTasksByConvId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of tasks ?? []) {
+      if (t.status === "completed") continue;
+      const k = t.conversationId;
+      if (!k) continue;
+      map.set(k, (map.get(k) ?? 0) + 1);
+    }
+    return map;
+  }, [tasks]);
 
   // Deduped contact list for the create-dialog Select. Falls back to the
   // participant id when contactId isn't on the conversation (older rows).
@@ -542,6 +613,22 @@ export function OpportunitiesView({
                       {stageOpps.map((opp) => {
                         const isSelected = selectedOppIds.has(opp.id);
                         const canOpenChat = Boolean(onOpenChat && opp.contactId);
+                        // Join the linked conversation so the card can show
+                        // the contact's tags, avatar and phone. Counters
+                        // (reminder / scheduled / tasks) come off the same
+                        // conversation + the tasks roster the parent
+                        // already maintains.
+                        const conv = convByContactId.get(opp.contactId);
+                        const participant = conv?.participant;
+                        const tags = participant?.tags ?? [];
+                        const phone = participant?.phone;
+                        const avatar = participant?.avatar;
+                        const reminderCount = conv?.activeReminder ? 1 : 0;
+                        const scheduledCount = conv?.scheduledMessages?.length ?? 0;
+                        const taskCount = conv?.id
+                          ? pendingTasksByConvId.get(conv.id) ?? 0
+                          : 0;
+                        const statusPill = STATUS_PILL[opp.status];
                         return (
                           <div
                             key={opp.id}
@@ -551,45 +638,116 @@ export function OpportunitiesView({
                               if (canOpenChat) onOpenChat?.(opp.contactId);
                             }}
                             className={cn(
-                              "bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-shadow active:cursor-grabbing relative",
+                              "group bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-all active:cursor-grabbing relative",
                               canOpenChat ? "cursor-pointer" : "cursor-grab",
                               isSelected && "ring-2 ring-primary ring-offset-1"
                             )}
                           >
-                            {/* Selection checkbox — click without bubbling so the
-                                card's onClick (open chat) doesn't also fire. */}
-                            <div
-                              className={cn(
-                                "absolute top-2 left-2 z-10 transition-opacity",
-                                isSelected ? "opacity-100" : "opacity-0 hover:opacity-100 group-hover:opacity-100"
-                              )}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={() => toggleOppSelected(opp.id)}
-                              />
-                            </div>
-                            <div className="flex items-start justify-between mb-2 pl-6">
-                              <h4 className="font-medium text-sm truncate">{opp.name}</h4>
-                              <Avatar className="h-6 w-6 shrink-0">
-                                <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
-                              </Avatar>
+                            <div className="flex items-start justify-between mb-1.5">
+                              <div className="min-w-0 flex-1 pr-2">
+                                <h4 className="font-medium text-sm truncate">{opp.name}</h4>
+                                {tags.length > 0 && (
+                                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                    {tags.slice(0, 4).map((tag, i) => (
+                                      <span
+                                        key={`${tag}-${i}`}
+                                        className="text-[10px] px-1.5 py-0.5 rounded-sm bg-secondary text-secondary-foreground font-medium truncate max-w-[100px]"
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                    {tags.length > 4 && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        +{tags.length - 4}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                  <span
+                                    className={cn(
+                                      "text-[10px] px-1.5 py-0.5 rounded-sm font-medium",
+                                      statusPill.cls
+                                    )}
+                                  >
+                                    {statusPill.label}
+                                  </span>
+                                  {typeof opp.monetaryValue === "number" && opp.monetaryValue > 0 && (
+                                    <span className="text-xs font-medium text-foreground">
+                                      {formatOppValue(opp.monetaryValue)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 ml-1">
+                                {/* Selection checkbox — appears on hover or
+                                    while selected. stopPropagation so the
+                                    card's onClick doesn't also fire. */}
+                                <div
+                                  className={cn(
+                                    "transition-opacity",
+                                    isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                  )}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleOppSelected(opp.id)}
+                                  />
+                                </div>
+                                <Avatar className="h-6 w-6">
+                                  {avatar && <AvatarImage src={avatar} alt={opp.name} />}
+                                  <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                              </div>
                             </div>
                             <div className="space-y-1.5 mt-3">
-                              <div className="flex items-center text-xs text-muted-foreground">
-                                <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
-                                <span className="truncate">{opp.source}</span>
-                              </div>
-                              {opp.monetaryValue ? (
+                              {phone && (
                                 <div className="flex items-center text-xs text-muted-foreground">
-                                  <Phone className="h-3.5 w-3.5 mr-2 shrink-0 opacity-0" />
-                                  <span className="truncate">${opp.monetaryValue}</span>
+                                  <Phone className="h-3.5 w-3.5 mr-2 shrink-0" />
+                                  <span className="truncate">{phone}</span>
                                 </div>
-                              ) : null}
-                              <div className="flex items-center text-xs text-muted-foreground">
-                                <CalendarIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
-                                <span>{opp.date}</span>
+                              )}
+                              {opp.source && (
+                                <div className="flex items-center text-xs text-muted-foreground">
+                                  <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
+                                  <span className="truncate">{opp.source}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                                <div className="flex items-center text-xs text-muted-foreground">
+                                  <CalendarIcon className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                                  <span>{opp.date}</span>
+                                </div>
+                                <div className="flex items-center gap-2.5 text-muted-foreground">
+                                  {taskCount > 0 && (
+                                    <div
+                                      className="flex items-center gap-1 text-[10px]"
+                                      title={`${taskCount} tarea${taskCount === 1 ? "" : "s"} pendiente${taskCount === 1 ? "" : "s"}`}
+                                    >
+                                      <CheckSquare className="h-3 w-3" />
+                                      <span>{taskCount}</span>
+                                    </div>
+                                  )}
+                                  {reminderCount > 0 && (
+                                    <div
+                                      className="flex items-center gap-1 text-[10px]"
+                                      title="Recordatorio activo"
+                                    >
+                                      <Bell className="h-3 w-3" />
+                                      <span>{reminderCount}</span>
+                                    </div>
+                                  )}
+                                  {scheduledCount > 0 && (
+                                    <div
+                                      className="flex items-center gap-1 text-[10px]"
+                                      title={`${scheduledCount} mensaje${scheduledCount === 1 ? "" : "s"} programado${scheduledCount === 1 ? "" : "s"}`}
+                                    >
+                                      <Clock className="h-3 w-3" />
+                                      <span>{scheduledCount}</span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>

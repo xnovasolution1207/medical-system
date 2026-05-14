@@ -1852,6 +1852,7 @@ export default function Index() {
             opportunities={opportunities}
             pipeline={opportunitiesPipeline}
             conversations={conversations}
+            tasks={tasks}
             onMoveOpportunity={handleMoveOpportunity}
             onCreateOpportunity={handleCreateOpportunity}
             onOpenMobileNav={() => setIsMobileNavOpen(true)}
