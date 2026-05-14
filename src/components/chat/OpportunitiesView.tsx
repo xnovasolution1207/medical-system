@@ -8,6 +8,7 @@ import {
   Settings,
   LayoutGrid,
   List as ListIcon,
+  MoreHorizontal,
   Phone,
   Calendar as CalendarIcon,
   Globe,
@@ -34,9 +35,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -375,15 +381,37 @@ export function OpportunitiesView({
             />
           </div>
 
-          {/* Filtros Avanzados */}
+          {/* Crear oportunidad — primary action, icon-only per the
+              simplified header (spec 7.5). The full title lives in the
+              dialog that opens. */}
+          <Button
+            size="icon"
+            className="shrink-0"
+            title="Crear oportunidad"
+            aria-label="Crear oportunidad"
+            onClick={() => {
+              if (!pipeline) {
+                toast({
+                  title: "No hay pipeline disponible",
+                  description: "No se encontró un pipeline en GoHighLevel.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              setIsCreateOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+
+          {/* Filtros avanzados — icon-only. Badge with active count
+              sits on the icon when at least one filter is on. */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="icon" className="md:size-auto md:px-3 md:gap-2 shrink-0 relative">
+              <Button variant="outline" size="icon" className="shrink-0 relative" title="Filtros" aria-label="Filtros">
                 <Filter className="h-4 w-4" />
-                <span className="hidden md:inline">Filtros</span>
-                <span className="hidden xl:inline">Avanzados</span>
                 {activeFilterCount > 0 && (
-                  <span className="absolute -top-1 -right-1 md:static md:ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                  <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
                     {activeFilterCount}
                   </span>
                 )}
@@ -468,65 +496,46 @@ export function OpportunitiesView({
             </PopoverContent>
           </Popover>
 
-          {/* Ordenar */}
+          {/* Overflow "..." menu — collects the secondary actions
+              (Ordenar / Importar / Gestionar campos) that used to be
+              inline. Spec 7.5: header keeps only +, Filtros, ⋯, and
+              the grid/list toggle visible. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="md:size-auto md:px-3 md:gap-2 shrink-0">
-                <ArrowUpDown className="h-4 w-4" />
-                <span className="hidden md:inline">Ordenar</span>
+              <Button variant="outline" size="icon" className="shrink-0" title="Más opciones" aria-label="Más opciones">
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Ordenar por
-              </DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={sortKey}
-                onValueChange={(v) => setSortKey(v as SortKey)}
-              >
-                {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                  <DropdownMenuRadioItem key={key} value={key}>
-                    {SORT_LABELS[key]}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  Ordenar por
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  <DropdownMenuRadioGroup
+                    value={sortKey}
+                    onValueChange={(v) => setSortKey(v as SortKey)}
+                  >
+                    {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                      <DropdownMenuRadioItem key={key} value={key}>
+                        {SORT_LABELS[key]}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleComingSoon}>
+                <Download className="h-4 w-4 mr-2" />
+                Importar
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleComingSoon}>
+                <Settings className="h-4 w-4 mr-2" />
+                Gestionar campos
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Importar — stubbed (no GHL bulk-create endpoint exposed).
-              Hidden below xl to keep the primary actions visible. */}
-          <Button variant="outline" className="hidden xl:inline-flex gap-2 shrink-0" onClick={handleComingSoon}>
-            <Download className="h-4 w-4" />
-            Importar
-          </Button>
-
-          {/* Gestionar campos — stubbed (GHL pipeline-stage CRUD isn't in the v2 API).
-              Hidden below xl to keep the primary actions visible. */}
-          <Button variant="outline" className="hidden xl:inline-flex gap-2 shrink-0" onClick={handleComingSoon}>
-            <Settings className="h-4 w-4" />
-            Gestionar campos
-          </Button>
-
-          {/* Crear oportunidad — primary action, always visible. Label collapses on small screens. */}
-          <Button
-            size="icon"
-            className="md:size-auto md:px-4 md:gap-2 shrink-0"
-            onClick={() => {
-              if (!pipeline) {
-                toast({
-                  title: "No hay pipeline disponible",
-                  description: "No se encontró un pipeline en GoHighLevel.",
-                  variant: "destructive",
-                });
-                return;
-              }
-              setIsCreateOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" />
-            <span className="hidden md:inline">Crear</span>
-            <span className="hidden lg:inline">oportunidad</span>
-          </Button>
 
           <div className="flex items-center bg-muted/50 rounded-md p-1 shrink-0">
             <Button
