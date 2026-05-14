@@ -784,11 +784,14 @@ export function ContactSidebar({
                     </div>
                   </div>
                 ))}
-                <Button variant="outline" size="sm" className="w-full h-8 text-xs border-dashed" onClick={() => {
-                  setFields([...fields, { id: `custom_${Date.now()}`, label: 'Nuevo campo', value: '', type: 'custom' }]);
-                }}>
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Agregar campo
-                </Button>
+                {/* "Agregar campo" intentionally removed — per product
+                    spec 4.4, agents tended to create one-off custom
+                    fields that turned the contact panel into a mess of
+                    inconsistent information across leads. The predefined
+                    set (Teléfono / Email / Dirección / Num de documento)
+                    is now closed; new structured data should be modelled
+                    as GHL custom fields by an admin, not added ad-hoc
+                    per-contact in the SPA. */}
                 <div className="pt-2">
                   <Button size="sm" className="w-full h-8 text-xs" onClick={() => setIsEditingFields(false)}>Guardar cambios</Button>
                 </div>
