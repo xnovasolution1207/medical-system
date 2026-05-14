@@ -558,29 +558,71 @@ export function OpportunitiesView({
         ) : viewMode === "board" ? (
           <>
             {selectedOppIds.size > 0 && (
-              <div className="mb-3 flex items-center justify-between rounded-lg border bg-card px-3 py-2 shadow-sm">
-                <span className="text-sm">
-                  <span className="font-semibold">{selectedOppIds.size}</span> seleccionada
-                  {selectedOppIds.size === 1 ? "" : "s"}
-                </span>
+              // Floating bottom toolbar — centred over the kanban
+              // viewport. Mirrors the prototype: a count badge, a
+              // "Mover a:" stage Select, optional bulk Delete, and a
+              // Cancelar that clears the selection. We keep Delete
+              // available when the parent wires it; the spec only
+              // requires Move + Cancel but losing Delete would be a
+              // feature regression.
+              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-full border bg-card px-5 py-3 shadow-2xl ring-1 ring-primary/20 animate-in fade-in slide-in-from-bottom-4">
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={clearOppSelection}>
-                    Limpiar
-                  </Button>
-                  {onBulkDeleteOpportunities && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={async () => {
-                        const ids = Array.from(selectedOppIds);
-                        await onBulkDeleteOpportunities(ids);
-                        clearOppSelection();
-                      }}
-                    >
-                      Eliminar seleccionadas
-                    </Button>
-                  )}
+                  <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
+                    {selectedOppIds.size}
+                  </span>
+                  <span className="text-sm">
+                    seleccionado{selectedOppIds.size === 1 ? "" : "s"}
+                  </span>
                 </div>
+                <div className="h-5 w-px bg-border" />
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Mover a:</span>
+                  <Select
+                    // `value=""` is the placeholder state — set to a real
+                    // stage id only momentarily inside `onValueChange`.
+                    // Reset back to "" after the bulk move so picking the
+                    // same stage twice in a row still fires the handler.
+                    value=""
+                    onValueChange={(stageId) => {
+                      if (!stageId || !onMoveOpportunity) return;
+                      const ids = Array.from(selectedOppIds);
+                      for (const id of ids) onMoveOpportunity(id, stageId);
+                      clearOppSelection();
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[180px] text-sm">
+                      <SelectValue placeholder="Seleccionar etapa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {stages.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {onBulkDeleteOpportunities && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={async () => {
+                      const ids = Array.from(selectedOppIds);
+                      await onBulkDeleteOpportunities(ids);
+                      clearOppSelection();
+                    }}
+                  >
+                    Eliminar
+                  </Button>
+                )}
+                <button
+                  type="button"
+                  onClick={clearOppSelection}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cancelar
+                </button>
               </div>
             )}
             <div className="flex gap-4 h-full pb-4 w-max">
