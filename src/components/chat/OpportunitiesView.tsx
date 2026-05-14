@@ -617,11 +617,13 @@ export function OpportunitiesView({
                           </h3>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {stageTotal > 0 && (
-                            <span className="text-xs font-medium text-muted-foreground">
-                              {formatOppValue(stageTotal)}
-                            </span>
-                          )}
+                          {/* Always render — empty columns still show
+                              "S/ 0,00" so the header structure stays
+                              consistent across the board and an empty
+                              column doesn't feel visually incomplete. */}
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {formatOppValue(stageTotal)}
+                          </span>
                           <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border">
                             {stageOpps.length}
                           </span>
@@ -701,11 +703,13 @@ export function OpportunitiesView({
                                   >
                                     {statusPill.label}
                                   </span>
-                                  {typeof opp.monetaryValue === "number" && opp.monetaryValue > 0 && (
-                                    <span className="text-xs font-medium text-foreground">
-                                      {formatOppValue(opp.monetaryValue)}
-                                    </span>
-                                  )}
+                                  {/* Always render — `formatOppValue`
+                                      handles undefined / 0 and emits
+                                      "S/ 0,00" so the row width stays
+                                      stable regardless of value. */}
+                                  <span className="text-xs font-medium text-foreground">
+                                    {formatOppValue(opp.monetaryValue)}
+                                  </span>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 shrink-0 ml-1">
