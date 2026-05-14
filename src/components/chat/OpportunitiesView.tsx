@@ -598,17 +598,35 @@ export function OpportunitiesView({
                     onDrop={(e) => handleDrop(e, stage.id)}
                   >
                     <div className="p-3 border-b bg-muted/50 rounded-t-lg shrink-0">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-medium text-sm truncate">{stage.label}</h3>
-                        <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border shrink-0">
-                          {stageOpps.length}
-                        </span>
-                      </div>
-                      {stageTotal > 0 && (
-                        <div className="mt-1 text-[11px] font-medium text-muted-foreground">
-                          ${stageTotal.toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {/* Per-stage color dot — the same swatch the
+                              chat sidebar uses for the stage badge, so a
+                              quick visual scan correlates kanban column
+                              with the lead row. */}
+                          {stage.color && (
+                            <div
+                              className={cn(
+                                "h-2 w-2 shrink-0 rounded-full",
+                                stage.color
+                              )}
+                            />
+                          )}
+                          <h3 className="font-medium text-sm truncate">
+                            {stage.label}
+                          </h3>
                         </div>
-                      )}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {stageTotal > 0 && (
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {formatOppValue(stageTotal)}
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border">
+                            {stageOpps.length}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <div className="flex-1 p-2 space-y-2 overflow-y-auto">
                       {stageOpps.map((opp) => {
