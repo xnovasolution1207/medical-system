@@ -10,7 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AgentUser, User, Conversation, Opportunity } from "./types";
+import { AgentUser, User, Conversation, FamilyMember, Opportunity, TagSummary } from "./types";
+import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play } from "lucide-react";
@@ -39,6 +44,15 @@ interface ContactSidebarProps {
     id: string,
     patch: { status?: Opportunity["status"]; monetaryValue?: number }
   ) => void;
+  // Location-level tag library — fills the "Etiquetas" autocomplete with
+  // existing GHL tag names so agents don't accidentally create casing
+  // variants. Empty when the GHL token lacks `locations.readonly`; the
+  // picker still works (typing a new name creates it on save).
+  availableTags?: TagSummary[];
+  // Persist the new full tag list for the contact. Parent owns the
+  // optimistic update + the `PATCH /contacts/:id { tags }` round-trip;
+  // GHL auto-creates any tag names it hasn't seen before.
+  onUpdateTags?: (tags: string[]) => void;
 }
 
 // Spanish labels for GHL's four opportunity statuses. "Abandonar" matches the
@@ -61,6 +75,28 @@ const STATUS_TRIGGER_CLASS: Record<Opportunity["status"], string> = {
   abandoned: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300",
 };
 
+// Spanish labels for the four canonical family relationships plus the
+// fallback "Otro" bucket. Matches the "Agregar familiar" mockup. Keep
+// the keys aligned with FamilyMember["relationship"] on the wire side.
+const FAMILY_RELATIONSHIP_LABELS: Record<
+  FamilyMember["relationship"],
+  string
+> = {
+  hijo: "Hijo(a)",
+  padre: "Padre/Madre",
+  esposo: "Esposo(a)",
+  hermano: "Hermano(a)",
+  otro: "Otro",
+};
+
+const FAMILY_RELATIONSHIP_ORDER: FamilyMember["relationship"][] = [
+  "hijo",
+  "padre",
+  "esposo",
+  "hermano",
+  "otro",
+];
+
 // "S/ 0.00" — Peruvian Sol formatting. The locale gets thousand separators
 // right; we keep two decimals always so the field doesn't shrink/grow as the
 // user edits adjacent fields.
@@ -81,6 +117,8 @@ export function ContactSidebar({
   onUpdateFollowers,
   opportunity,
   onUpdateOpportunity,
+  availableTags = [],
+  onUpdateTags,
 }: ContactSidebarProps) {
   // Local draft of the monetary value while the input is focused. We commit
   // (and round-trip to GHL) on blur or Enter — keystroke-level PATCHes would
@@ -109,6 +147,107 @@ export function ContactSidebar({
   const [tags, setTags] = useState<string[]>(contact.tags || []);
   const [newTag, setNewTag] = useState("");
   const [isAddingTag, setIsAddingTag] = useState(false);
+
+  // "Agregar familiar" modal — name + phone create a brand-new GHL
+  // contact and the link is stored locally (see backend FamilyRelation
+  // model). The list is sourced from `contact.familyMembers` so a
+  // server-side refresh (lead.updated webhook, switching contacts)
+  // always reconciles; the local state below just smooths the
+  // optimistic insert before the response lands.
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>(
+    contact.familyMembers ?? []
+  );
+  const [isFamilyDialogOpen, setIsFamilyDialogOpen] = useState(false);
+  const [familyName, setFamilyName] = useState("");
+  const [familyPhone, setFamilyPhone] = useState("");
+  const [familyRelationship, setFamilyRelationship] =
+    useState<FamilyMember["relationship"] | "">("");
+  const [familySaving, setFamilySaving] = useState(false);
+  const { toast: familyToast } = useToast();
+
+  // Re-sync from the prop whenever we switch contacts or the bundle is
+  // refetched (webhook, manual refresh). Without this the list would
+  // ghost the previous lead's family after the active id flips.
+  //
+  // The bootstrap payload does NOT include `familyMembers` on its
+  // conversations (avoids fanning out a Prisma + GHL denormalise per
+  // contact on every page load), so on a cold reload `contact.familyMembers`
+  // is undefined even when rows exist on disk. We backfill with a single
+  // GET /contacts/:id/family on contact change so the list always shows
+  // the persisted state. Subsequent webhooks / lead.updated events that
+  // do carry familyMembers will still take precedence.
+  useEffect(() => {
+    setFamilyMembers(contact.familyMembers ?? []);
+    let cancelled = false;
+    api.contacts
+      .listFamily(contact.id)
+      .then((members) => {
+        if (cancelled) return;
+        setFamilyMembers(members);
+      })
+      .catch((err) => {
+        // Best-effort — stay with whatever the prop gave us. A toast
+        // here would be noisy because this fires on every contact change.
+        console.warn("[family] listFamily failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contact.id, contact.familyMembers]);
+
+  const resetFamilyDialog = () => {
+    setFamilyName("");
+    setFamilyPhone("");
+    setFamilyRelationship("");
+    setFamilySaving(false);
+  };
+
+  const handleAddFamilyMember = async () => {
+    const name = familyName.trim();
+    const phone = familyPhone.trim();
+    if (!name || !phone || !familyRelationship) return;
+    setFamilySaving(true);
+    try {
+      const created = await api.contacts.addFamily(contact.id, {
+        name,
+        phone,
+        relationship: familyRelationship,
+      });
+      setFamilyMembers((prev) => [...prev, created]);
+      setIsFamilyDialogOpen(false);
+      resetFamilyDialog();
+      familyToast({
+        title: "Familiar agregado",
+        description: `${created.name} ahora aparece como ${
+          FAMILY_RELATIONSHIP_LABELS[created.relationship]
+        }.`,
+      });
+    } catch (err) {
+      familyToast({
+        title: "No se pudo agregar el familiar",
+        description:
+          (err as Error)?.message || "Verifica los datos e inténtalo de nuevo.",
+        variant: "destructive",
+      });
+      setFamilySaving(false);
+    }
+  };
+
+  const handleRemoveFamilyMember = async (relationId: string) => {
+    const before = familyMembers;
+    setFamilyMembers((prev) => prev.filter((m) => m.id !== relationId));
+    try {
+      await api.contacts.removeFamily(contact.id, relationId);
+    } catch (err) {
+      // Rollback the optimistic remove on failure.
+      setFamilyMembers(before);
+      familyToast({
+        title: "No se pudo eliminar el familiar",
+        description: (err as Error)?.message || "Inténtalo de nuevo.",
+        variant: "destructive",
+      });
+    }
+  };
   // Owner / followers are driven by the live contact prop. We mirror them
   // into local state for optimistic updates so the dropdowns feel responsive
   // even before the PATCH round-trips.
@@ -121,12 +260,16 @@ export function ContactSidebar({
   );
   const inputRef = useRef<HTMLInputElement>(null);
   const [isEditingFields, setIsEditingFields] = useState(false);
+  // Note: the legacy inline "Parentesco" field has been removed from this
+  // list — it's now a dedicated section below "Información de Contacto"
+  // backed by the FamilyRelation Prisma table (see "Agregar familiar"
+  // modal). Keeping the field here would render two parallel UIs for
+  // the same concept and confuse the agent.
   const [fields, setFields] = useState<any[]>([
     { id: 'phone', label: 'Teléfono', value: contact.phone || '', type: 'phone' },
     { id: 'email', label: 'Email', value: contact.email || '', type: 'email' },
     { id: 'address', label: 'Dirección', value: '', type: 'address' },
     { id: 'document', label: 'Num de documento', value: '', type: 'document', docType: 'CC' },
-    { id: 'relationship', label: 'Parentesco', value: '', type: 'relationship' }
   ]);
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -171,7 +314,6 @@ export function ContactSidebar({
       { id: 'email', label: 'Email', value: contact.email || '', type: 'email' },
       { id: 'address', label: 'Dirección', value: '', type: 'address' },
       { id: 'document', label: 'Num de documento', value: '', type: 'document', docType: 'CC' },
-      { id: 'relationship', label: 'Parentesco', value: '', type: 'relationship' }
     ]);
   }, [contact.tags, contact.phone, contact.email]);
 
@@ -226,18 +368,101 @@ export function ContactSidebar({
     }
   };
 
-  const handleAddTag = () => {
-    if (newTag.trim() && !tags.includes(newTag.trim())) {
-      setTags([...tags, newTag.trim()]);
+  // Highlighted item in the autocomplete dropdown. Reset whenever the
+  // query changes so the first match is always preselected after typing.
+  const [tagSuggestionIdx, setTagSuggestionIdx] = useState(0);
+
+  // Filter the location tag library by what the user has typed (case- and
+  // accent-insensitive). Exclude tags already on the contact so the
+  // dropdown only suggests things that would actually do something.
+  const tagSuggestions = React.useMemo<TagSummary[]>(() => {
+    const norm = (s: string) =>
+      s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const onContact = new Set(tags.map((t) => norm(t)));
+    const q = norm(newTag.trim());
+    const filtered = availableTags.filter((t) => {
+      if (onContact.has(norm(t.name))) return false;
+      if (!q) return true;
+      return norm(t.name).includes(q);
+    });
+    // Cap so the popup stays compact — typing always narrows further.
+    return filtered.slice(0, 8);
+  }, [availableTags, tags, newTag]);
+
+  // Whether the typed text would create a brand-new tag (no exact case-
+  // insensitive match in either the contact's tags or the location
+  // library). Drives the "Crear «<query>»" row at the bottom of the
+  // dropdown.
+  const canCreateNewTag = React.useMemo(() => {
+    const trimmed = newTag.trim();
+    if (!trimmed) return false;
+    const q = trimmed.toLowerCase();
+    if (tags.some((t) => t.toLowerCase() === q)) return false;
+    if (availableTags.some((t) => t.name.toLowerCase() === q)) return false;
+    return true;
+  }, [newTag, tags, availableTags]);
+
+  // Commit a single tag — either an existing one picked from the dropdown
+  // or a brand-new name typed by the user. Optimistically updates local
+  // state so the pill appears instantly; the parent fires the PATCH and
+  // reconciles from the server response.
+  const commitTag = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNewTag("");
+      return;
     }
+    // Case-insensitive dedup against the existing set.
+    if (tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
+      setNewTag("");
+      setTagSuggestionIdx(0);
+      return;
+    }
+    const next = [...tags, trimmed];
+    setTags(next);
+    onUpdateTags?.(next);
     setNewTag("");
-    setIsAddingTag(false);
+    setTagSuggestionIdx(0);
+    // Keep the input open so the agent can add a second tag without
+    // re-clicking the + button — matches the GHL UX in the screenshot.
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleAddTag = () => {
+    // Called from the input's onBlur — only commit if the user actually
+    // typed something. Clicking a dropdown row commits via `commitTag`
+    // before blur fires (mousedown handler).
+    if (newTag.trim()) {
+      commitTag(newTag);
+    } else {
+      setIsAddingTag(false);
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Dropdown navigation when there are visible rows.
+    const total = tagSuggestions.length + (canCreateNewTag ? 1 : 0);
+    if (total > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setTagSuggestionIdx((i) => (i + 1) % total);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setTagSuggestionIdx((i) => (i <= 0 ? total - 1 : i - 1));
+        return;
+      }
+    }
     if (e.key === "Enter") {
       e.preventDefault();
-      handleAddTag();
+      // Prefer the highlighted suggestion when available; fall back to
+      // creating a tag from the raw typed text.
+      if (tagSuggestionIdx < tagSuggestions.length) {
+        commitTag(tagSuggestions[tagSuggestionIdx].name);
+      } else if (canCreateNewTag) {
+        commitTag(newTag);
+      }
     } else if (e.key === "Escape") {
       setNewTag("");
       setIsAddingTag(false);
@@ -245,7 +470,9 @@ export function ContactSidebar({
   };
 
   const removeTag = (tagToRemove: string) => {
-    setTags(tags.filter(tag => tag !== tagToRemove));
+    const next = tags.filter((tag) => tag !== tagToRemove);
+    setTags(next);
+    onUpdateTags?.(next);
   };
   return (
     <div className="flex h-full w-full flex-col border-l bg-card text-card-foreground overflow-hidden">
@@ -367,18 +594,85 @@ export function ContactSidebar({
               </Badge>
             ))}
             {isAddingTag ? (
-              <input
-                ref={inputRef}
-                type="text"
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={handleAddTag}
-                className="inline-flex h-[22px] w-[100px] items-center rounded-md border border-input bg-transparent px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="Escribir..."
-              />
+              <div className="relative inline-block">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={newTag}
+                  onChange={(e) => {
+                    setNewTag(e.target.value);
+                    setTagSuggestionIdx(0);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  onBlur={handleAddTag}
+                  className="inline-flex h-[22px] w-[120px] items-center rounded-md border border-input bg-transparent px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Escribir..."
+                />
+                {(tagSuggestions.length > 0 || canCreateNewTag) && (
+                  <div
+                    // Mouse-down inside the dropdown shouldn't blur the
+                    // input — without this preventDefault the suggestion
+                    // click would race the onBlur commit and lose.
+                    onMouseDown={(e) => e.preventDefault()}
+                    className="absolute left-0 top-full z-50 mt-1 w-[220px] max-w-[calc(100vw-2rem)] rounded-md border bg-popover shadow-lg animate-in fade-in slide-in-from-top-1 overflow-hidden"
+                  >
+                    {tagSuggestions.length > 0 && (
+                      <>
+                        <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Sugerencias
+                        </div>
+                        <div className="max-h-[220px] overflow-y-auto pb-1">
+                          {tagSuggestions.map((s, idx) => {
+                            const isActive = idx === tagSuggestionIdx;
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => commitTag(s.name)}
+                                onMouseEnter={() => setTagSuggestionIdx(idx)}
+                                className={cn(
+                                  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors",
+                                  isActive ? "bg-accent" : "hover:bg-accent/60"
+                                )}
+                              >
+                                <Tag className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                <span className="truncate text-foreground">
+                                  {s.name}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    {canCreateNewTag && (
+                      <button
+                        type="button"
+                        onClick={() => commitTag(newTag)}
+                        onMouseEnter={() =>
+                          setTagSuggestionIdx(tagSuggestions.length)
+                        }
+                        className={cn(
+                          "flex w-full items-center gap-2 border-t px-3 py-2 text-left text-xs transition-colors",
+                          tagSuggestionIdx === tagSuggestions.length
+                            ? "bg-accent"
+                            : "hover:bg-accent/60"
+                        )}
+                      >
+                        <Plus className="h-3 w-3 shrink-0 text-primary" />
+                        <span className="text-foreground">
+                          Crear{" "}
+                          <span className="font-semibold">
+                            «{newTag.trim()}»
+                          </span>
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
-              <button 
+              <button
                 onClick={() => { setIsAddingTag(true); setTimeout(() => inputRef.current?.focus(), 0); }}
                 className="inline-flex h-[22px] items-center rounded-md border border-dashed border-input bg-transparent px-2 text-xs font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
               >
@@ -608,6 +902,135 @@ export function ContactSidebar({
             )}
           </div>
         </div>
+
+        <Separator />
+
+        <div className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Users className="h-4 w-4" />
+              <span>Parentesco</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-primary hover:bg-primary/10"
+              onClick={() => {
+                resetFamilyDialog();
+                setIsFamilyDialogOpen(true);
+              }}
+              aria-label="Agregar familiar"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          {familyMembers.length > 0 && (
+            <ul className="space-y-1 text-sm">
+              {familyMembers.map((m) => (
+                <li
+                  key={m.id}
+                  className="group flex items-center justify-between gap-2 rounded-md px-2 -mx-2 py-1.5 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-foreground">{m.name}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {FAMILY_RELATIONSHIP_LABELS[m.relationship]}
+                      {m.phone && <> · {m.phone}</>}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFamilyMember(m.id)}
+                    className="h-5 w-5 shrink-0 rounded-full opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground transition-opacity"
+                    aria-label={`Eliminar ${m.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <Dialog
+          open={isFamilyDialogOpen}
+          onOpenChange={(open) => {
+            setIsFamilyDialogOpen(open);
+            if (!open) resetFamilyDialog();
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Agregar familiar</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Nombre y apellido <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={familyName}
+                  onChange={(e) => setFamilyName(e.target.value)}
+                  placeholder="Ej. Juan Pérez"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Teléfono <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={familyPhone}
+                  onChange={(e) => setFamilyPhone(e.target.value)}
+                  placeholder="Ej. +1 234 567 8900"
+                  inputMode="tel"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Parentesco <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={familyRelationship || undefined}
+                  onValueChange={(v) =>
+                    setFamilyRelationship(v as FamilyMember["relationship"])
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FAMILY_RELATIONSHIP_ORDER.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {FAMILY_RELATIONSHIP_LABELS[r]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsFamilyDialogOpen(false)}
+                disabled={familySaving}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleAddFamilyMember}
+                disabled={
+                  familySaving ||
+                  !familyName.trim() ||
+                  !familyPhone.trim() ||
+                  !familyRelationship
+                }
+              >
+                {familySaving ? "Agregando…" : "Agregar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Separator />
 

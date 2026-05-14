@@ -253,6 +253,7 @@ export default function Index() {
     [data?.stages]
   );
   const users = data?.users ?? [];
+  const availableTags = data?.tags ?? [];
   const currentUser = data?.currentUser ?? FALLBACK_USER;
   const conversationsNextCursor = data?.conversationsNextCursor ?? null;
 
@@ -1319,6 +1320,63 @@ export default function Index() {
     [toast, updateBootstrap]
   );
 
+  // Tag patch for the right-rail "Etiquetas" picker. Optimistically writes
+  // the new tags array to every conversation whose participant is this
+  // contact (so the header chip set + the sidebar stay in sync), then
+  // PATCHes GHL with the full list. GHL auto-creates location-level tag
+  // entries for any names it hasn't seen before, so typing a brand-new
+  // tag here also creates it in the location library on the next bootstrap.
+  // On failure the optimistic patch is left in place and a toast surfaces
+  // the error — the bootstrap-cache reconcile from the response (or the
+  // next WS lead.updated) will normalise the state.
+  const handleUpdateContactTags = useCallback(
+    (contactId: string, nextTags: string[]) => {
+      // Defensive dedupe + trim so a careless caller can't push duplicates
+      // (case-insensitive, since GHL normalises tag names).
+      const seen = new Set<string>();
+      const cleaned: string[] = [];
+      for (const t of nextTags) {
+        const trimmed = t.trim();
+        if (!trimmed) continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        cleaned.push(trimmed);
+      }
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.participant.id === contactId
+            ? { ...c, participant: { ...c.participant, tags: cleaned } }
+            : c
+        ),
+      }));
+      api.contacts
+        .update(contactId, { tags: cleaned })
+        .then((updated) => {
+          // Reconcile from the server response — GHL may have canonicalised
+          // casing or order, and we want the cache to reflect the truth.
+          updateBootstrap((prev) => ({
+            ...prev,
+            conversations: prev.conversations.map((c) =>
+              c.participant.id === contactId
+                ? { ...c, participant: { ...c.participant, tags: updated.tags ?? [] } }
+                : c
+            ),
+          }));
+        })
+        .catch((err) => {
+          console.error("contact tag update failed", err);
+          toast({
+            title: "No se pudo actualizar las etiquetas",
+            description: (err as Error)?.message || "Inténtalo de nuevo.",
+            variant: "destructive",
+          });
+        });
+    },
+    [toast, updateBootstrap]
+  );
+
   // Owner / followers patch — used by ContactSidebar's Asignación section.
   // Patches every conversation row whose participant is this contact so the
   // header and the right panel stay in sync, then writes through to the
@@ -1871,6 +1929,10 @@ export default function Index() {
                 handleUpdateContactName(activeConversation.participant.id, newName)
               }
               users={users}
+              availableTags={availableTags}
+              onUpdateTags={(tags) =>
+                handleUpdateContactTags(activeConversation.participant.id, tags)
+              }
               opportunity={opportunities.find(
                 (o) => o.contactId === activeConversation.participant.id
               )}
@@ -1901,6 +1963,10 @@ export default function Index() {
                 handleUpdateContactName(activeConversation.participant.id, newName)
               }
               users={users}
+              availableTags={availableTags}
+              onUpdateTags={(tags) =>
+                handleUpdateContactTags(activeConversation.participant.id, tags)
+              }
               opportunity={opportunities.find(
                 (o) => o.contactId === activeConversation.participant.id
               )}

@@ -6,9 +6,11 @@
 import type {
   AgentUser,
   Conversation,
+  FamilyMember,
   Message,
   Opportunity,
   Pipeline,
+  TagSummary,
   Task,
   User,
 } from "@/components/chat/types";
@@ -25,6 +27,9 @@ export interface BootstrapPayload {
   // Roster of GHL staff users for agent-pickers (Propietario / Seguidores).
   // Empty when the GHL token lacks `users.readonly`.
   users: AgentUser[];
+  // Location-level tag library — populates the "Etiquetas" autocomplete.
+  // Empty when the GHL token lacks `locations.readonly`.
+  tags: TagSummary[];
 }
 
 // Strip any trailing slash so we can always append "/api/..." cleanly.
@@ -406,6 +411,22 @@ export const api = {
       }
     ) => request<User>("PATCH", `/contacts/${id}`, patch),
     delete: (id: string) => request<void>("DELETE", `/contacts/${id}`),
+    // Family / dependents — the "Agregar familiar" modal in the right
+    // rail. `addFamily` creates a brand-new GHL contact for the family
+    // member and stores the link locally; the response carries the
+    // FamilyMember entry the SPA appends to the active contact.
+    addFamily: (
+      id: string,
+      payload: {
+        name: string;
+        phone: string;
+        relationship: FamilyMember["relationship"];
+      }
+    ) => request<FamilyMember>("POST", `/contacts/${id}/family`, payload),
+    removeFamily: (id: string, relationId: string) =>
+      request<void>("DELETE", `/contacts/${id}/family/${relationId}`),
+    listFamily: (id: string) =>
+      request<FamilyMember[]>("GET", `/contacts/${id}/family`),
   },
 
   opportunities: {

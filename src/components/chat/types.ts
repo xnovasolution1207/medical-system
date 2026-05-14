@@ -1,3 +1,15 @@
+// One family / dependent link, from the perspective of the lead in the
+// right-rail sidebar. `id` is the FamilyRelation row id used to remove
+// the link; `contactId` is the related GHL contact's id (so a future
+// iteration can open that lead by clicking the chip).
+export type FamilyMember = {
+  id: string;
+  contactId: string;
+  name: string;
+  phone?: string;
+  relationship: "hijo" | "padre" | "esposo" | "hermano" | "otro";
+};
+
 export type User = {
   id: string;
   name: string;
@@ -11,6 +23,10 @@ export type User = {
   // followersStore). Always present (possibly empty) so consumers don't have
   // to handle `undefined`.
   followers?: string[];
+  // Family / dependent links — local-only, populated by fetchLeadBundle
+  // for the active contact only. Undefined when the bootstrap is loading
+  // or the contact has no links yet.
+  familyMembers?: FamilyMember[];
   dnd?: {
     email: boolean;
     sms: boolean;
@@ -25,6 +41,13 @@ export type AgentUser = {
   id: string;
   name: string;
   avatar?: string;
+};
+
+// Location-level tag library entry — populates the "Etiquetas"
+// autocomplete in ContactSidebar. Comes from the bootstrap payload.
+export type TagSummary = {
+  id: string;
+  name: string;
 };
 
 export type MessageButton = {
