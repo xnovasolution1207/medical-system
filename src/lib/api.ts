@@ -56,6 +56,43 @@ export function proxyMediaUrl(url: string): string {
   return url;
 }
 
+// Fetch an attachment via the backend media proxy and save it to disk with
+// the supplied filename. Always goes through the proxy so we get reliable
+// GHL auth, broad CDN-host coverage (GCS, WhatsApp, FB, etc.) and CORS-free
+// blob access — the `download` attribute on an anchor only honors the
+// filename when the href is same-origin or a blob: URL. Falls back to
+// opening the original URL in a new tab if the proxy refuses (e.g. host
+// not in the backend allowlist).
+export async function downloadAttachment(
+  url: string,
+  filename: string
+): Promise<void> {
+  const proxied = `${API_BASE}/media?url=${encodeURIComponent(url)}`;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  let blob: Blob;
+  try {
+    const res = await fetch(proxied, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    blob = await res.blob();
+  } catch {
+    // Proxy unavailable / host not allowlisted — let the browser try the
+    // original URL directly. Cross-origin sites usually render rather than
+    // download, but that beats failing silently.
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename || "documento";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
 // Backend errors come back as JSON `{ error: "...", stack?: "..." }`.
 // We extract just the `error` field for display so the toast doesn't
 // dump a stack trace (or the raw response body) into the user's face.

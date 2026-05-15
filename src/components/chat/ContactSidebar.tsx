@@ -12,7 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentUser, User, Conversation, FamilyMember, Message, Opportunity, TagSummary } from "./types";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
+import { api, downloadAttachment } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -163,7 +163,7 @@ export function ContactSidebar({
   const [familyRelationship, setFamilyRelationship] =
     useState<FamilyMember["relationship"] | "">("");
   const [familySaving, setFamilySaving] = useState(false);
-  const { toast: familyToast } = useToast();
+  const { toast } = useToast();
 
   // Re-sync from the prop whenever we switch contacts or the bundle is
   // refetched (webhook, manual refresh). Without this the list would
@@ -245,14 +245,14 @@ export function ContactSidebar({
       setFamilyMembers((prev) => [...prev, created]);
       setIsFamilyDialogOpen(false);
       resetFamilyDialog();
-      familyToast({
+      toast({
         title: "Familiar agregado",
         description: `${created.name} ahora aparece como ${
           FAMILY_RELATIONSHIP_LABELS[created.relationship]
         }.`,
       });
     } catch (err) {
-      familyToast({
+      toast({
         title: "No se pudo agregar el familiar",
         description:
           (err as Error)?.message || "Verifica los datos e inténtalo de nuevo.",
@@ -270,7 +270,7 @@ export function ContactSidebar({
     } catch (err) {
       // Rollback the optimistic remove on failure.
       setFamilyMembers(before);
-      familyToast({
+      toast({
         title: "No se pudo eliminar el familiar",
         description: (err as Error)?.message || "Inténtalo de nuevo.",
         variant: "destructive",
@@ -1247,7 +1247,31 @@ export function ContactSidebar({
                           <span className="text-sm font-medium truncate">{msg.attachment?.name || 'Documento'}</span>
                           <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{msg.attachment?.type}</span>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 shrink-0 text-muted-foreground hover:text-foreground">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 shrink-0 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const url = msg.attachment?.url;
+                            if (!url) return;
+                            if (msg.attachment?.type === "link") {
+                              // Plain links — open instead of forcing a download.
+                              window.open(url, "_blank", "noopener");
+                              return;
+                            }
+                            downloadAttachment(
+                              url,
+                              msg.attachment?.name || "documento"
+                            ).catch((err) => {
+                              console.warn("[download] failed", err);
+                              toast({
+                                title: "No se pudo descargar el archivo.",
+                                variant: "destructive",
+                              });
+                            });
+                          }}
+                        >
                           <Download className="h-4 w-4" />
                         </Button>
                       </div>
