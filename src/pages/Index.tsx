@@ -1854,6 +1854,8 @@ export default function Index() {
             conversations={conversations}
             tasks={tasks}
             users={users}
+            savedViews={savedViews}
+            onSaveView={handleSaveView}
             onMoveOpportunity={handleMoveOpportunity}
             onCreateOpportunity={handleCreateOpportunity}
             onCreateContact={handleCreateContact}

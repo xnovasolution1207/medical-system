@@ -66,9 +66,11 @@ import type {
   FilterCondition,
   Opportunity,
   Pipeline,
+  SavedView,
   Task,
 } from "./types";
 import { FilterBuilder } from "./FilterBuilder";
+import { Calendar } from "@/components/ui/calendar";
 
 interface OpportunitiesViewProps {
   opportunities: Opportunity[];
@@ -87,6 +89,11 @@ interface OpportunitiesViewProps {
   // Seguidor / Mención). Empty when GHL hasn't returned a roster yet —
   // FilterBuilder degrades to free-text input in that case.
   users?: AgentUser[];
+  // Saved-view roster shared with the conversation-list sidebar. The
+  // kanban's FilterBuilder reuses the same view shape (filters[] +
+  // logic) so a view created here is readable there and vice versa.
+  savedViews?: SavedView[];
+  onSaveView?: (view: SavedView) => void;
   onMoveOpportunity?: (id: string, stageId: string) => void;
   onCreateOpportunity?: (payload: {
     name: string;
@@ -161,6 +168,87 @@ const STATUS_PILL: Record<
   },
 };
 
+// Date-filter preset → half-open [from, to) window. Endpoints are
+// normalised to midnight in the user's local timezone so the preset
+// is consistent regardless of when in the day the agent triggers it.
+// Returns null when no usable range can be formed (e.g. "personalizado"
+// without a `from` picked yet) — the caller treats that as a no-op.
+type DatePresetKey =
+  | "hoy"
+  | "ayer"
+  | "esta_semana"
+  | "semana_pasada"
+  | "este_mes"
+  | "mes_pasado"
+  | "personalizado";
+
+function resolveDateRange(
+  preset: "" | DatePresetKey,
+  custom: { from?: Date; to?: Date }
+): { from: Date; to: Date } | null {
+  const now = new Date();
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const addDays = (d: Date, n: number) => {
+    const c = new Date(d);
+    c.setDate(c.getDate() + n);
+    return c;
+  };
+  switch (preset) {
+    case "hoy": {
+      const from = startOfDay(now);
+      return { from, to: addDays(from, 1) };
+    }
+    case "ayer": {
+      const from = addDays(startOfDay(now), -1);
+      return { from, to: startOfDay(now) };
+    }
+    case "esta_semana": {
+      const today = startOfDay(now);
+      // Spanish convention: weeks start Monday. JS getDay()=0 is Sunday.
+      const dow = (today.getDay() + 6) % 7;
+      const monday = addDays(today, -dow);
+      return { from: monday, to: addDays(today, 1) };
+    }
+    case "semana_pasada": {
+      const today = startOfDay(now);
+      const dow = (today.getDay() + 6) % 7;
+      const thisMonday = addDays(today, -dow);
+      return { from: addDays(thisMonday, -7), to: thisMonday };
+    }
+    case "este_mes":
+      return {
+        from: new Date(now.getFullYear(), now.getMonth(), 1),
+        to: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+      };
+    case "mes_pasado":
+      return {
+        from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+        to: new Date(now.getFullYear(), now.getMonth(), 1),
+      };
+    case "personalizado": {
+      if (!custom.from) return null;
+      const from = startOfDay(custom.from);
+      // When only `from` is picked, treat it as a single-day window so
+      // the filter is at least useful.
+      const to = custom.to ? addDays(startOfDay(custom.to), 1) : addDays(from, 1);
+      return { from, to };
+    }
+    default:
+      return null;
+  }
+}
+
+// Spanish labels for the preset list inside the `...` date-filter menu.
+const DATE_PRESET_LABELS: Record<Exclude<DatePresetKey, "personalizado">, string> = {
+  hoy: "Hoy",
+  ayer: "Ayer",
+  esta_semana: "Esta Semana",
+  semana_pasada: "Semana pasada",
+  este_mes: "Este mes",
+  mes_pasado: "Mes Pasado",
+};
+
 // "S/ 0,00" — Peruvian Sol; same convention as ContactSidebar so the
 // amount on the kanban card matches the right-rail amount field.
 function formatOppValue(value: number | undefined): string {
@@ -177,6 +265,8 @@ export function OpportunitiesView({
   conversations,
   tasks,
   users = [],
+  savedViews,
+  onSaveView,
   onMoveOpportunity,
   onCreateOpportunity,
   onCreateContact,
@@ -211,6 +301,19 @@ export function OpportunitiesView({
   const [builderLogic, setBuilderLogic] = useState<"AND" | "OR">("AND");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const activeFilterCount = builderFilters.filter((f) => f.field && f.value).length;
+
+  // Date filter — surfaced from the "..." button. The empty string is
+  // "no date filter active"; everything else maps through resolveDateRange.
+  // Custom range lives separately so switching between "hoy"/"ayer"/etc
+  // and back to "personalizado" doesn't wipe the agent's calendar pick.
+  const [datePreset, setDatePreset] = useState<"" | DatePresetKey>("");
+  const [customDateRange, setCustomDateRange] = useState<{
+    from?: Date;
+    to?: Date;
+  }>({});
+  const dateFilterActive =
+    datePreset !== "" &&
+    (datePreset !== "personalizado" || Boolean(customDateRange.from));
 
   // Ordenar
   const [sortKey, setSortKey] = useState<SortKey>("recientes");
@@ -476,6 +579,26 @@ export function OpportunitiesView({
       });
     }
 
+    // Date-preset narrowing. Compares against the linked conversation's
+    // `lastMessageAt` ISO — the closest recency signal on the wire
+    // today. Opportunities without a linked conversation (or without
+    // a parseable lastMessageAt) get excluded when a date filter is
+    // active.
+    if (dateFilterActive) {
+      const range = resolveDateRange(datePreset, customDateRange);
+      if (range) {
+        const fromTs = range.from.getTime();
+        const toTs = range.to.getTime();
+        list = list.filter((opp) => {
+          const conv = convByContactId.get(opp.contactId);
+          if (!conv?.lastMessageAt) return false;
+          const t = Date.parse(conv.lastMessageAt);
+          if (!Number.isFinite(t)) return false;
+          return t >= fromTs && t < toTs;
+        });
+      }
+    }
+
     const sorted = [...list];
     switch (sortKey) {
       case "nombre-asc":
@@ -504,7 +627,18 @@ export function OpportunitiesView({
     // re-trigger on every conversations identity flip even when the
     // join keys haven't changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opportunities, searchQuery, builderFilters, builderLogic, sortKey, users, conversations]);
+  }, [
+    opportunities,
+    searchQuery,
+    builderFilters,
+    builderLogic,
+    datePreset,
+    customDateRange,
+    dateFilterActive,
+    sortKey,
+    users,
+    conversations,
+  ]);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedOppId(id);
@@ -654,18 +788,29 @@ export function OpportunitiesView({
                 onLogicChange={setBuilderLogic}
                 onClose={() => setIsFilterOpen(false)}
                 onClear={clearFilters}
-                // Saved-views in the kanban aren't wired into the
-                // memoryStore SavedView slot — that store powers the
-                // conversation-list sidebar. Stub with a toast until
-                // a kanban-specific view store exists. The button is
-                // still visible (matches the spec screenshot) but
-                // surfaces a clear "próximamente" instead of silently
-                // doing nothing.
-                onSaveView={() => {
+                // Save-as-view persists the current condition set + AND/OR
+                // logic via the parent's existing SavedView store (same
+                // one ChatSidebar uses). Re-runs apply the view by setting
+                // builderFilters back to its filters[] array.
+                onSaveView={(name, viewId) => {
+                  if (!onSaveView) {
+                    toast({
+                      title: "No disponible",
+                      description: "El backend no expone guardar vistas.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  const view: SavedView = {
+                    id: viewId || `view-${Date.now()}`,
+                    name,
+                    filters: builderFilters,
+                    logic: builderLogic,
+                  };
+                  onSaveView(view);
                   toast({
-                    title: "Próximamente",
-                    description:
-                      "Guardar como vista estará disponible para el tablero pronto.",
+                    title: viewId ? "Vista actualizada" : "Vista guardada",
+                    description: `«${name}» ${viewId ? "se actualizó" : "se guardó"} y está disponible en la barra lateral.`,
                   });
                 }}
                 stages={stages}
@@ -674,44 +819,98 @@ export function OpportunitiesView({
             </PopoverContent>
           </Popover>
 
-          {/* Overflow "..." menu — collects the secondary actions
-              (Ordenar / Importar / Gestionar campos) that used to be
-              inline. Spec 7.5: header keeps only +, Filtros, ⋯, and
-              the grid/list toggle visible. */}
+          {/* The "..." button is now dedicated to the date filter.
+              Flat menu: a header ("Filtrar por fecha"), the six quick
+              presets as a radio group, then "Fecha personalizada" as
+              a sub-menu trigger whose sub-content embeds the shadcn
+              Calendar in range mode. A small dot on the trigger
+              signals when a date filter is currently active. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="shrink-0" title="Más opciones" aria-label="Más opciones">
+              <Button
+                variant="outline"
+                size="icon"
+                className="shrink-0 relative"
+                title="Filtrar por fecha"
+                aria-label="Filtrar por fecha"
+              >
                 <MoreHorizontal className="h-4 w-4" />
+                {dateFilterActive && (
+                  <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-primary" />
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="flex items-center gap-2 font-semibold text-foreground">
+                <Filter className="h-4 w-4" />
+                Filtrar por fecha
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={datePreset}
+                onValueChange={(v) => {
+                  const next = v as "" | DatePresetKey;
+                  setDatePreset(next);
+                  // Switching away from "personalizado" clears the
+                  // calendar pick so it doesn't linger as stale state.
+                  if (next !== "personalizado") setCustomDateRange({});
+                }}
+              >
+                {(
+                  Object.keys(DATE_PRESET_LABELS) as (keyof typeof DATE_PRESET_LABELS)[]
+                ).map((key) => (
+                  <DropdownMenuRadioItem key={key} value={key}>
+                    {DATE_PRESET_LABELS[key]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
-                  Ordenar por
+                <DropdownMenuSubTrigger
+                  onClick={() => setDatePreset("personalizado")}
+                  className={cn(
+                    datePreset === "personalizado" && "bg-accent"
+                  )}
+                >
+                  <CalendarIcon className="h-4 w-4 mr-2" />
+                  Fecha personalizada
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-56">
-                  <DropdownMenuRadioGroup
-                    value={sortKey}
-                    onValueChange={(v) => setSortKey(v as SortKey)}
-                  >
-                    {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                      <DropdownMenuRadioItem key={key} value={key}>
-                        {SORT_LABELS[key]}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
+                <DropdownMenuSubContent className="p-0">
+                  <Calendar
+                    mode="range"
+                    selected={
+                      customDateRange.from
+                        ? {
+                            from: customDateRange.from,
+                            to: customDateRange.to,
+                          }
+                        : undefined
+                    }
+                    onSelect={(r) => {
+                      setCustomDateRange({ from: r?.from, to: r?.to });
+                      // Picking any date should activate the custom
+                      // preset (even if the trigger row wasn't clicked).
+                      setDatePreset("personalizado");
+                    }}
+                    numberOfMonths={1}
+                  />
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleComingSoon}>
-                <Download className="h-4 w-4 mr-2" />
-                Importar
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleComingSoon}>
-                <Settings className="h-4 w-4 mr-2" />
-                Gestionar campos
-              </DropdownMenuItem>
+              {dateFilterActive && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setDatePreset("");
+                      setCustomDateRange({});
+                    }}
+                    className="text-muted-foreground"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Quitar filtro
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
