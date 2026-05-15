@@ -7,6 +7,7 @@ import type {
   AgentUser,
   Conversation,
   FamilyMember,
+  LeadBundle,
   Message,
   Opportunity,
   Pipeline,
@@ -389,6 +390,18 @@ export const api = {
   },
 
   contacts: {
+    // Fetch a single contact by id. Used by the opportunity chat
+    // modal when the local conversations cache doesn't contain a
+    // conversation for the picked opportunity yet — the modal still
+    // wants to render the right-rail contact panel.
+    get: (id: string) => request<User>("GET", `/contacts/${id}`),
+    // Full lead bundle for a contact (contact + most-recent
+    // conversation + messages + tasks). Same shape the WS
+    // `lead.updated` event ships. Used by the opportunity chat
+    // modal to recover the conversation when it's not already in
+    // the SPA's loaded window.
+    getLead: (id: string) =>
+      request<LeadBundle>("GET", `/contacts/${id}/lead`),
     create: (payload: {
       name?: string;
       firstName?: string;

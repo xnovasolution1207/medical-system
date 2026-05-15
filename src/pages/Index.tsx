@@ -285,6 +285,97 @@ export default function Index() {
   const [opportunityChatContactId, setOpportunityChatContactId] = useState<
     string | null
   >(null);
+  // Fallback contact for the opportunity-chat modal when the picked
+  // contact doesn't have a conversation in the local cache yet — e.g.
+  // a brand-new contact created via "Agregar contacto" without any
+  // chat history, or a contact whose conversation isn't in the loaded
+  // 25-conversation window. We lazy-fetch via api.contacts.get and
+  // synthesise a pending-* stub conversation so the modal still
+  // renders the chat shell + contact sidebar.
+  const [opportunityChatFallback, setOpportunityChatFallback] = useState<
+    User | null
+  >(null);
+  const [isLoadingOpportunityChat, setIsLoadingOpportunityChat] =
+    useState(false);
+
+  // ALWAYS re-fetch fresh chat history from GHL whenever the kanban
+  // opportunity-chat modal opens. The previous behaviour (use cached
+  // conversation if available) leaked state from the inbox view:
+  // opening the chat sidebar first hydrated the conversation's full
+  // message list, then clicking the same lead in Opportunities
+  // displayed that hydrated cache — which felt like the modal was
+  // reading from somewhere other than GHL. Now every modal open hits
+  // GHL via getLead and the response *replaces* the cached
+  // conversation entirely. The chat-window's own lazy-hydration is
+  // also reset (hydratedConversations Set) so a subsequent visit
+  // there re-fetches too, keeping both surfaces consistent.
+  useEffect(() => {
+    if (!opportunityChatContactId) {
+      setOpportunityChatFallback(null);
+      setIsLoadingOpportunityChat(false);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingOpportunityChat(true);
+    api.contacts
+      .getLead(opportunityChatContactId)
+      .then((bundle) => {
+        if (cancelled) return;
+        if (bundle.conversation) {
+          updateBootstrap((prev) => {
+            const idx = prev.conversations.findIndex(
+              (c) => c.id === bundle.conversation!.id
+            );
+            if (idx === -1) {
+              return {
+                ...prev,
+                conversations: [bundle.conversation!, ...prev.conversations],
+              };
+            }
+            const next = prev.conversations.slice();
+            // Replace the conversation outright so the modal sees the
+            // fresh GHL data, not whatever stale messages were in the
+            // bootstrap window or the chat-window cache. Preserve a
+            // couple of local-only bits (per-conv stage override,
+            // scheduled messages) that the bundle endpoint doesn't
+            // carry because they're flagsStore-derived.
+            next[idx] = {
+              ...bundle.conversation!,
+              stage: prev.conversations[idx].stage ?? bundle.conversation!.stage,
+              scheduledMessages:
+                prev.conversations[idx].scheduledMessages ??
+                bundle.conversation!.scheduledMessages,
+            };
+            return { ...prev, conversations: next };
+          });
+          // Drop the hydration mark for this conversation so the
+          // inbox-side lazy hydration kicks in fresh too — keeps the
+          // two surfaces showing the same data.
+          hydratedConversations.current.delete(bundle.conversation.id);
+          setOpportunityChatFallback(null);
+        } else {
+          // No conversation in GHL yet — keep the contact so the
+          // modal can show the right rail + an empty chat area.
+          setOpportunityChatFallback(bundle.contact);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[opp-chat] lead fetch failed", err);
+        setOpportunityChatFallback(null);
+        toast({
+          title: "No se pudo cargar el contacto",
+          description: (err as Error)?.message || "Inténtalo de nuevo.",
+          variant: "destructive",
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingOpportunityChat(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [opportunityChatContactId, toast, updateBootstrap]);
   // Advanced filter state (lifted from ChatSidebar so the search/fetch
   // pipeline below can forward translatable conditions to GHL — searches
   // run against the entire location instead of only the loaded window).
@@ -2001,64 +2092,134 @@ export default function Index() {
           if (!open) setOpportunityChatContactId(null);
         }}
       >
-        <DialogContent className="max-w-[1200px] w-[95vw] h-[85vh] p-0 overflow-hidden border-none rounded-xl gap-0 bg-background flex flex-col">
+        <DialogContent className="max-w-[1200px] w-[95vw] h-[85vh] p-0 overflow-hidden border-none rounded-xl gap-0 bg-background flex flex-row">
           <DialogTitle className="sr-only">Conversación de la oportunidad</DialogTitle>
           {(() => {
             if (!opportunityChatContactId) return null;
-            const conv = conversations.find(
+            const realConv = conversations.find(
               (c) =>
                 c.contactId === opportunityChatContactId ||
                 c.participant.id === opportunityChatContactId
             );
-            if (!conv) {
+            // Loading state — fetching the contact for a new
+            // opportunity that doesn't have a conversation cached yet.
+            if (!realConv && isLoadingOpportunityChat) {
               return (
-                <div className="flex-1 flex items-center justify-center p-8 text-sm text-muted-foreground text-center">
-                  Esta oportunidad aún no tiene una conversación.
+                <div className="flex-1 flex items-center justify-center p-8 text-sm text-muted-foreground">
+                  Cargando contacto…
                 </div>
               );
             }
+            // No real conversation AND no fallback contact loaded —
+            // the fetch failed or the contact was deleted. Show the
+            // original message instead of an empty modal.
+            if (!realConv && !opportunityChatFallback) {
+              return (
+                <div className="flex-1 flex items-center justify-center p-8 text-sm text-muted-foreground text-center">
+                  No se pudo cargar la información del contacto.
+                </div>
+              );
+            }
+            // Either a real conversation OR a synthesised stub backed
+            // by the fetched contact. The stub uses the SPA's existing
+            // `pending-${contactId}` convention so the WS lead.updated
+            // handler can later swap it for the real conversation
+            // when (and if) one arrives via webhook.
+            const conv: Conversation =
+              realConv ?? {
+                id: `pending-${opportunityChatContactId}`,
+                contactId: opportunityChatContactId,
+                participant: opportunityChatFallback!,
+                source: "whatsapp",
+                recipientNumber: opportunityChatFallback?.phone ?? "",
+                lastMessage: "",
+                unreadCount: 0,
+                timestamp: "",
+                messages: [],
+              };
             return (
-              <ChatMessageArea
-                key={`opp-${conv.id}`}
-                conversation={conv}
-                currentUser={currentUser}
-                users={users}
-                tasks={tasks}
-                stages={stages}
-                setStages={setStages}
-                onAddTask={handleAddTask}
-                onToggleTask={handleToggleTask}
-                onSendMessage={(text, attachment, channel, mentions, reminder, replyTo) => {
-                  // Temporarily route through the same handler — it expects
-                  // the active conversation, so flip activeId for this send
-                  // only when needed. Simpler: directly send here by mirror-
-                  // ing the existing optimistic path. To keep this batch
-                  // small we delegate by switching activeId, sending, then
-                  // restoring. Acceptable because the modal session is short
-                  // and the sidebar selection is hidden behind the dialog.
-                  const previous = activeId;
-                  setActiveId(conv.id);
-                  handleSendMessage(text, attachment, channel, mentions, reminder, replyTo);
-                  // Restore on next tick so the optimistic insert lands
-                  // against `conv.id` before the active selection swaps back.
-                  setTimeout(() => setActiveId(previous), 0);
-                }}
-                onScheduleMessage={handleScheduleMessage}
-                onCancelScheduledMessage={handleCancelScheduledMessage}
-                onUpdateStage={handleUpdateStage}
-                onClearReminder={handleClearReminder}
-                onSetReminder={handleSetReminder}
-                onToggleFavorite={handleToggleFavorite}
-              onPinMessage={handlePinMessage}
-              onUnpinMessage={handleUnpinMessage}
-                hasOlderMessages={Boolean(conv.messagesHasMore)}
-                isLoadingOlderMessages={loadingOlderFor === conv.id}
-                onLoadOlderMessages={handleLoadOlderMessages}
-                onDeleteLead={() => {
-                  handleDeleteLead(conv.id);
-                  setOpportunityChatContactId(null);
-                }}
-              />
+              <>
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <ChatMessageArea
+                    key={`opp-${conv.id}`}
+                    conversation={conv}
+                    currentUser={currentUser}
+                    users={users}
+                    opportunities={opportunities}
+                    pipelines={pipelines}
+                    tasks={tasks}
+                    stages={stages}
+                    setStages={setStages}
+                    onAddTask={handleAddTask}
+                    onToggleTask={handleToggleTask}
+                    onSendMessage={(text, attachment, channel, mentions, reminder, replyTo) => {
+                      // Temporarily route through the same handler — it
+                      // expects the active conversation, so flip activeId
+                      // for this send only. The optimistic insert lands
+                      // against conv.id; we restore activeId on the next
+                      // tick so the sidebar selection isn't disturbed.
+                      const previous = activeId;
+                      setActiveId(conv.id);
+                      handleSendMessage(text, attachment, channel, mentions, reminder, replyTo);
+                      setTimeout(() => setActiveId(previous), 0);
+                    }}
+                    onScheduleMessage={handleScheduleMessage}
+                    onCancelScheduledMessage={handleCancelScheduledMessage}
+                    onUpdateStage={handleUpdateStage}
+                    onClearReminder={handleClearReminder}
+                    onSetReminder={handleSetReminder}
+                    onToggleFavorite={handleToggleFavorite}
+                    onPinMessage={handlePinMessage}
+                    onUnpinMessage={handleUnpinMessage}
+                    hasOlderMessages={Boolean(conv.messagesHasMore)}
+                    isLoadingOlderMessages={loadingOlderFor === conv.id}
+                    onLoadOlderMessages={handleLoadOlderMessages}
+                    onDeleteLead={() => {
+                      handleDeleteLead(conv.id);
+                      setOpportunityChatContactId(null);
+                    }}
+                  />
+                </div>
+                {/* Right rail — same ContactSidebar instance as the
+                    inbox view (Etiquetas / Información de Contacto /
+                    Asignación / Documentos / Familiares). Wired with
+                    the same handlers so every edit round-trips through
+                    GHL identically to the inbox flow. Hidden below
+                    `lg` to keep the modal usable on smaller laptops;
+                    on small screens the agent works with the chat
+                    panel only and uses the inbox view for contact
+                    edits. */}
+                <div className="hidden lg:flex w-80 xl:w-96 h-full shrink-0 border-l">
+                  <div className="w-full h-full">
+                    <ContactSidebar
+                      contact={conv.participant}
+                      conversation={conv}
+                      onUpdateContactName={(newName) =>
+                        handleUpdateContactName(conv.participant.id, newName)
+                      }
+                      users={users}
+                      availableTags={availableTags}
+                      onUpdateTags={(tags) =>
+                        handleUpdateContactTags(conv.participant.id, tags)
+                      }
+                      opportunity={opportunities.find(
+                        (o) => o.contactId === conv.participant.id
+                      )}
+                      onUpdateOpportunity={handleUpdateOpportunity}
+                      onUpdateAssignedTo={(userId) =>
+                        handleUpdateAssignment(conv.participant.id, {
+                          assignedTo: userId,
+                        })
+                      }
+                      onUpdateFollowers={(ids) =>
+                        handleUpdateAssignment(conv.participant.id, {
+                          followers: ids,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </>
             );
           })()}
         </DialogContent>
