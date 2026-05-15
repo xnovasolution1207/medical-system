@@ -60,7 +60,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { Conversation, Opportunity, Pipeline, Task } from "./types";
+import type {
+  AgentUser,
+  Conversation,
+  FilterCondition,
+  Opportunity,
+  Pipeline,
+  Task,
+} from "./types";
+import { FilterBuilder } from "./FilterBuilder";
 
 interface OpportunitiesViewProps {
   opportunities: Opportunity[];
@@ -75,6 +83,10 @@ interface OpportunitiesViewProps {
   // joins on its linked conversation; pending tasks against that
   // conversation become the small CheckSquare badge.
   tasks?: Task[];
+  // Agent roster for the FilterBuilder's user pickers (Asignado /
+  // Seguidor / Mención). Empty when GHL hasn't returned a roster yet —
+  // FilterBuilder degrades to free-text input in that case.
+  users?: AgentUser[];
   onMoveOpportunity?: (id: string, stageId: string) => void;
   onCreateOpportunity?: (payload: {
     name: string;
@@ -164,6 +176,7 @@ export function OpportunitiesView({
   pipeline,
   conversations,
   tasks,
+  users = [],
   onMoveOpportunity,
   onCreateOpportunity,
   onCreateContact,
@@ -188,10 +201,16 @@ export function OpportunitiesView({
   };
   const clearOppSelection = () => setSelectedOppIds(new Set());
 
-  // Filtros Avanzados
-  const [statusFilters, setStatusFilters] = useState<string[]>([]);
-  const [sourceFilters, setSourceFilters] = useState<string[]>([]);
-  const [stageFilters, setStageFilters] = useState<string[]>([]);
+  // Filtros — rule-based builder. Each condition is `{ field, operator,
+  // value }` and operates against the opportunity's *linked
+  // conversation* (assignee, tags, channel, etc.). Saved-view support
+  // is reused from FilterBuilder but persistence is currently a stub —
+  // the SPA's SavedView store is wired for the conversation list, not
+  // the kanban.
+  const [builderFilters, setBuilderFilters] = useState<FilterCondition[]>([]);
+  const [builderLogic, setBuilderLogic] = useState<"AND" | "OR">("AND");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const activeFilterCount = builderFilters.filter((f) => f.field && f.value).length;
 
   // Ordenar
   const [sortKey, setSortKey] = useState<SortKey>("recientes");
@@ -324,6 +343,113 @@ export function OpportunitiesView({
     return out.sort((a, b) => a.name.localeCompare(b.name));
   }, [conversations]);
 
+  // Evaluate one FilterCondition against an opportunity + its linked
+  // conversation. The fields the builder exposes are all conversation /
+  // contact-level (assignee, tags, channel, last-message direction…) —
+  // so an opportunity without a matching conversation can only ever
+  // match the empty-value case, which we treat as a no-op pass.
+  const evaluateCondition = (
+    cond: FilterCondition,
+    opp: Opportunity,
+    conv: Conversation | undefined,
+    usersByName: Map<string, string>
+  ): boolean => {
+    if (!cond.value) return true;
+    const v = cond.value;
+    const valLower = v.toLowerCase();
+    const isNegated =
+      cond.operator === "no_es" || cond.operator === "no_contiene";
+    const isEquality = cond.operator === "es" || cond.operator === "no_es";
+
+    const resolveUserIds = (raw: string): string[] => {
+      const t = raw.trim();
+      if (!t) return [];
+      const exact = usersByName.get(t.toLowerCase());
+      if (exact) return [exact];
+      return [t];
+    };
+
+    let match = false;
+    switch (cond.field) {
+      case "asignado": {
+        const candidates = resolveUserIds(v);
+        const a = conv?.participant.assignedTo;
+        if (!a) match = false;
+        else if (isEquality) match = candidates.includes(a);
+        else
+          match = candidates.some((c) =>
+            a.toLowerCase().includes(c.toLowerCase())
+          );
+        break;
+      }
+      case "seguidor": {
+        const candidates = resolveUserIds(v);
+        const followers = conv?.participant.followers ?? [];
+        if (followers.length === 0) match = false;
+        else if (isEquality)
+          match = candidates.some((c) => followers.includes(c));
+        else
+          match = candidates.some((c) =>
+            followers.some((f) => f.toLowerCase().includes(c.toLowerCase()))
+          );
+        break;
+      }
+      case "mencion": {
+        const candidates = resolveUserIds(v);
+        const mentioned = (conv?.messages ?? []).flatMap(
+          (m) => m.mentions ?? []
+        );
+        if (mentioned.length === 0) match = false;
+        else if (isEquality)
+          match = candidates.some((c) => mentioned.includes(c));
+        else
+          match = candidates.some((c) =>
+            mentioned.some((m) => m.toLowerCase().includes(c.toLowerCase()))
+          );
+        break;
+      }
+      case "direccion_ultimo_mensaje":
+        match = conv?.lastMessageDirection === valLower;
+        break;
+      case "tipo_ultimo_mensaje_saliente":
+        match =
+          conv?.lastMessageDirection === "outbound" && conv?.source === valLower;
+        break;
+      case "canal_ultimo_mensaje":
+        match = conv?.source === valLower;
+        break;
+      case "etiqueta": {
+        const tags = conv?.participant.tags ?? [];
+        if (isEquality)
+          match = tags.some((t) => t.toLowerCase() === valLower);
+        else match = tags.some((t) => t.toLowerCase().includes(valLower));
+        break;
+      }
+      case "embudo_actual": {
+        // For an opportunity, "embudo actual" reads the kanban stage
+        // directly off the opportunity rather than off the conversation's
+        // synthetic `stage` field — opp.stageId is authoritative here.
+        const stageId = (opp.stageId ?? "").toLowerCase();
+        if (isEquality) match = stageId === valLower;
+        else match = stageId.includes(valLower);
+        break;
+      }
+      case "ans": {
+        const hours = Number(v);
+        if (!Number.isFinite(hours) || !conv?.lastMessageAt) {
+          match = true;
+          break;
+        }
+        const ageMs = Date.now() - Date.parse(conv.lastMessageAt);
+        match = ageMs >= hours * 60 * 60 * 1000;
+        break;
+      }
+      default:
+        match = true;
+    }
+    return isNegated ? !match : match;
+  };
+
   // Filter + sort chain. Search + advanced filters narrow first; sort runs on
   // the result. `Opportunity.date` is a localized display string (e.g.
   // "28 abr 2026") — lexical compare is good-enough for v1 ordering; if it
@@ -331,9 +457,24 @@ export function OpportunitiesView({
   const filteredOpps = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     let list = opportunities.filter((o) => o.name.toLowerCase().includes(q));
-    if (statusFilters.length) list = list.filter((o) => statusFilters.includes(o.status));
-    if (sourceFilters.length) list = list.filter((o) => sourceFilters.includes(o.source));
-    if (stageFilters.length) list = list.filter((o) => stageFilters.includes(o.stageId));
+
+    const activeConds = builderFilters.filter(
+      (c) => c.field && c.value !== undefined && c.value !== ""
+    );
+    if (activeConds.length > 0) {
+      const usersByName = new Map(
+        users.map((u) => [u.name.toLowerCase(), u.id])
+      );
+      list = list.filter((opp) => {
+        const conv = convByContactId.get(opp.contactId);
+        const passes = activeConds.map((c) =>
+          evaluateCondition(c, opp, conv, usersByName)
+        );
+        return builderLogic === "AND"
+          ? passes.every(Boolean)
+          : passes.some(Boolean);
+      });
+    }
 
     const sorted = [...list];
     switch (sortKey) {
@@ -358,10 +499,12 @@ export function OpportunitiesView({
         break;
     }
     return sorted;
-  }, [opportunities, searchQuery, statusFilters, sourceFilters, stageFilters, sortKey]);
-
-  const activeFilterCount =
-    statusFilters.length + sourceFilters.length + stageFilters.length;
+    // `convByContactId` is excluded from deps because it's a useMemo
+    // derived from `conversations` already in deps — Adding it would
+    // re-trigger on every conversations identity flip even when the
+    // join keys haven't changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opportunities, searchQuery, builderFilters, builderLogic, sortKey, users, conversations]);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedOppId(id);
@@ -379,19 +522,9 @@ export function OpportunitiesView({
     }
   };
 
-  const toggleFilter = (
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
-    value: string
-  ) => {
-    setter((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-    );
-  };
-
   const clearFilters = () => {
-    setStatusFilters([]);
-    setSourceFilters([]);
-    setStageFilters([]);
+    setBuilderFilters([]);
+    setBuilderLogic("AND");
   };
 
   const handleComingSoon = () => {
@@ -498,9 +631,11 @@ export function OpportunitiesView({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Filtros avanzados — icon-only. Badge with active count
-              sits on the icon when at least one filter is on. */}
-          <Popover>
+          {/* Filtros — rule-based builder. Icon-only with a small badge
+              showing the count of conditions that have both a field and
+              a value (an "empty" condition row doesn't count toward the
+              total because it has no effect on the filtered list). */}
+          <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="icon" className="shrink-0 relative" title="Filtros" aria-label="Filtros">
                 <Filter className="h-4 w-4" />
@@ -511,82 +646,31 @@ export function OpportunitiesView({
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 p-0">
-              <div className="max-h-[60vh] overflow-y-auto p-3 space-y-4">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Estado
-                  </p>
-                  {(Object.keys(STATUS_LABELS) as Opportunity["status"][]).map((s) => (
-                    <label
-                      key={s}
-                      className="flex items-center gap-2 text-sm cursor-pointer select-none"
-                    >
-                      <Checkbox
-                        checked={statusFilters.includes(s)}
-                        onCheckedChange={() => toggleFilter(setStatusFilters, s)}
-                      />
-                      <span>{STATUS_LABELS[s]}</span>
-                    </label>
-                  ))}
-                </div>
-
-                {availableSources.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Origen
-                    </p>
-                    {availableSources.map((src) => (
-                      <label
-                        key={src}
-                        className="flex items-center gap-2 text-sm cursor-pointer select-none"
-                      >
-                        <Checkbox
-                          checked={sourceFilters.includes(src)}
-                          onCheckedChange={() => toggleFilter(setSourceFilters, src)}
-                        />
-                        <span className="truncate">{src}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {stages.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Etapa
-                    </p>
-                    {stages.map((s) => (
-                      <label
-                        key={s.id}
-                        className="flex items-center gap-2 text-sm cursor-pointer select-none"
-                      >
-                        <Checkbox
-                          checked={stageFilters.includes(s.id)}
-                          onCheckedChange={() => toggleFilter(setStageFilters, s.id)}
-                        />
-                        <span className="truncate">{s.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="border-t p-2 flex justify-between items-center bg-muted/30">
-                <span className="text-xs text-muted-foreground">
-                  {activeFilterCount === 0
-                    ? "Sin filtros activos"
-                    : `${activeFilterCount} filtro${activeFilterCount === 1 ? "" : "s"} activo${activeFilterCount === 1 ? "" : "s"}`}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={clearFilters}
-                  disabled={activeFilterCount === 0}
-                >
-                  Limpiar
-                </Button>
-              </div>
+            <PopoverContent align="end" className="p-0 w-auto border-0 bg-transparent shadow-none">
+              <FilterBuilder
+                filters={builderFilters}
+                logic={builderLogic}
+                onFiltersChange={setBuilderFilters}
+                onLogicChange={setBuilderLogic}
+                onClose={() => setIsFilterOpen(false)}
+                onClear={clearFilters}
+                // Saved-views in the kanban aren't wired into the
+                // memoryStore SavedView slot — that store powers the
+                // conversation-list sidebar. Stub with a toast until
+                // a kanban-specific view store exists. The button is
+                // still visible (matches the spec screenshot) but
+                // surfaces a clear "próximamente" instead of silently
+                // doing nothing.
+                onSaveView={() => {
+                  toast({
+                    title: "Próximamente",
+                    description:
+                      "Guardar como vista estará disponible para el tablero pronto.",
+                  });
+                }}
+                stages={stages}
+                users={users}
+              />
             </PopoverContent>
           </Popover>
 

@@ -1853,6 +1853,7 @@ export default function Index() {
             pipeline={opportunitiesPipeline}
             conversations={conversations}
             tasks={tasks}
+            users={users}
             onMoveOpportunity={handleMoveOpportunity}
             onCreateOpportunity={handleCreateOpportunity}
             onCreateContact={handleCreateContact}
