@@ -255,6 +255,18 @@ export default function Index() {
   const users = data?.users ?? [];
   const availableTags = data?.tags ?? [];
   const currentUser = data?.currentUser ?? FALLBACK_USER;
+  // Resolve the logged-in agent's real GHL user id by matching their
+  // display name against the agent roster. `currentUser.id` is the
+  // sentinel "agent" string (used for message-dedup) so it can't be
+  // compared directly against `participant.assignedTo`. Falls back to
+  // undefined when the roster hasn't loaded yet or the agent isn't
+  // in it — "Asignados a mí" / "Seguidos por mí" then show empty
+  // lists rather than the whole inbox.
+  const myUserId = useMemo(() => {
+    if (!currentUser?.name) return undefined;
+    const lower = currentUser.name.toLowerCase();
+    return users.find((u) => u.name.toLowerCase() === lower)?.id;
+  }, [currentUser?.name, users]);
   const conversationsNextCursor = data?.conversationsNextCursor ?? null;
 
   // Local UI state — not part of the bootstrap payload because it's purely
@@ -436,6 +448,16 @@ export default function Index() {
   // (lastMessageDate epoch ms). null = no further pages, undefined = not
   // yet fetched.
   const [unreadNextCursor, setUnreadNextCursor] = useState<number | null>(null);
+  // GHL-wide results for the "Asignados a mí" / "Seguidos por mí"
+  // sidebar tabs. The bootstrap only carries the 25 most-recent
+  // conversations across the whole inbox, so client-side filtering
+  // would miss leads assigned to / followed by the agent that sit
+  // outside that window. These pull straight from GHL's search via
+  // the existing assignedTo / followers query params.
+  const [assignedResults, setAssignedResults] = useState<Conversation[] | null>(null);
+  const [assignedNextCursor, setAssignedNextCursor] = useState<number | null>(null);
+  const [followedResults, setFollowedResults] = useState<Conversation[] | null>(null);
+  const [followedNextCursor, setFollowedNextCursor] = useState<number | null>(null);
   const [searchNextCursor, setSearchNextCursor] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -924,11 +946,92 @@ export default function Index() {
       cancelled = true;
     };
   }, [unreadFilterActive, totalUnread]);
+
+  // Active-tab booleans for the assignedTo / followers sidebar tabs.
+  // Derived locally so the fetch effects below only re-run on real
+  // tab toggles, not on every render.
+  const assignedFilterActive = activeMainTab === "asignados";
+  const followedFilterActive = activeMainTab === "seguidos";
+
+  // Server-side fetch for "Asignados a mí". Hits GHL's native
+  // assignedTo search, returning every conversation in the location
+  // whose contact is assigned to the logged-in agent — not just the
+  // 25 bootstrap-loaded ones. Re-runs on `lead.updated` (via
+  // `totalUnread`) so a newly-assigned lead surfaces without a page
+  // refresh.
+  useEffect(() => {
+    if (!assignedFilterActive || !myUserId) {
+      setAssignedResults(assignedFilterActive ? [] : null);
+      setAssignedNextCursor(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await api.conversations.list({
+          assignedTo: myUserId,
+          limit: 25,
+        });
+        if (!cancelled) {
+          setAssignedResults(result.conversations);
+          setAssignedNextCursor(result.nextCursor);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[asignados] fetch failed", err);
+          setAssignedResults([]);
+          setAssignedNextCursor(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [assignedFilterActive, myUserId, totalUnread]);
+
+  // Server-side fetch for "Seguidos por mí". Followers are local-only
+  // (Prisma followersStore), but the backend route translates the
+  // followers= query param into a fan-out of per-contact conversation
+  // fetches, so a single SPA call still hits the whole tenant.
+  useEffect(() => {
+    if (!followedFilterActive || !myUserId) {
+      setFollowedResults(followedFilterActive ? [] : null);
+      setFollowedNextCursor(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await api.conversations.list({
+          followers: myUserId,
+          limit: 25,
+        });
+        if (!cancelled) {
+          setFollowedResults(result.conversations);
+          setFollowedNextCursor(result.nextCursor);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[seguidos] fetch failed", err);
+          setFollowedResults([]);
+          setFollowedNextCursor(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [followedFilterActive, myUserId, totalUnread]);
+
   const displayConversations = unreadFilterActive
     ? unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0)
-    : isSearchActive
-      ? searchResults ?? []
-      : conversations;
+    : assignedFilterActive
+      ? assignedResults ?? []
+      : followedFilterActive
+        ? followedResults ?? []
+        : isSearchActive
+          ? searchResults ?? []
+          : conversations;
   const activeConversation = conversations.find((c) => c.id === activeId);
 
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
@@ -1222,14 +1325,20 @@ export default function Index() {
   const handleLoadMoreConversations = useCallback(async () => {
     const q = searchQuery.trim();
     // Mode precedence matches displayConversations:
-    //   1. unread tab  → page through status=unread results
-    //   2. search/filter → page through searchResults
-    //   3. default     → page through the bootstrap list
+    //   1. unread tab          → page through status=unread results
+    //   2. asignados tab       → page through assignedTo= results
+    //   3. seguidos tab        → page through followers= results
+    //   4. search/filter       → page through searchResults
+    //   5. default             → page through the bootstrap list
     const cursor = unreadFilterActive
       ? unreadNextCursor
-      : q
-        ? searchNextCursor
-        : conversationsNextCursor;
+      : assignedFilterActive
+        ? assignedNextCursor
+        : followedFilterActive
+          ? followedNextCursor
+          : q
+            ? searchNextCursor
+            : conversationsNextCursor;
     if (!cursor || isLoadingMoreConversationsRef.current) return;
     isLoadingMoreConversationsRef.current = true;
     setIsLoadingMoreConversations(true);
@@ -1237,8 +1346,13 @@ export default function Index() {
       const result = await api.conversations.list({
         limit: 25,
         startAfterDate: cursor,
-        query: unreadFilterActive ? undefined : q || undefined,
+        query:
+          unreadFilterActive || assignedFilterActive || followedFilterActive
+            ? undefined
+            : q || undefined,
         status: unreadFilterActive ? "unread" : undefined,
+        assignedTo: assignedFilterActive ? myUserId : undefined,
+        followers: followedFilterActive ? myUserId : undefined,
       });
       if (unreadFilterActive) {
         setUnreadResults((prev) => {
@@ -1248,6 +1362,22 @@ export default function Index() {
           return fresh.length ? [...base, ...fresh] : base;
         });
         setUnreadNextCursor(result.nextCursor);
+      } else if (assignedFilterActive) {
+        setAssignedResults((prev) => {
+          const base = prev ?? [];
+          const existingIds = new Set(base.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return fresh.length ? [...base, ...fresh] : base;
+        });
+        setAssignedNextCursor(result.nextCursor);
+      } else if (followedFilterActive) {
+        setFollowedResults((prev) => {
+          const base = prev ?? [];
+          const existingIds = new Set(base.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return fresh.length ? [...base, ...fresh] : base;
+        });
+        setFollowedNextCursor(result.nextCursor);
       } else if (q) {
         setSearchResults((prev) => {
           const base = prev ?? [];
@@ -1279,6 +1409,11 @@ export default function Index() {
     searchQuery,
     unreadFilterActive,
     unreadNextCursor,
+    assignedFilterActive,
+    assignedNextCursor,
+    followedFilterActive,
+    followedNextCursor,
+    myUserId,
     updateBootstrap,
   ]);
 
@@ -1830,6 +1965,7 @@ export default function Index() {
             <ChatSidebar
               totalUnread={totalUnread}
               onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
+              myUserId={myUserId}
               conversations={displayConversations}
               tasks={tasks}
               activeConversationId={activeId || ""}
@@ -1844,9 +1980,13 @@ export default function Index() {
               hasMore={
                 (unreadFilterActive
                   ? unreadNextCursor
-                  : isSearchActive
-                    ? searchNextCursor
-                    : conversationsNextCursor) !== null
+                  : assignedFilterActive
+                    ? assignedNextCursor
+                    : followedFilterActive
+                      ? followedNextCursor
+                      : isSearchActive
+                        ? searchNextCursor
+                        : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
               searchValue={searchQuery}
@@ -1893,6 +2033,7 @@ export default function Index() {
             <ChatSidebar
               totalUnread={totalUnread}
               onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
+              myUserId={myUserId}
               conversations={displayConversations}
               tasks={tasks}
               activeConversationId={activeId || ""}
@@ -1907,9 +2048,13 @@ export default function Index() {
               hasMore={
                 (unreadFilterActive
                   ? unreadNextCursor
-                  : isSearchActive
-                    ? searchNextCursor
-                    : conversationsNextCursor) !== null
+                  : assignedFilterActive
+                    ? assignedNextCursor
+                    : followedFilterActive
+                      ? followedNextCursor
+                      : isSearchActive
+                        ? searchNextCursor
+                        : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
               searchValue={searchQuery}

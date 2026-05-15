@@ -104,6 +104,13 @@ interface ChatSidebarProps {
   // refetch from GHL with `status=unread` so the unread tab shows every
   // unread lead, not just those in the locally-loaded page.
   onFilterChange?: (filter: "all" | "unread" | "recent" | "favorites") => void;
+  // Logged-in agent's GHL user id, used by the "Asignados a mí" /
+  // "Seguidos por mí" sidebar tabs to narrow the list to conversations
+  // assigned to / followed by the current user. Index.tsx derives this
+  // by matching `currentUser.name` against the agent roster — empty
+  // string when no roster is loaded (so those tabs degrade to "show
+  // nothing" rather than show everything).
+  myUserId?: string;
 }
 
 export function ChatSidebar({
@@ -123,6 +130,7 @@ export function ChatSidebar({
   searchValue,
   onSearchChange,
   isSearching = false,
+  myUserId,
   onDeleteConversation,
   onOpenMobileNav,
   onCreateContact,
@@ -405,6 +413,14 @@ export function ChatSidebar({
     if (activeTab === "recordatorios" && !conv.activeReminder) {
       return false;
     }
+    // "Asignados a mí" and "Seguidos por mí" are pre-filtered
+    // server-side by Index.tsx (it fires api.conversations.list with
+    // assignedTo / followers params). The `conversations` prop we
+    // receive in those modes is already the correct subset, so we
+    // don't re-filter here — doing so would silently drop everything
+    // because the conversation-list response shape doesn't carry
+    // participant.assignedTo / participant.followers (only the lead-
+    // bundle endpoint does).
 
     // Name matching is handled server-side against the full GHL contact set —
     // don't re-filter here, or conversations whose match is on phone/email/
