@@ -401,10 +401,11 @@ export function ContactSidebar({
   // query changes so the first match is always preselected after typing.
   const [tagSuggestionIdx, setTagSuggestionIdx] = useState(0);
 
-  // Filter the location tag library by what the user has typed (case- and
-  // accent-insensitive). Exclude tags already on the contact so the
-  // dropdown only suggests things that would actually do something.
-  const tagSuggestions = React.useMemo<TagSummary[]>(() => {
+  // Full list of matching GHL location tags (unbounded). The dropdown
+  // pages through this with infinite scroll — the rendered slice grows
+  // as the user nears the bottom of the popup. Sorted alphabetically so
+  // the order is stable as new chunks come into view.
+  const tagSuggestionsAll = React.useMemo<TagSummary[]>(() => {
     const norm = (s: string) =>
       s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
     const onContact = new Set(tags.map((t) => norm(t)));
@@ -414,9 +415,34 @@ export function ContactSidebar({
       if (!q) return true;
       return norm(t.name).includes(q);
     });
-    // Cap so the popup stays compact — typing always narrows further.
-    return filtered.slice(0, 8);
+    return [...filtered].sort((a, b) =>
+      norm(a.name).localeCompare(norm(b.name))
+    );
   }, [availableTags, tags, newTag]);
+
+  // Infinite-scroll window. Grows by TAG_PAGE_SIZE each time the user
+  // scrolls within ~24px of the bottom of the suggestions container.
+  const TAG_PAGE_SIZE = 30;
+  const [tagPageLimit, setTagPageLimit] = useState(TAG_PAGE_SIZE);
+  // Reset the visible window whenever the underlying list changes
+  // (filter typed, tag added/removed) so we always start at the top.
+  useEffect(() => {
+    setTagPageLimit(TAG_PAGE_SIZE);
+  }, [newTag, tagSuggestionsAll.length]);
+  const tagSuggestions = React.useMemo<TagSummary[]>(
+    () => tagSuggestionsAll.slice(0, tagPageLimit),
+    [tagSuggestionsAll, tagPageLimit]
+  );
+  const handleTagListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 24) {
+      setTagPageLimit((prev) =>
+        prev < tagSuggestionsAll.length
+          ? Math.min(prev + TAG_PAGE_SIZE, tagSuggestionsAll.length)
+          : prev
+      );
+    }
+  };
 
   // Whether the typed text would create a brand-new tag (no exact case-
   // insensitive match in either the contact's tags or the location
@@ -650,7 +676,10 @@ export function ContactSidebar({
                         <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                           Sugerencias
                         </div>
-                        <div className="max-h-[220px] overflow-y-auto pb-1">
+                        <div
+                          className="max-h-[220px] overflow-y-auto pb-1"
+                          onScroll={handleTagListScroll}
+                        >
                           {tagSuggestions.map((s, idx) => {
                             const isActive = idx === tagSuggestionIdx;
                             return (
