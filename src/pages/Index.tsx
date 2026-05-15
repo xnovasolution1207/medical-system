@@ -207,22 +207,6 @@ export default function Index() {
     retry: 1,
   });
 
-  // GHL-wide unread-conversation count for the "No leídos" sidebar badge.
-  // Refetched whenever a `lead.updated` WS event lands (see the WS effect
-  // below) so the badge stays in sync with inbound traffic, even for
-  // conversations the SPA hasn't lazy-hydrated yet.
-  const { data: unreadCountData } = useQuery<{ total: number }>({
-    queryKey: UNREAD_COUNT_QUERY_KEY,
-    queryFn: () => api.conversations.unreadCount(),
-    // Inexpensive (limit=1 against GHL); still cached so React Query
-    // dedupes parallel mounts. WS-driven invalidation does the rest.
-    staleTime: 60_000,
-    gcTime: Infinity,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-  const totalUnread = unreadCountData?.total ?? 0;
-
   // Strongly-typed setter helper. No-ops when the cache is empty (still loading).
   const updateBootstrap = useCallback(
     (mutator: (prev: BootstrapPayload) => BootstrapPayload) => {
@@ -276,6 +260,53 @@ export default function Index() {
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [activeMainTab, setActiveMainTab] = useState("todos");
   const [taskUserFilters, setTaskUserFilters] = useState<string[]>([]);
+
+  // Unread-conversation count for the "No leídos" sidebar badge —
+  // scoped to the currently-active sidebar tab. On "Todos" /
+  // "Recordatorios" / "Oportunidades" we ask for the whole GHL
+  // location; on "Asignados a mí" we narrow by assignedTo; on
+  // "Seguidos por mí" we narrow by followers. The query key includes
+  // the scope so each variant caches separately; WS-driven
+  // invalidation walks the prefix and refetches whatever's active.
+  // myUserId can be undefined while the agent roster loads — falls
+  // back to the global count in that case.
+  //
+  // Placed AFTER `activeMainTab` is declared (the hook reads it) so
+  // we don't hit a temporal-dead-zone error on initial render.
+  type UnreadScope =
+    | { kind: "global" }
+    | { kind: "assignedTo"; userId: string }
+    | { kind: "followers"; userId: string };
+  const unreadScope: UnreadScope = useMemo(() => {
+    if (activeMainTab === "asignados" && myUserId)
+      return { kind: "assignedTo", userId: myUserId };
+    if (activeMainTab === "seguidos" && myUserId)
+      return { kind: "followers", userId: myUserId };
+    return { kind: "global" };
+  }, [activeMainTab, myUserId]);
+  const { data: unreadCountData } = useQuery<{ total: number }>({
+    queryKey: [
+      ...UNREAD_COUNT_QUERY_KEY,
+      unreadScope.kind,
+      unreadScope.kind === "global" ? null : unreadScope.userId,
+    ],
+    queryFn: () => {
+      if (unreadScope.kind === "assignedTo")
+        return api.conversations.unreadCount({ assignedTo: unreadScope.userId });
+      if (unreadScope.kind === "followers")
+        return api.conversations.unreadCount({ followers: unreadScope.userId });
+      return api.conversations.unreadCount();
+    },
+    // Inexpensive (limit=1 against GHL for the global / assignedTo
+    // variants; capped per-contact fan-out for followers). Cached so
+    // React Query dedupes parallel mounts. WS-driven invalidation
+    // refreshes whatever scope is currently active.
+    staleTime: 60_000,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+  const totalUnread = unreadCountData?.total ?? 0;
   // Default the contact sidebar open only on screens wide enough to host
   // every column comfortably. Below 2xl (1536px) the four-region shell would
   // squeeze the message area and cause the chat header buttons to spill into
@@ -913,10 +944,18 @@ export default function Index() {
   // implementation suffered from.
   const isSearchActive =
     searchQuery.trim().length > 0 || advancedFilterServerInfo.hasServerParam;
+  // Active-tab booleans for the assignedTo / followers sidebar tabs.
+  // Derived locally so the fetch effects below only re-run on real
+  // tab toggles, not on every render.
+  const assignedFilterActive = activeMainTab === "asignados";
+  const followedFilterActive = activeMainTab === "seguidos";
+
   // Fetch the first GHL-wide unread page whenever the No leídos tab
-  // activates. Subsequent pages are loaded by `handleLoadMoreConversations`
-  // when the user scrolls. Re-runs on `lead.updated` (via `totalUnread`
-  // in the deps) so the list stays current with new inbound traffic.
+  // activates. Combined with the active sidebar tab — clicking
+  // "No leídos" while on "Asignados a mí" fetches with both
+  // assignedTo and status=unread so the list narrows to "unread AND
+  // assigned to me". Re-runs on `lead.updated` (via `totalUnread`)
+  // and on tab toggles so it stays current.
   useEffect(() => {
     if (!unreadFilterActive) {
       setUnreadResults(null);
@@ -928,6 +967,8 @@ export default function Index() {
       try {
         const result = await api.conversations.list({
           status: "unread",
+          assignedTo: assignedFilterActive ? myUserId : undefined,
+          followers: followedFilterActive ? myUserId : undefined,
           limit: 25,
         });
         if (!cancelled) {
@@ -945,13 +986,13 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
-  }, [unreadFilterActive, totalUnread]);
-
-  // Active-tab booleans for the assignedTo / followers sidebar tabs.
-  // Derived locally so the fetch effects below only re-run on real
-  // tab toggles, not on every render.
-  const assignedFilterActive = activeMainTab === "asignados";
-  const followedFilterActive = activeMainTab === "seguidos";
+  }, [
+    unreadFilterActive,
+    assignedFilterActive,
+    followedFilterActive,
+    myUserId,
+    totalUnread,
+  ]);
 
   // Server-side fetch for "Asignados a mí". Hits GHL's native
   // assignedTo search, returning every conversation in the location
@@ -1351,8 +1392,17 @@ export default function Index() {
             ? undefined
             : q || undefined,
         status: unreadFilterActive ? "unread" : undefined,
-        assignedTo: assignedFilterActive ? myUserId : undefined,
-        followers: followedFilterActive ? myUserId : undefined,
+        // When the unread tab is active *while* a scope tab is also
+        // active, fold both filters into the page request so the next
+        // page matches the same combined criteria.
+        assignedTo:
+          assignedFilterActive || (unreadFilterActive && activeMainTab === "asignados")
+            ? myUserId
+            : undefined,
+        followers:
+          followedFilterActive || (unreadFilterActive && activeMainTab === "seguidos")
+            ? myUserId
+            : undefined,
       });
       if (unreadFilterActive) {
         setUnreadResults((prev) => {
@@ -1413,6 +1463,7 @@ export default function Index() {
     assignedNextCursor,
     followedFilterActive,
     followedNextCursor,
+    activeMainTab,
     myUserId,
     updateBootstrap,
   ]);

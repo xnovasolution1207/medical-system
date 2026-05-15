@@ -283,8 +283,18 @@ export const api = {
     // Total unread-conversation count across the whole GHL location.
     // Drives the "No leídos" sidebar badge so the number reflects every
     // unread lead in the tenant, not just the locally-loaded page.
-    unreadCount: () =>
-      request<{ total: number }>("GET", "/conversations/unread-count"),
+    // Optional scopes: `assignedTo` narrows to a single agent's leads,
+    // `followers` narrows to leads in that agent's followersStore.
+    unreadCount: (params?: { assignedTo?: string; followers?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.assignedTo) qs.set("assignedTo", params.assignedTo);
+      if (params?.followers) qs.set("followers", params.followers);
+      const query = qs.toString();
+      return request<{ total: number }>(
+        "GET",
+        `/conversations/unread-count${query ? `?${query}` : ""}`
+      );
+    },
     messages: (id: string, params?: { lastMessageId?: string; limit?: number }) => {
       const qs = new URLSearchParams();
       if (params?.lastMessageId) qs.set("lastMessageId", params.lastMessageId);
