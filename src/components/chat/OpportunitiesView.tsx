@@ -18,6 +18,10 @@ import {
   Bell,
   Clock,
   MessageSquare,
+  Bot,
+  UserPlus,
+  X,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +59,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { Conversation, Opportunity, Pipeline, Task } from "./types";
 
 interface OpportunitiesViewProps {
@@ -78,6 +83,14 @@ interface OpportunitiesViewProps {
     stageId: string;
     monetaryValue?: number;
   }) => void | Promise<void>;
+  // Create a brand-new GHL contact from the "Agregar contacto" modal in
+  // the simplified header. Returns the created contact's id so the
+  // modal can chain follow-ups (family-member links, opportunity).
+  onCreateContact?: (payload: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  }) => Promise<{ id: string } | null> | { id: string } | null;
   onOpenMobileNav?: () => void;
   // Open the contact's chat in a modal without leaving the kanban. Index.tsx
   // mounts a Dialog containing ChatMessageArea + ContactSidebar when this
@@ -153,6 +166,7 @@ export function OpportunitiesView({
   tasks,
   onMoveOpportunity,
   onCreateOpportunity,
+  onCreateContact,
   onOpenMobileNav,
   onOpenChat,
   onBulkDeleteOpportunities,
@@ -189,6 +203,70 @@ export function OpportunitiesView({
   const [newOppStageId, setNewOppStageId] = useState("");
   const [newOppValue, setNewOppValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // "Nueva conversación" picker — two cards (Contacto / Bot). When the
+  // agent chooses Contacto we drop into a contact-picker view inside the
+  // same modal; the Bot option is stubbed (the bot designer isn't built
+  // yet).
+  const [isNuevaConvOpen, setIsNuevaConvOpen] = useState(false);
+  const [nuevaConvStep, setNuevaConvStep] = useState<"pick" | "contact">("pick");
+  const [nuevaConvContactId, setNuevaConvContactId] = useState("");
+
+  // "Agregar contacto" modal — the comprehensive form. We persist what
+  // GHL accepts via createContact (name/phone/email), wire the family
+  // links via api.contacts.addFamily after create, and chain an
+  // opportunity create when the agent picks a stage. Address / birthdate
+  // / document are collected on the form for parity with the design,
+  // but they need backend custom-field plumbing before they persist —
+  // captured as TODO so a future pass can light them up.
+  const [isAgregarContactoOpen, setIsAgregarContactoOpen] = useState(false);
+  const [newContactName, setNewContactName] = useState("");
+  const [newContactPhone, setNewContactPhone] = useState("");
+  const [newContactEmail, setNewContactEmail] = useState("");
+  const [newContactAddress, setNewContactAddress] = useState("");
+  const [newContactBirthdate, setNewContactBirthdate] = useState("");
+  const [newContactDocType, setNewContactDocType] = useState<string>("CC");
+  const [newContactDocNumber, setNewContactDocNumber] = useState("");
+  const [newContactStageId, setNewContactStageId] = useState("");
+  type DraftFamily = {
+    name: string;
+    phone: string;
+    relationship: "hijo" | "padre" | "esposo" | "hermano" | "otro";
+  };
+  const [newContactFamily, setNewContactFamily] = useState<DraftFamily[]>([]);
+  const [familyDraftName, setFamilyDraftName] = useState("");
+  const [familyDraftPhone, setFamilyDraftPhone] = useState("");
+  const [familyDraftRel, setFamilyDraftRel] = useState<DraftFamily["relationship"] | "">("");
+  const [showFamilyDraft, setShowFamilyDraft] = useState(false);
+  const [isSubmittingContact, setIsSubmittingContact] = useState(false);
+
+  const resetAgregarContacto = () => {
+    setNewContactName("");
+    setNewContactPhone("");
+    setNewContactEmail("");
+    setNewContactAddress("");
+    setNewContactBirthdate("");
+    setNewContactDocType("CC");
+    setNewContactDocNumber("");
+    setNewContactStageId("");
+    setNewContactFamily([]);
+    setFamilyDraftName("");
+    setFamilyDraftPhone("");
+    setFamilyDraftRel("");
+    setShowFamilyDraft(false);
+    setIsSubmittingContact(false);
+  };
+
+  // Spanish labels for the family relationship Select inside the form —
+  // mirror the keys used by ContactSidebar.tsx so the wire side stays
+  // consistent (the same `relationship` enum the backend persists).
+  const FAMILY_REL_LABELS: Record<DraftFamily["relationship"], string> = {
+    hijo: "Hijo(a)",
+    padre: "Padre/Madre",
+    esposo: "Esposo(a)",
+    hermano: "Hermano(a)",
+    otro: "Otro",
+  };
 
   const stages = pipeline?.stages ?? [];
   const stageLookup = useMemo(
@@ -381,28 +459,44 @@ export function OpportunitiesView({
             />
           </div>
 
-          {/* Crear oportunidad — primary action, icon-only per the
-              simplified header (spec 7.5). The full title lives in the
-              dialog that opens. */}
-          <Button
-            size="icon"
-            className="shrink-0"
-            title="Crear oportunidad"
-            aria-label="Crear oportunidad"
-            onClick={() => {
-              if (!pipeline) {
-                toast({
-                  title: "No hay pipeline disponible",
-                  description: "No se encontró un pipeline en GoHighLevel.",
-                  variant: "destructive",
-                });
-                return;
-              }
-              setIsCreateOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          {/* "+" trigger — splits into two flows per the spec:
+              • Nueva conversación → contact/bot picker, then opens an
+                existing chat or stubs the bot designer.
+              • Agregar contacto → comprehensive contact-create form
+                with optional opportunity stage and family links. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                className="shrink-0"
+                title="Nuevo"
+                aria-label="Nuevo"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem
+                onClick={() => {
+                  setNuevaConvStep("pick");
+                  setNuevaConvContactId("");
+                  setIsNuevaConvOpen(true);
+                }}
+              >
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Nueva conversación
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  resetAgregarContacto();
+                  setIsAgregarContactoOpen(true);
+                }}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Agregar contacto
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Filtros avanzados — icon-only. Badge with active count
               sits on the icon when at least one filter is on. */}
@@ -1005,6 +1099,463 @@ export function OpportunitiesView({
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Nueva conversación — picker between Contacto and Bot. The
+          Bot variant is a stub (the bot designer isn't wired yet); the
+          Contacto variant drops into a small contact-picker inside the
+          same modal and then calls onOpenChat to surface the chat
+          modal Index.tsx already mounts for the kanban. */}
+      <Dialog
+        open={isNuevaConvOpen}
+        onOpenChange={(open) => {
+          setIsNuevaConvOpen(open);
+          if (!open) {
+            setNuevaConvStep("pick");
+            setNuevaConvContactId("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[640px] rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl font-semibold">
+              Nueva conversación
+            </DialogTitle>
+          </DialogHeader>
+          {nuevaConvStep === "pick" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+              <div className="flex flex-col items-center text-center rounded-2xl border bg-card p-6">
+                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                  <UserPlus className="h-10 w-10 text-primary" />
+                </div>
+                <h3 className="text-lg font-semibold">Contacto</h3>
+                <p className="text-sm text-muted-foreground mt-1 mb-5">
+                  Iniciar chat con un cliente o lead actual
+                </p>
+                <Button
+                  variant="outline"
+                  className="rounded-full px-6 border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                  onClick={() => setNuevaConvStep("contact")}
+                >
+                  Seleccionar
+                </Button>
+              </div>
+              <div className="flex flex-col items-center text-center rounded-2xl border bg-card p-6">
+                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                  <Bot className="h-10 w-10 text-primary" />
+                </div>
+                <h3 className="text-lg font-semibold">Bot</h3>
+                <p className="text-sm text-muted-foreground mt-1 mb-5">
+                  Configurar y probar un nuevo bot conversacional
+                </p>
+                <Button
+                  variant="outline"
+                  className="rounded-full px-6 border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                  onClick={() => {
+                    toast({
+                      title: "Próximamente",
+                      description:
+                        "El diseñador de bots aún no está disponible.",
+                    });
+                  }}
+                >
+                  Seleccionar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 mt-4">
+              <p className="text-sm text-muted-foreground">
+                Elige un contacto de la lista para abrir su chat.
+              </p>
+              <Select
+                value={nuevaConvContactId}
+                onValueChange={(v) => setNuevaConvContactId(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar contacto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {uniqueContacts.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      No hay contactos disponibles.
+                    </div>
+                  ) : (
+                    uniqueContacts.map((c) => (
+                      <SelectItem key={c.contactId} value={c.contactId}>
+                        {c.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setNuevaConvStep("pick")}
+                >
+                  Volver
+                </Button>
+                <Button
+                  disabled={!nuevaConvContactId || !onOpenChat}
+                  onClick={() => {
+                    if (!nuevaConvContactId || !onOpenChat) return;
+                    onOpenChat(nuevaConvContactId);
+                    setIsNuevaConvOpen(false);
+                    setNuevaConvStep("pick");
+                    setNuevaConvContactId("");
+                  }}
+                >
+                  Abrir chat
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Agregar contacto — comprehensive form. Persists what the
+          backend currently supports (name / phone / email via
+          api.contacts.create), then chains the family relationships
+          and an optional opportunity create when a stage is picked.
+          Address / birthdate / document_number are captured on the
+          form so the UI matches the design, but they need GHL custom-
+          field plumbing on the backend before they round-trip; until
+          then the values are silently dropped on submit. */}
+      <Dialog
+        open={isAgregarContactoOpen}
+        onOpenChange={(open) => {
+          if (isSubmittingContact) return;
+          setIsAgregarContactoOpen(open);
+          if (!open) resetAgregarContacto();
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px] rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">
+              Agregar contacto
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4 mt-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const name = newContactName.trim();
+              const phone = newContactPhone.trim();
+              if (!name || !phone) {
+                toast({
+                  title: "Información incompleta",
+                  description: "Nombre y teléfono son obligatorios.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              if (!onCreateContact) {
+                toast({
+                  title: "No disponible",
+                  description: "El backend no expone la creación de contactos.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              setIsSubmittingContact(true);
+              try {
+                const created = await onCreateContact({
+                  name,
+                  phone,
+                  email: newContactEmail.trim() || undefined,
+                });
+                if (!created?.id) {
+                  setIsSubmittingContact(false);
+                  return; // parent handler already toasted on failure
+                }
+                // Link family members. Failures here log but don't
+                // abort — the contact itself is already created.
+                for (const member of newContactFamily) {
+                  try {
+                    await api.contacts.addFamily(created.id, member);
+                  } catch (err) {
+                    console.warn("family add failed", err);
+                  }
+                }
+                // Optional opportunity when a stage was picked.
+                if (newContactStageId && pipeline && onCreateOpportunity) {
+                  try {
+                    await onCreateOpportunity({
+                      name,
+                      contactId: created.id,
+                      pipelineId: pipeline.id,
+                      stageId: newContactStageId,
+                    });
+                  } catch (err) {
+                    console.warn("opportunity create failed", err);
+                  }
+                }
+                toast({
+                  title: "Contacto agregado",
+                  description:
+                    "Aparecerá en la lista cuando GoHighLevel confirme el registro.",
+                });
+                setIsAgregarContactoOpen(false);
+                resetAgregarContacto();
+              } catch (err) {
+                toast({
+                  title: "No se pudo agregar el contacto",
+                  description: String((err as Error)?.message ?? err),
+                  variant: "destructive",
+                });
+                setIsSubmittingContact(false);
+              }
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Nombre y apellido <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={newContactName}
+                onChange={(e) => setNewContactName(e.target.value)}
+                placeholder="Ej. Juan Pérez"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Teléfono <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={newContactPhone}
+                onChange={(e) => setNewContactPhone(e.target.value)}
+                placeholder="Ej. +1 234 567 8900"
+                inputMode="tel"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Email</Label>
+              <Input
+                value={newContactEmail}
+                onChange={(e) => setNewContactEmail(e.target.value)}
+                placeholder="Ej. juan@correo.com"
+                inputMode="email"
+                type="email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Dirección</Label>
+              <Input
+                value={newContactAddress}
+                onChange={(e) => setNewContactAddress(e.target.value)}
+                placeholder="Ej. Calle 123, Ciudad"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Fecha de nacimiento</Label>
+              <Input
+                value={newContactBirthdate}
+                onChange={(e) => setNewContactBirthdate(e.target.value)}
+                type="date"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Número de documento</Label>
+              <div className="flex gap-2">
+                <Select
+                  value={newContactDocType}
+                  onValueChange={setNewContactDocType}
+                >
+                  <SelectTrigger className="w-[110px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CC">CC</SelectItem>
+                    <SelectItem value="CE">CE</SelectItem>
+                    <SelectItem value="NIT">NIT</SelectItem>
+                    <SelectItem value="Pasaporte">Pasaporte</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={newContactDocNumber}
+                  onChange={(e) => setNewContactDocNumber(e.target.value)}
+                  placeholder="Número"
+                  className="flex-1"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">
+                  Familiares vinculados
+                </Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full h-8 px-3 text-xs"
+                  onClick={() => {
+                    setShowFamilyDraft(true);
+                    setFamilyDraftName("");
+                    setFamilyDraftPhone("");
+                    setFamilyDraftRel("");
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Agregar familiar
+                </Button>
+              </div>
+              {newContactFamily.length > 0 && (
+                <ul className="space-y-1 text-sm">
+                  {newContactFamily.map((m, idx) => (
+                    <li
+                      key={idx}
+                      className="flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5"
+                    >
+                      <div className="flex flex-col min-w-0">
+                        <span className="truncate text-foreground">{m.name}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {FAMILY_REL_LABELS[m.relationship]} · {m.phone}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNewContactFamily((prev) =>
+                            prev.filter((_, i) => i !== idx)
+                          )
+                        }
+                        className="h-5 w-5 shrink-0 rounded-full hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground"
+                        aria-label="Eliminar"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {showFamilyDraft && (
+                <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+                  <Input
+                    value={familyDraftName}
+                    onChange={(e) => setFamilyDraftName(e.target.value)}
+                    placeholder="Nombre del familiar"
+                    className="h-8 text-sm"
+                  />
+                  <Input
+                    value={familyDraftPhone}
+                    onChange={(e) => setFamilyDraftPhone(e.target.value)}
+                    placeholder="Teléfono"
+                    className="h-8 text-sm"
+                    inputMode="tel"
+                  />
+                  <Select
+                    value={familyDraftRel || undefined}
+                    onValueChange={(v) =>
+                      setFamilyDraftRel(v as DraftFamily["relationship"])
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Parentesco" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(FAMILY_REL_LABELS) as DraftFamily["relationship"][]).map(
+                        (r) => (
+                          <SelectItem key={r} value={r}>
+                            {FAMILY_REL_LABELS[r]}
+                          </SelectItem>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setShowFamilyDraft(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={
+                        !familyDraftName.trim() ||
+                        !familyDraftPhone.trim() ||
+                        !familyDraftRel
+                      }
+                      onClick={() => {
+                        setNewContactFamily((prev) => [
+                          ...prev,
+                          {
+                            name: familyDraftName.trim(),
+                            phone: familyDraftPhone.trim(),
+                            relationship: familyDraftRel as DraftFamily["relationship"],
+                          },
+                        ]);
+                        setShowFamilyDraft(false);
+                      }}
+                    >
+                      Añadir
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Etapa de oportunidad</Label>
+              <Select
+                value={newContactStageId || undefined}
+                onValueChange={(v) => setNewContactStageId(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar etapa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {stages.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      No hay etapas disponibles.
+                    </div>
+                  ) : (
+                    stages.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.label}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full px-6"
+                disabled={isSubmittingContact}
+                onClick={() => {
+                  setIsAgregarContactoOpen(false);
+                  resetAgregarContacto();
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-full px-6"
+                disabled={
+                  isSubmittingContact ||
+                  !newContactName.trim() ||
+                  !newContactPhone.trim()
+                }
+              >
+                {isSubmittingContact ? "Guardando…" : "Guardar contacto"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

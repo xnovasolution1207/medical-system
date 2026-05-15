@@ -1855,6 +1855,7 @@ export default function Index() {
             tasks={tasks}
             onMoveOpportunity={handleMoveOpportunity}
             onCreateOpportunity={handleCreateOpportunity}
+            onCreateContact={handleCreateContact}
             onOpenMobileNav={() => setIsMobileNavOpen(true)}
             onOpenChat={(contactId) => setOpportunityChatContactId(contactId)}
           />
