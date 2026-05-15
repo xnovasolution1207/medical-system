@@ -249,6 +249,43 @@ const DATE_PRESET_LABELS: Record<Exclude<DatePresetKey, "personalizado">, string
   mes_pasado: "Mes Pasado",
 };
 
+// Stage pill colours for the list view. The stage palette is
+// user-defined per pipeline, so we map by the Tailwind color *family*
+// of `stage.color` (e.g. "bg-rose-500" → rose) to a softer
+// background + text pair that reads well in both light and dark mode.
+// Listed as full literals so Tailwind's JIT keeps them in the bundle.
+const STAGE_PILL_BY_FAMILY: Record<string, string> = {
+  rose: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
+  red: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  amber: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  orange: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  yellow: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  green: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+  teal: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
+  cyan: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300",
+  sky: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
+  blue: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  indigo: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
+  violet: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+  purple: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  fuchsia:
+    "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300",
+  pink: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300",
+  slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  gray: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  zinc: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+};
+
+function stagePillClasses(color: string | undefined): string {
+  if (!color) return "bg-muted text-muted-foreground";
+  const m = color.match(/bg-([a-z]+)-/);
+  const family = m?.[1];
+  return (
+    (family && STAGE_PILL_BY_FAMILY[family]) || "bg-muted text-muted-foreground"
+  );
+}
+
 // "S/ 0,00" — Peruvian Sol; same convention as ContactSidebar so the
 // amount on the kanban card matches the right-rail amount field.
 function formatOppValue(value: number | undefined): string {
@@ -943,74 +980,6 @@ export function OpportunitiesView({
           </div>
         ) : viewMode === "board" ? (
           <>
-            {selectedOppIds.size > 0 && (
-              // Floating bottom toolbar — centred over the kanban
-              // viewport. Mirrors the prototype: a count badge, a
-              // "Mover a:" stage Select, optional bulk Delete, and a
-              // Cancelar that clears the selection. We keep Delete
-              // available when the parent wires it; the spec only
-              // requires Move + Cancel but losing Delete would be a
-              // feature regression.
-              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-full border bg-card px-5 py-3 shadow-2xl ring-1 ring-primary/20 animate-in fade-in slide-in-from-bottom-4">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
-                    {selectedOppIds.size}
-                  </span>
-                  <span className="text-sm">
-                    seleccionado{selectedOppIds.size === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <div className="h-5 w-px bg-border" />
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Mover a:</span>
-                  <Select
-                    // `value=""` is the placeholder state — set to a real
-                    // stage id only momentarily inside `onValueChange`.
-                    // Reset back to "" after the bulk move so picking the
-                    // same stage twice in a row still fires the handler.
-                    value=""
-                    onValueChange={(stageId) => {
-                      if (!stageId || !onMoveOpportunity) return;
-                      const ids = Array.from(selectedOppIds);
-                      for (const id of ids) onMoveOpportunity(id, stageId);
-                      clearOppSelection();
-                    }}
-                  >
-                    <SelectTrigger className="h-8 w-[180px] text-sm">
-                      <SelectValue placeholder="Seleccionar etapa" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {stages.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {onBulkDeleteOpportunities && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={async () => {
-                      const ids = Array.from(selectedOppIds);
-                      await onBulkDeleteOpportunities(ids);
-                      clearOppSelection();
-                    }}
-                  >
-                    Eliminar
-                  </Button>
-                )}
-                <button
-                  type="button"
-                  onClick={clearOppSelection}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Cancelar
-                </button>
-              </div>
-            )}
             <div className="flex gap-4 h-full pb-4 w-max">
               {stages.map((stage) => {
                 const stageOpps = filteredOpps.filter((o) => o.stageId === stage.id);
@@ -1230,40 +1199,125 @@ export function OpportunitiesView({
             </div>
           </>
         ) : (
-          <div className="border rounded-lg bg-card max-w-6xl mx-auto">
-            <Table>
+          // List view — full-width and horizontally scrollable on
+          // narrow viewports so the table doesn't get visually
+          // squished. Columns: checkbox / lead (with tags) / stage
+          // (colored pill from stage.color) / phone / source / date /
+          // owner avatar. Tags + phone are joined from the linked
+          // conversation, same join the kanban card uses.
+          <div className="w-full overflow-x-auto rounded-lg border bg-card">
+            <Table className="min-w-[900px]">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={
+                        filteredOpps.length > 0 &&
+                        filteredOpps.every((o) => selectedOppIds.has(o.id))
+                      }
+                      onCheckedChange={(c) => {
+                        if (c === true) {
+                          setSelectedOppIds(
+                            new Set(filteredOpps.map((o) => o.id))
+                          );
+                        } else {
+                          clearOppSelection();
+                        }
+                      }}
+                      aria-label="Seleccionar todos"
+                    />
+                  </TableHead>
                   <TableHead>Nombre del lead</TableHead>
                   <TableHead>Etapa</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Teléfono</TableHead>
                   <TableHead>Medio de captación</TableHead>
                   <TableHead>Fecha de creación</TableHead>
                   <TableHead className="text-right">Propietario</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOpps.map((opp) => (
-                  <TableRow key={opp.id}>
-                    <TableCell className="font-medium">{opp.name}</TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-muted/50">
-                        {stageLookup.get(opp.stageId) ?? opp.stageId}
-                      </span>
-                    </TableCell>
-                    <TableCell className="capitalize">{opp.status}</TableCell>
-                    <TableCell>{opp.source}</TableCell>
-                    <TableCell>{opp.date}</TableCell>
-                    <TableCell className="text-right">
-                      <Avatar className="h-6 w-6 ml-auto">
-                        <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filteredOpps.map((opp) => {
+                  const isSelected = selectedOppIds.has(opp.id);
+                  const conv = convByContactId.get(opp.contactId);
+                  const participant = conv?.participant;
+                  const tags = participant?.tags ?? [];
+                  const phone = participant?.phone;
+                  const avatar = participant?.avatar;
+                  const stage = stages.find((s) => s.id === opp.stageId);
+                  const stageLabel = stage?.label ?? opp.stageId;
+                  return (
+                    <TableRow
+                      key={opp.id}
+                      data-state={isSelected ? "selected" : undefined}
+                      className="group"
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleOppSelected(opp.id)}
+                          aria-label={`Seleccionar ${opp.name}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-medium truncate">
+                            {opp.name}
+                          </span>
+                          {tags.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                              {tags.slice(0, 4).map((tag, i) => (
+                                <span
+                                  key={`${tag}-${i}`}
+                                  className="text-[10px] px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground font-medium truncate max-w-[100px]"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                              {tags.length > 4 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  +{tags.length - 4}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wide",
+                            stagePillClasses(stage?.color)
+                          )}
+                        >
+                          {stageLabel}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {phone || (
+                          <span className="text-muted-foreground italic">
+                            Sin teléfono
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">{opp.source}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {opp.date}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Avatar className="h-6 w-6 ml-auto">
+                          {avatar && <AvatarImage src={avatar} alt={opp.name} />}
+                          <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {filteredOpps.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
+                    <TableCell
+                      colSpan={7}
+                      className="text-center h-24 text-muted-foreground"
+                    >
                       No se encontraron oportunidades.
                     </TableCell>
                   </TableRow>
@@ -1273,6 +1327,72 @@ export function OpportunitiesView({
           </div>
         )}
       </div>
+
+      {/* Floating bulk-action toolbar — fixed position so it floats
+          above whichever view is active (kanban OR list). Mirrors the
+          prototype: count badge, "Mover a:" stage Select, optional
+          bulk Delete, and Cancelar that clears the selection. */}
+      {selectedOppIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-full border bg-card px-5 py-3 shadow-2xl ring-1 ring-primary/20 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
+              {selectedOppIds.size}
+            </span>
+            <span className="text-sm">
+              seleccionado{selectedOppIds.size === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="h-5 w-px bg-border" />
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Mover a:</span>
+            <Select
+              // `value=""` is the placeholder state — set to a real
+              // stage id only momentarily inside `onValueChange`.
+              // Reset back to "" after the bulk move so picking the
+              // same stage twice in a row still fires the handler.
+              value=""
+              onValueChange={(stageId) => {
+                if (!stageId || !onMoveOpportunity) return;
+                const ids = Array.from(selectedOppIds);
+                for (const id of ids) onMoveOpportunity(id, stageId);
+                clearOppSelection();
+              }}
+            >
+              <SelectTrigger className="h-8 w-[180px] text-sm">
+                <SelectValue placeholder="Seleccionar etapa" />
+              </SelectTrigger>
+              <SelectContent>
+                {stages.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {onBulkDeleteOpportunities && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={async () => {
+                const ids = Array.from(selectedOppIds);
+                await onBulkDeleteOpportunities(ids);
+                clearOppSelection();
+              }}
+            >
+              Eliminar
+            </Button>
+          )}
+          <button
+            type="button"
+            onClick={clearOppSelection}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
 
       {/* Crear oportunidad dialog */}
       <Dialog
