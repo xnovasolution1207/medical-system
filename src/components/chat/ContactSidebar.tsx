@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AgentUser, User, Conversation, FamilyMember, Opportunity, TagSummary } from "./types";
+import { AgentUser, User, Conversation, FamilyMember, Message, Opportunity, TagSummary } from "./types";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -194,6 +194,35 @@ export function ContactSidebar({
       cancelled = true;
     };
   }, [contact.id, contact.familyMembers]);
+
+  // "Documentos" right-rail tabs (Imagen / Doc / Enlaces / Multimedia).
+  // The conversation cache only holds the lazily-loaded message window, so
+  // older uploads would otherwise be invisible. Fetch the full attachment
+  // history for the contact whenever it changes, and seed it with whatever
+  // the conversation cache happens to already know so the tabs aren't
+  // empty during the fetch.
+  const seededAttachments: Message[] = (conversation?.messages ?? []).filter(
+    (m) => Boolean(m.attachment)
+  );
+  const [allAttachments, setAllAttachments] = useState<Message[]>(seededAttachments);
+  useEffect(() => {
+    setAllAttachments(
+      (conversation?.messages ?? []).filter((m) => Boolean(m.attachment))
+    );
+    let cancelled = false;
+    api.contacts
+      .attachments(contact.id)
+      .then((messages) => {
+        if (cancelled) return;
+        setAllAttachments(messages);
+      })
+      .catch((err) => {
+        console.warn("[attachments] fetch failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contact.id]);
 
   const resetFamilyDialog = () => {
     setFamilyName("");
@@ -1152,10 +1181,10 @@ export function ContactSidebar({
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Documentos</h3>
             <Badge variant="secondary" className="text-xs font-normal">
-              {conversation?.messages.filter(m => m.attachment).length || 0}
+              {allAttachments.length}
             </Badge>
           </div>
-          
+
           <Tabs defaultValue="image" className="w-full">
             <TabsList className="w-full grid grid-cols-4 h-9 bg-muted/50 p-1">
               <TabsTrigger value="image" className="text-[10px] sm:text-xs px-1">Imagen</TabsTrigger>
@@ -1163,9 +1192,9 @@ export function ContactSidebar({
               <TabsTrigger value="link" className="text-[10px] sm:text-xs px-1">Enlaces</TabsTrigger>
               <TabsTrigger value="media" className="text-[10px] sm:text-xs px-1">Multimedia</TabsTrigger>
             </TabsList>
-            
+
             {["image", "doc", "link", "media"].map((tab) => {
-              const filteredDocs = conversation?.messages.filter(m => {
+              const filteredDocs = allAttachments.filter((m) => {
                 if (!m.attachment) return false;
                 const type = m.attachment.type;
                 if (tab === "image") return type === "image";
@@ -1173,7 +1202,7 @@ export function ContactSidebar({
                 if (tab === "link") return type === "link";
                 if (tab === "media") return type === "audio" || type === "video";
                 return false;
-              }) || [];
+              });
 
               return (
                 <TabsContent key={tab} value={tab} className="mt-4 space-y-2">

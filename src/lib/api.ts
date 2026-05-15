@@ -412,6 +412,11 @@ export const api = {
     // the SPA's loaded window.
     getLead: (id: string) =>
       request<LeadBundle>("GET", `/contacts/${id}/lead`),
+    // Every message-with-attachment for the contact, across the full chat
+    // history. The right-rail "Documentos" tabs read from this so older
+    // uploads (outside the lazily-loaded message window) still appear.
+    attachments: (id: string) =>
+      request<Message[]>("GET", `/contacts/${id}/attachments`),
     create: (payload: {
       name?: string;
       firstName?: string;
