@@ -1969,6 +1969,8 @@ export default function Index() {
           onSelectTab={setActiveMainTab}
           taskUserFilters={taskUserFilters}
           setTaskUserFilters={setTaskUserFilters}
+          tasks={tasks}
+          users={users}
           onDeleteView={handleDeleteView}
         />
       </div>
@@ -1984,6 +1986,8 @@ export default function Index() {
             onSelectTab={handleSelectMainTab}
             taskUserFilters={taskUserFilters}
             setTaskUserFilters={setTaskUserFilters}
+            tasks={tasks}
+            users={users}
             onDeleteView={handleDeleteView}
             forceExpanded
           />

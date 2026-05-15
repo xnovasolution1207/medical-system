@@ -16,7 +16,7 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { SavedView } from "./types";
+import { AgentUser, SavedView, Task } from "./types";
 
 interface MainSidebarProps {
   savedViews: SavedView[];
@@ -26,11 +26,16 @@ interface MainSidebarProps {
   onSelectTab: (id: string) => void;
   taskUserFilters: string[];
   setTaskUserFilters: (filters: string[]) => void;
+  // Drives the "Tareas pendientes" badge count and feeds the
+  // "Buscar delegado" agent picker. Both pull from the live bootstrap
+  // payload so the sidebar reflects real GHL data instead of mocks.
+  tasks?: Task[];
+  users?: AgentUser[];
   onDeleteView?: (id: string) => void;
   forceExpanded?: boolean;
 }
 
-export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab, onSelectTab, taskUserFilters, setTaskUserFilters, onDeleteView, forceExpanded = false }: MainSidebarProps) {
+export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab, onSelectTab, taskUserFilters, setTaskUserFilters, tasks = [], users = [], onDeleteView, forceExpanded = false }: MainSidebarProps) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const isExpanded = forceExpanded || internalExpanded;
   const setIsExpanded = setInternalExpanded;
@@ -69,12 +74,27 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
   const [showAgents, setShowAgents] = useState(false);
   const [searchAgent, setSearchAgent] = useState("");
 
-  const MOCK_AGENTS = [
-    { id: "a1", name: "Agente de Ventas", avatar: "https://i.pravatar.cc/150?u=a1" },
-    { id: "a2", name: "María González", avatar: "https://i.pravatar.cc/150?u=a2" },
-    { id: "a3", name: "Carlos López", avatar: "https://i.pravatar.cc/150?u=a3" },
-    { id: "a4", name: "Ana Martínez", avatar: "https://i.pravatar.cc/150?u=a4" },
-  ];
+  // Live count of pending (non-completed) tasks. Drives the badge next to
+  // "Tareas pendientes" in both the expanded and collapsed sidebars.
+  const pendingTaskCount = React.useMemo(
+    () => tasks.filter((t) => t.status !== "completed").length,
+    [tasks]
+  );
+
+  // Real GHL staff roster from the bootstrap payload — replaces the legacy
+  // mock list that used to feed the "Buscar delegado" picker. Tasks are
+  // filtered by assignee NAME (see TaskList) so we surface the agent's
+  // display name as the selection value. Empty when the token lacks
+  // `users.readonly`.
+  const agents = React.useMemo(
+    () =>
+      users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        avatar: u.avatar,
+      })),
+    [users]
+  );
 
   const mainItems = [
     { id: "todos", label: "Todos", icon: Inbox },
@@ -163,9 +183,11 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                     <span className="truncate">Tareas pendientes</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="flex items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground h-5 min-w-5 px-1.5">
-                      3
-                    </span>
+                    {pendingTaskCount > 0 && (
+                      <span className="flex items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground h-5 min-w-5 px-1.5">
+                        {pendingTaskCount}
+                      </span>
+                    )}
                     <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200", isTareasOpen && "rotate-180")} />
                   </div>
                 </Button>
@@ -174,20 +196,21 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                 <div className="mb-2 px-2">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input 
-                      placeholder="Buscar delegado..." 
+                    <Input
+                      placeholder="Buscar delegado..."
                       className="h-8 w-full pl-8 bg-muted/40 text-xs border-none focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
                       onClick={(e) => { e.stopPropagation(); setShowAgents(true); }}
-                      onChange={(e) => setSearchAgent(e.target.value)}
+                      onFocus={() => setShowAgents(true)}
+                      onChange={(e) => { setSearchAgent(e.target.value); setShowAgents(true); }}
                       value={searchAgent}
                     />
                   </div>
-                  
-                  {(searchAgent || taskUserFilters.length > 0) && (
+
+                  {(showAgents || searchAgent || taskUserFilters.length > 0) && agents.length > 0 && (
                     <div className="max-h-40 overflow-y-auto mt-2 space-y-1">
-                      {(searchAgent 
-                        ? MOCK_AGENTS.filter(a => a.name.toLowerCase().includes(searchAgent.toLowerCase()))
-                        : MOCK_AGENTS.filter(a => taskUserFilters.includes(a.name))
+                      {(searchAgent
+                        ? agents.filter(a => a.name.toLowerCase().includes(searchAgent.toLowerCase()))
+                        : agents
                       ).map((agent) => (
                         <div 
                           key={agent.id}
@@ -358,9 +381,11 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                       className="justify-center h-10 w-full px-0 mt-2 transition-all relative"
                     >
                       <CheckSquare className="h-5 w-5 shrink-0" />
-                      <span className="absolute top-1 right-1 flex items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground h-4 min-w-4 px-1">
-                        3
-                      </span>
+                      {pendingTaskCount > 0 && (
+                        <span className="absolute top-1 right-1 flex items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground h-4 min-w-4 px-1">
+                          {pendingTaskCount}
+                        </span>
+                      )}
                     </Button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
@@ -373,22 +398,23 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                 <div className="px-2 mb-2">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input 
-                      placeholder="Buscar delegado..." 
+                    <Input
+                      placeholder="Buscar delegado..."
                       className="h-8 w-full pl-8 bg-muted/40 text-xs border-none focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
                       onClick={(e) => { e.stopPropagation(); setShowAgents(true); }}
-                      onChange={(e) => setSearchAgent(e.target.value)}
+                      onFocus={() => setShowAgents(true)}
+                      onChange={(e) => { setSearchAgent(e.target.value); setShowAgents(true); }}
                       value={searchAgent}
                       onKeyDown={(e) => e.stopPropagation()}
                     />
                   </div>
                 </div>
-                
-                {(searchAgent || taskUserFilters.length > 0) && (
+
+                {(showAgents || searchAgent || taskUserFilters.length > 0) && agents.length > 0 && (
                   <div className="max-h-40 overflow-y-auto px-1 mb-2 space-y-1">
-                    {(searchAgent 
-                      ? MOCK_AGENTS.filter(a => a.name.toLowerCase().includes(searchAgent.toLowerCase()))
-                      : MOCK_AGENTS.filter(a => taskUserFilters.includes(a.name))
+                    {(searchAgent
+                      ? agents.filter(a => a.name.toLowerCase().includes(searchAgent.toLowerCase()))
+                      : agents
                     ).map((agent) => (
                       <DropdownMenuCheckboxItem
                         key={agent.id}
