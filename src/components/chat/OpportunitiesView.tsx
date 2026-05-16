@@ -737,7 +737,7 @@ export function OpportunitiesView({
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
       {/* Header */}
-      <div className="flex min-h-[68px] flex-wrap items-center justify-between gap-3 px-4 py-3 border-b shrink-0 bg-white dark:bg-slate-950 lg:flex-nowrap lg:gap-4 lg:py-0">
+      <div className="flex h-[68px] items-center justify-between px-4 border-b shrink-0 gap-4 overflow-x-auto bg-card">
         <div className="flex items-center gap-2 min-w-0 shrink-0">
           {onOpenMobileNav && (
             <Button

@@ -2131,7 +2131,7 @@ export function ChatMessageArea({
         {/* Channel Tabs */}
         <div className="px-4 pt-2">
           <Tabs value={activeChannel} onValueChange={(v) => setActiveChannel(v as NonNullable<Message["channel"]>)}>
-            <TabsList className="h-8 bg-muted/50">
+            <TabsList className="bg-slate-100 dark:bg-black/20 p-1 rounded-full">
               {availableChannels.map((ch) => (
                 <TabsTrigger
                   key={ch}
@@ -2140,7 +2140,7 @@ export function ChatMessageArea({
                     "text-xs h-6 px-4",
                     ch === "internal"
                       ? "data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800 dark:data-[state=active]:bg-amber-500/20 dark:data-[state=active]:text-amber-400"
-                      : "data-[state=active]:bg-slate-200 data-[state=active]:text-slate-800 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-slate-200"
+                      : "dark:data-[state=active]:bg-[#2a2d35] dark:text-slate-400 dark:data-[state=active]:text-slate-100 transition-all"
                   )}
                 >
                   {CHANNEL_LABELS[ch]}
@@ -2389,7 +2389,7 @@ export function ChatMessageArea({
             onSubmit={handleSend}
             className={cn(
               "flex flex-col rounded-xl border focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all shadow-sm overflow-hidden",
-              activeChannel === "internal" ? "bg-amber-50/50 dark:bg-amber-500/5 border-amber-200/50 dark:border-amber-500/20" : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700"
+              activeChannel === "internal" ? "bg-amber-50/50 dark:bg-amber-500/5 border-amber-200/50 dark:border-amber-500/20" : "bg-muted/30 dark:bg-muted/10 border-border"
             )}
           >
             {activeChannel === "email" && (
@@ -2447,7 +2447,7 @@ export function ChatMessageArea({
             {/* Toolbar */}
             <div className={cn(
               "flex items-center justify-between border-t px-2 py-1.5",
-              activeChannel === "internal" ? "bg-amber-100/50 dark:bg-amber-500/10 border-amber-200/50 dark:border-amber-500/20" : "bg-slate-100/50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+              activeChannel === "internal" ? "bg-amber-100/50 dark:bg-amber-500/10 border-amber-200/50 dark:border-amber-500/20" : "bg-muted/50 dark:bg-muted/30 border-border"
             )}>
               <div className="flex items-center gap-1">
                 {activeChannel === "email" && (

@@ -949,7 +949,7 @@ export function ChatSidebar({
       {/* Tabs */}
       <div className="px-4 pt-3">
         <Tabs defaultValue="all" onValueChange={(v) => setFilter(v as any)} className="w-full">
-          <TabsList className="w-full flex bg-slate-100 dark:bg-slate-800/50 rounded-full p-1 h-auto">
+          <TabsList className="items-center justify-center text-muted-foreground w-full flex bg-slate-100 dark:bg-black/20 rounded-full p-1 h-auto">
             <TabsTrigger value="unread" className="flex-1 text-[11px] font-medium rounded-full py-1.5 text-slate-500 dark:text-slate-400 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-600 data-[state=active]:text-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm flex items-center justify-center gap-1.5">
               No leídos
               {totalUnread > 0 && (
