@@ -93,16 +93,30 @@ export async function downloadAttachment(
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
-// Backend errors come back as JSON `{ error: "...", stack?: "..." }`.
-// We extract just the `error` field for display so the toast doesn't
-// dump a stack trace (or the raw response body) into the user's face.
-// Logged in full to the console for debugging — the message stays clean
-// but a developer can still inspect the response.
-async function parseErrorMessage(
+// Typed error so handlers can branch on backend-supplied error codes
+// (e.g. WABA_MISSING) without parsing the message string. `code` is
+// whatever the backend put in the JSON body's `code` field — undefined
+// when the backend didn't supply one.
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+// Backend errors come back as JSON `{ error: "...", code?: "..." }`.
+// We extract the `error` field for display (so the toast doesn't dump
+// a stack trace) and the `code` field for callers that need to branch.
+// Logged in full to the console for debugging.
+async function parseErrorPayload(
   res: Response,
   method: string,
   path: string
-): Promise<string> {
+): Promise<{ message: string; code?: string }> {
   const text = await res.text();
   let parsed: unknown;
   try {
@@ -118,19 +132,30 @@ async function parseErrorMessage(
         : typeof obj.message === "string"
           ? obj.message
           : null;
+    const code = typeof obj.code === "string" ? obj.code : undefined;
     if (direct) {
       console.error(`[api] ${method} ${path} ${res.status}:`, parsed);
-      return direct;
+      return { message: direct, code };
     }
   }
   // Couldn't extract a user-facing message — fall back to status + a
   // short generic line. Still log the body for diagnosis.
   console.error(`[api] ${method} ${path} ${res.status}:`, text || "(empty body)");
-  if (res.status >= 500) return `Error del servidor (${res.status}).`;
-  if (res.status === 404) return "El recurso no existe.";
-  if (res.status === 403) return "No tienes permiso para esta acción.";
-  if (res.status === 400) return "Solicitud inválida.";
-  return `Error ${res.status}.`;
+  if (res.status >= 500) return { message: `Error del servidor (${res.status}).` };
+  if (res.status === 404) return { message: "El recurso no existe." };
+  if (res.status === 403) return { message: "No tienes permiso para esta acción." };
+  if (res.status === 400) return { message: "Solicitud inválida." };
+  return { message: `Error ${res.status}.` };
+}
+
+// Back-compat helper for the multipart paths below that only want the
+// human-readable message.
+async function parseErrorMessage(
+  res: Response,
+  method: string,
+  path: string
+): Promise<string> {
+  return (await parseErrorPayload(res, method, path)).message;
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -151,11 +176,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     // Token expired or session evicted from Redis. Clear it so
     // AuthProvider re-routes to /login on the next render.
     if (token) setAuthToken(null);
-    throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
+    throw new ApiError("Tu sesión ha caducado. Inicia sesión de nuevo.", 401);
   }
   if (!res.ok) {
-    const message = await parseErrorMessage(res, method, path);
-    throw new Error(message);
+    const { message, code } = await parseErrorPayload(res, method, path);
+    throw new ApiError(message, res.status, code);
   }
   if (res.status === 204) return undefined as T;
   const json = await res.json();
@@ -394,9 +419,15 @@ export const api = {
       request<{ ok: boolean }>("DELETE", `/conversations/${id}/scheduled/${messageId}`),
   },
 
-  // Saved GHL location templates / snippets. Used by the scheduling
-  // dialog so the agent can pick a Meta-approved WhatsApp template
-  // (mandatory for WhatsApp after 24h of conversation silence).
+  // Saved GHL location templates / snippets + Meta WhatsApp templates.
+  // Used by the scheduling dialog so the agent can pick a Meta-approved
+  // WhatsApp template (mandatory for WhatsApp after 24h of silence).
+  //
+  // For `type=whatsapp`: the backend reads the WhatsApp Business
+  // Account id from LocationConfig and calls the Meta Graph API. When
+  // no WABA is registered yet it throws ApiError with
+  // code="WABA_MISSING" — callers should open the registration modal
+  // and retry after the agent submits a WABA id.
   templates: {
     list: (params?: { type?: "sms" | "whatsapp" | "email" }) => {
       const qs = new URLSearchParams();
@@ -406,6 +437,22 @@ export const api = {
         templates: { id: string; name: string; type: string; body: string }[];
       }>("GET", `/templates${q ? `?${q}` : ""}`);
     },
+  },
+
+  // Per-location app config. Today: just the WABA id used to fetch
+  // WhatsApp templates from the Meta Graph API.
+  locationConfig: {
+    get: () =>
+      request<{ locationId: string; wabaId: string | null }>(
+        "GET",
+        "/location-config"
+      ),
+    setWabaId: (wabaId: string | null) =>
+      request<{ locationId: string; wabaId: string | null }>(
+        "PUT",
+        "/location-config/waba",
+        { wabaId }
+      ),
   },
 
   // "Plantillas rápidas" — agent's local canned messages. Backed by

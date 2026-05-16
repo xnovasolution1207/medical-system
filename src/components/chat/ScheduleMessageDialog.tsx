@@ -37,8 +37,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Clock, CornerUpLeft, Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { WabaRegistrationDialog } from "./WabaRegistrationDialog";
 import {
   SCHEDULE_OPTIONS,
   defaultLocalDatetime,
@@ -91,6 +92,11 @@ export function ScheduleMessageDialog({
   const [scheduleOptionId, setScheduleOptionId] = useState<ScheduleOptionId>("manana_9am");
   const [customDatetime, setCustomDatetime] = useState(defaultLocalDatetime);
   const [submitting, setSubmitting] = useState(false);
+  // When the backend reports WABA_MISSING we pop the registration
+  // modal; on a successful save we re-run the templates fetch via this
+  // bumper instead of duplicating the effect logic inline.
+  const [wabaModalOpen, setWabaModalOpen] = useState(false);
+  const [fetchNonce, setFetchNonce] = useState(0);
 
   // Reset every open so the dialog never resurrects stale state.
   useEffect(() => {
@@ -103,6 +109,12 @@ export function ScheduleMessageDialog({
   // Fetch templates whenever the dialog opens. Filtered to the active
   // channel (typically whatsapp). Empty list is a real outcome — the
   // tenant simply hasn't registered any templates of that type yet.
+  //
+  // Special case: when channel=whatsapp and the backend returns
+  // WABA_MISSING (HTTP 409 with ApiError.code), we open the
+  // registration modal instead of showing a generic toast. The modal's
+  // onSaved callback bumps `fetchNonce` so this effect re-runs and
+  // hydrates the picker once the WABA is in place.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -115,6 +127,11 @@ export function ScheduleMessageDialog({
       })
       .catch((err) => {
         if (cancelled) return;
+        if (err instanceof ApiError && err.code === "WABA_MISSING") {
+          setTemplates([]);
+          setWabaModalOpen(true);
+          return;
+        }
         console.warn("[schedule] templates fetch failed", err);
         setTemplates([]);
       })
@@ -124,7 +141,7 @@ export function ScheduleMessageDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, channel]);
+  }, [open, channel, fetchNonce]);
 
   const selected = useMemo(
     () => templates?.find((t) => t.id === selectedId),
@@ -177,6 +194,12 @@ export function ScheduleMessageDialog({
   }, [scheduleOptionId, customDatetime]);
 
   return (
+    <>
+    <WabaRegistrationDialog
+      open={wabaModalOpen}
+      onOpenChange={setWabaModalOpen}
+      onSaved={() => setFetchNonce((n) => n + 1)}
+    />
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -332,5 +355,6 @@ export function ScheduleMessageDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
