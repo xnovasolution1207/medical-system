@@ -413,6 +413,11 @@ export const api = {
         text?: string;
         templateId?: string;
         templateName?: string;
+        // BCP-47 tag forwarded to the backend's dispatcher so a Meta
+        // template can be invoked with the right language. Only set
+        // for WhatsApp templates from Meta — undefined for GHL
+        // snippets.
+        templateLanguage?: string;
       }
     ) => request<{ id: string }>("POST", `/conversations/${id}/scheduled`, payload),
     cancelScheduled: (id: string, messageId: string) =>
@@ -434,7 +439,13 @@ export const api = {
       if (params?.type) qs.set("type", params.type);
       const q = qs.toString();
       return request<{
-        templates: { id: string; name: string; type: string; body: string }[];
+        templates: {
+          id: string;
+          name: string;
+          type: string;
+          body: string;
+          language?: string;
+        }[];
       }>("GET", `/templates${q ? `?${q}` : ""}`);
     },
   },

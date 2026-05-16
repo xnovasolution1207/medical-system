@@ -1200,7 +1200,7 @@ export default function Index() {
       text: string,
       date: string,
       channel: Message["channel"],
-      template?: { id: string; name?: string }
+      template?: { id: string; name?: string; language?: string }
     ) => {
       if (isStubConvId(conversationId)) {
         toast({
@@ -1241,6 +1241,7 @@ export default function Index() {
           channel: localChannel,
           templateId: template?.id,
           templateName: template?.name,
+          templateLanguage: template?.language,
         })
         .then((saved) => {
           updateBootstrap((prev) => ({

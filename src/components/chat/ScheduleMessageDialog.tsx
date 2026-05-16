@@ -64,6 +64,9 @@ interface WhatsAppTemplateDialogProps {
     channel: NonNullable<Message["channel"]>;
     templateId?: string;
     templateName?: string;
+    // BCP-47 tag captured at pick-time so the dispatcher doesn't need
+    // to re-list templates to recover the language at send time.
+    templateLanguage?: string;
   }) => Promise<void> | void;
 }
 
@@ -168,6 +171,7 @@ export function ScheduleMessageDialog({
         channel,
         templateId: selected.id,
         templateName: selected.name,
+        templateLanguage: selected.language,
       });
       onOpenChange(false);
     } catch (err) {

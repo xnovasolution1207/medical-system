@@ -46,7 +46,7 @@ interface ChatMessageAreaProps {
     text: string,
     date: string,
     channel?: Message["channel"],
-    template?: { id: string; name?: string }
+    template?: { id: string; name?: string; language?: string }
   ) => void;
   onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
   onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
@@ -1566,7 +1566,11 @@ export function ChatMessageArea({
             payload.scheduledFor,
             payload.channel,
             payload.templateId
-              ? { id: payload.templateId, name: payload.templateName }
+              ? {
+                  id: payload.templateId,
+                  name: payload.templateName,
+                  language: payload.templateLanguage,
+                }
               : undefined
           );
         }}
