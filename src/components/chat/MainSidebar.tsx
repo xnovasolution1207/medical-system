@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut } from "lucide-react";
+import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut, MessageSquare } from "lucide-react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/authContext";
@@ -17,6 +17,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { AgentUser, SavedView, Task } from "./types";
+import { WabaRegistrationDialog } from "./WabaRegistrationDialog";
 
 interface MainSidebarProps {
   savedViews: SavedView[];
@@ -76,6 +77,11 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
   const [isViewsDropdownOpen, setIsViewsDropdownOpen] = useState(false);
   const [showAgents, setShowAgents] = useState(false);
   const [searchAgent, setSearchAgent] = useState("");
+  // Toggles the "Registrar WABA ID" modal launched from the footer.
+  // The same modal is opened lazily from ScheduleMessageDialog when the
+  // backend reports WABA_MISSING — exposing it here lets the agent set
+  // it up proactively instead of waiting for the first 409.
+  const [isWabaModalOpen, setIsWabaModalOpen] = useState(false);
 
   // Live count of pending (non-completed) tasks. Drives the badge next to
   // "Tareas pendientes" in both the expanded and collapsed sidebars.
@@ -653,6 +659,25 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                 "justify-start h-10 w-full transition-all relative rounded-xl",
                 isExpanded ? "px-3" : "px-0 justify-center"
               )}
+              onClick={() => setIsWabaModalOpen(true)}
+            >
+              <MessageSquare className={cn("h-5 w-5 shrink-0 text-muted-foreground", isExpanded && "mr-3")} />
+              {isExpanded && <span className="truncate flex-1 text-left">Registrar WABA ID</span>}
+            </Button>
+          </TooltipTrigger>
+          {!isExpanded && (
+            <TooltipContent side="right">Registrar WABA ID</TooltipContent>
+          )}
+        </Tooltip>
+
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn(
+                "justify-start h-10 w-full transition-all relative rounded-xl",
+                isExpanded ? "px-3" : "px-0 justify-center"
+              )}
               onClick={toggleTheme}
             >
               {isDarkMode ? (
@@ -670,6 +695,11 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
           )}
         </Tooltip>
       </div>
+
+      <WabaRegistrationDialog
+        open={isWabaModalOpen}
+        onOpenChange={setIsWabaModalOpen}
+      />
     </div>
   );
 }
