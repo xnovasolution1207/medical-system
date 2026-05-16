@@ -771,6 +771,7 @@ export function OpportunitiesView({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
+                variant="outline"
                 size="icon"
                 className="shrink-0"
                 title="Nuevo"
