@@ -43,6 +43,7 @@ import { WabaRegistrationDialog } from "./WabaRegistrationDialog";
 import {
   SCHEDULE_OPTIONS,
   defaultLocalDatetime,
+  nowLocalDatetime,
   resolveScheduleOption,
   type ScheduleOptionId,
 } from "./scheduleOptions";
@@ -164,6 +165,12 @@ export function ScheduleMessageDialog({
           : resolveScheduleOption(scheduleOptionId);
       if (!date || isNaN(date.getTime())) {
         throw new Error("Fecha y hora inválidas.");
+      }
+      // Reject any time at or before now. A small 30 s grace window
+      // covers the case where the agent picked "En 1 hora", paused, and
+      // the preset slid into the past — we still treat that as valid.
+      if (date.getTime() < Date.now() - 30_000) {
+        throw new Error("No puedes programar una plantilla en el pasado.");
       }
       await onSubmit({
         text: selected.body,
@@ -338,7 +345,7 @@ export function ScheduleMessageDialog({
                 type="datetime-local"
                 value={customDatetime}
                 onChange={(e) => setCustomDatetime(e.target.value)}
-                min={defaultLocalDatetime().slice(0, 16)}
+                min={nowLocalDatetime()}
                 className="h-9 text-sm w-[200px]"
               />
             )}

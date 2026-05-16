@@ -73,7 +73,20 @@ export function resolveScheduleOption(id: ScheduleOptionId): Date | null {
 // now, rounded down to the minute. Pulled out so the popover's custom
 // picker and the template dialog's custom picker stay in sync.
 export function defaultLocalDatetime(): string {
-  const d = new Date(Date.now() + 60 * 60 * 1000);
+  return toLocalDatetimeInput(new Date(Date.now() + 60 * 60 * 1000));
+}
+
+// `min` value for the custom picker — local-time "now", rounded down to
+// the minute. Kept separate from `defaultLocalDatetime` (which is a
+// sensible *default*, not a lower bound). Browsers that honor `min` on
+// type=datetime-local will block past picks at the UI layer; the
+// dialog's submit handler enforces the same rule defensively for
+// browsers (or paste tricks) that bypass it.
+export function nowLocalDatetime(): string {
+  return toLocalDatetimeInput(new Date());
+}
+
+function toLocalDatetimeInput(d: Date): string {
   d.setSeconds(0, 0);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
