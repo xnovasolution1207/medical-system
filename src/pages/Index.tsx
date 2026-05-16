@@ -307,6 +307,27 @@ export default function Index() {
     retry: 1,
   });
   const totalUnread = unreadCountData?.total ?? 0;
+  // Count of conversations assigned to the logged-in agent across the
+  // whole tenant — not just the locally-loaded window. Drives the
+  // badge next to "Asignados a mí" in MainSidebar. Re-runs on
+  // `lead.updated` via the same invalidation path as the unread count.
+  const { data: assignedListData } = useQuery<{ conversations: unknown[] }>({
+    queryKey: ["conversations", "assigned-count", myUserId ?? null],
+    queryFn: async () => {
+      if (!myUserId) return { conversations: [] };
+      const result = await api.conversations.list({
+        assignedTo: myUserId,
+        limit: 100,
+      });
+      return { conversations: result.conversations };
+    },
+    enabled: !!myUserId,
+    staleTime: 60_000,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+  const assignedToMeCount = assignedListData?.conversations.length ?? 0;
   // Default the contact sidebar open only on screens wide enough to host
   // every column comfortably. Below 2xl (1536px) the four-region shell would
   // squeeze the message area and cause the chat header buttons to spill into
@@ -630,6 +651,7 @@ export default function Index() {
         // GHL on the next render — cheap (limit=1) and keeps the badge
         // accurate without us having to mirror GHL's unread bookkeeping.
         queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ["conversations", "assigned-count"] });
         // Stub id used for contact-only ContactCreate events that arrive
         // before any conversation exists in GHL. We use a deterministic
         // prefix so the row can be replaced when the real conversation
@@ -1972,6 +1994,7 @@ export default function Index() {
           tasks={tasks}
           users={users}
           onDeleteView={handleDeleteView}
+          assignedToMeCount={assignedToMeCount}
         />
       </div>
 
@@ -1989,6 +2012,7 @@ export default function Index() {
             tasks={tasks}
             users={users}
             onDeleteView={handleDeleteView}
+            assignedToMeCount={assignedToMeCount}
             forceExpanded
           />
         </SheetContent>

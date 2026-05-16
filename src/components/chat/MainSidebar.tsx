@@ -33,9 +33,12 @@ interface MainSidebarProps {
   users?: AgentUser[];
   onDeleteView?: (id: string) => void;
   forceExpanded?: boolean;
+  // Count of conversations assigned to the logged-in agent — renders
+  // as a badge next to "Asignados a mí".
+  assignedToMeCount?: number;
 }
 
-export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab, onSelectTab, taskUserFilters, setTaskUserFilters, tasks = [], users = [], onDeleteView, forceExpanded = false }: MainSidebarProps) {
+export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab, onSelectTab, taskUserFilters, setTaskUserFilters, tasks = [], users = [], onDeleteView, forceExpanded = false, assignedToMeCount = 0 }: MainSidebarProps) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const isExpanded = forceExpanded || internalExpanded;
   const setIsExpanded = setInternalExpanded;
@@ -143,7 +146,10 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
       </div>
 
       <div className="flex-1 py-4 flex flex-col gap-2 px-3 overflow-y-auto">
-        {mainItems.map((item) => (
+        {mainItems.map((item) => {
+          const showBadge = item.id === "asignados";
+          const badgeCount = showBadge ? assignedToMeCount : 0;
+          return (
           <Tooltip key={item.id} delayDuration={0}>
             <TooltipTrigger asChild>
               <Button
@@ -158,8 +164,18 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                 }}
               >
                 <item.icon className={cn("h-5 w-5 shrink-0", isExpanded && "mr-3 text-muted-foreground")} />
-                {/* Badge removed as requested */}
                 {isExpanded && <span className="truncate flex-1 text-left">{item.label}</span>}
+                {showBadge && (
+                  isExpanded ? (
+                    <span className="ml-auto flex items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary h-5 min-w-5 px-1.5">
+                      {badgeCount}
+                    </span>
+                  ) : (
+                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary h-4 min-w-4 px-1 ring-2 ring-background">
+                      {badgeCount}
+                    </span>
+                  )
+                )}
               </Button>
             </TooltipTrigger>
             {!isExpanded && (
@@ -168,7 +184,8 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
               </TooltipContent>
             )}
           </Tooltip>
-        ))}
+          );
+        })}
 
         {isExpanded ? (
           <>
