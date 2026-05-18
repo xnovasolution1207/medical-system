@@ -138,7 +138,10 @@ export type ScheduledMessage = {
 };
 
 // Saved GHL location template / snippet ("plantilla"). Surfaced by the
-// scheduling dialog as a dropdown.
+// scheduling dialog as a dropdown. For WhatsApp templates sourced
+// from Meta's /message_templates, `whatsappDetail` carries the full
+// approval status / category / quality / structured component data
+// so the dialog can render a faithful preview.
 export type MessageTemplate = {
   id: string;
   name: string;
@@ -148,6 +151,61 @@ export type MessageTemplate = {
   // templates — GHL snippets omit it. Forwarded to the schedule call
   // so the dispatcher knows which language to invoke on Meta.
   language?: string;
+  whatsappDetail?: WhatsAppTemplateDetail;
+};
+
+// Mirror of backend `WhatsAppTemplateDetail` (see
+// backend/src/types/domain.ts). Kept in sync manually — there is no
+// shared package between frontend and backend.
+export type WhatsAppTemplateDetail = {
+  status?: string;
+  category?: string;
+  qualityScore?: {
+    score?: string;
+    reasons?: string[];
+    date?: number;
+  };
+  rejectedReason?: string;
+  previousCategory?: string;
+  correctCategory?: string;
+  parameterFormat?: string;
+  messageSendTtlSeconds?: number;
+  libraryTemplateName?: string;
+  ctaUrlLinkTrackingOptedOut?: boolean;
+  idInPartner?: string;
+  components: WhatsAppTemplateComponent[];
+};
+
+export type WhatsAppTemplateComponent = {
+  type: string;
+  format?: string;
+  text?: string;
+  example?: {
+    headerText?: string[];
+    headerHandle?: string[];
+    bodyText?: string[][];
+    headerTextNamedParams?: Array<{ paramName: string; example: string }>;
+    bodyTextNamedParams?: Array<{ paramName: string; example: string }>;
+  };
+  buttons?: WhatsAppTemplateButton[];
+  addSecurityRecommendation?: boolean;
+  codeExpirationMinutes?: number;
+};
+
+export type WhatsAppTemplateButton = {
+  type: string;
+  text?: string;
+  url?: string;
+  phoneNumber?: string;
+  example?: string[];
+  flowId?: string;
+  flowAction?: string;
+  navigateScreen?: string;
+  otpType?: string;
+  autofillText?: string;
+  packageName?: string;
+  signatureHash?: string;
+  zeroTapTermsAccepted?: boolean;
 };
 
 export type Conversation = {

@@ -291,13 +291,51 @@ export function ScheduleMessageDialog({
               </Select>
             </div>
 
-            {/* Tags row — language + category. Hardcoded for now since
-                GHL's templates endpoint doesn't surface these fields. */}
+            {/* Tags row — channel + (for WhatsApp) status, category,
+                language, quality score. All driven by the rich
+                whatsappDetail payload from Meta. */}
             {selected && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30">
                   {selected.type === "whatsapp" ? "WhatsApp" : selected.type.toUpperCase()}
                 </Badge>
+                {selected.language && (
+                  <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/30">
+                    {selected.language}
+                  </Badge>
+                )}
+                {selected.whatsappDetail?.category && (
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+                    {selected.whatsappDetail.category}
+                  </Badge>
+                )}
+                {selected.whatsappDetail?.status && (
+                  <Badge
+                    variant="outline"
+                    className={
+                      selected.whatsappDetail.status === "APPROVED"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30"
+                        : selected.whatsappDetail.status === "PENDING"
+                          ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30"
+                          : selected.whatsappDetail.status === "REJECTED"
+                            ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/30"
+                            : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/30"
+                    }
+                  >
+                    {selected.whatsappDetail.status}
+                  </Badge>
+                )}
+                {selected.whatsappDetail?.qualityScore?.score && (
+                  <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/30">
+                    Calidad: {selected.whatsappDetail.qualityScore.score}
+                  </Badge>
+                )}
+              </div>
+            )}
+            {selected?.whatsappDetail?.rejectedReason && (
+              <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                <strong className="font-semibold">Rechazada:</strong>{" "}
+                {selected.whatsappDetail.rejectedReason}
               </div>
             )}
 
@@ -334,21 +372,42 @@ export function ScheduleMessageDialog({
             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-center">
               Vista previa
             </div>
-            <div className="rounded-2xl bg-amber-50 dark:bg-amber-500/10 p-4 min-h-[180px]">
+            <div className="rounded-2xl bg-amber-50 dark:bg-amber-500/10 p-4 min-h-[180px] space-y-2">
               {selected ? (
-                <div className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 shadow-sm">
-                  {split.header && (
-                    <div className="text-[13px] font-bold text-slate-900 dark:text-slate-100 mb-1">
-                      {split.header}
+                <>
+                  <div className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 shadow-sm">
+                    {split.header && (
+                      <div className="text-[13px] font-bold text-slate-900 dark:text-slate-100 mb-1">
+                        {split.header}
+                      </div>
+                    )}
+                    <div className="text-[13px] text-slate-800 dark:text-slate-200 whitespace-pre-wrap">
+                      {split.rest || selected.body}
                     </div>
-                  )}
-                  <div className="text-[13px] text-slate-800 dark:text-slate-200 whitespace-pre-wrap">
-                    {split.rest || selected.body}
+                    <div className="mt-2 text-right text-[10px] text-slate-400">
+                      {previewTime} h
+                    </div>
                   </div>
-                  <div className="mt-2 text-right text-[10px] text-slate-400">
-                    {previewTime} h
-                  </div>
-                </div>
+                  {/* Render any buttons declared on the template — Meta
+                      shows these as the bottom of the bubble. */}
+                  {selected.whatsappDetail?.components
+                    ?.find((c) => c.type === "BUTTONS")
+                    ?.buttons?.map((btn, i) => (
+                      <div
+                        key={`${btn.type}-${i}`}
+                        className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-center text-[12px] font-medium text-emerald-600 dark:text-emerald-400 shadow-sm"
+                        title={
+                          btn.type === "URL"
+                            ? btn.url
+                            : btn.type === "PHONE_NUMBER"
+                              ? btn.phoneNumber
+                              : btn.type
+                        }
+                      >
+                        {btn.text || btn.type}
+                      </div>
+                    ))}
+                </>
               ) : (
                 <div className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-right text-[10px] text-slate-400">
                   {previewTime || "--:--"} h
