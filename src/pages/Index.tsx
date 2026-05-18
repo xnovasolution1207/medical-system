@@ -1263,6 +1263,98 @@ export default function Index() {
     [toast, updateBootstrap]
   );
 
+  // "Enviar ahora" path from the WhatsApp template dialog. Mirrors the
+  // composer's optimistic-insert flow but adds the template fields so
+  // the backend routes through GHL's templated WhatsApp send. We don't
+  // touch scheduledMessages — the message lands as a regular outbound
+  // bubble in the chat, not as a pending row.
+  const handleSendTemplateNow = useCallback(
+    async (
+      conversationId: string,
+      text: string,
+      channel: NonNullable<Message["channel"]>,
+      template: { id: string; name?: string; language?: string }
+    ) => {
+      if (isStubConvId(conversationId)) {
+        toast({
+          title: "Conversación no disponible",
+          description:
+            "Este lead aún no tiene una conversación. Espera a que envíe el primer mensaje.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const optimisticId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const optimistic: Message = {
+        id: optimisticId,
+        clientId: optimisticId,
+        senderId: currentUser.id,
+        text,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        isRead: true,
+        channel,
+        status: "sent",
+        templateName: template.name,
+      };
+      updateBootstrap((prev) => {
+        const idx = prev.conversations.findIndex((c) => c.id === conversationId);
+        if (idx === -1) return prev;
+        const c = prev.conversations[idx];
+        return {
+          ...prev,
+          conversations: moveConversationToFront(prev.conversations, conversationId, {
+            messages: [...c.messages, optimistic],
+            lastMessage: template.name ? `Plantilla: ${template.name}` : text,
+            timestamp: optimistic.timestamp,
+            unreadCount: 0,
+          }),
+        };
+      });
+      try {
+        const sent = await api.conversations.send(conversationId, {
+          text,
+          channel,
+          clientId: optimisticId,
+          templateId: template.id,
+          templateName: template.name,
+          templateLanguage: template.language,
+        });
+        updateBootstrap((prev) => ({
+          ...prev,
+          conversations: prev.conversations.map((conv) =>
+            conv.id === conversationId
+              ? {
+                  ...conv,
+                  messages: mergeIncomingMessage(
+                    conv.messages,
+                    { ...sent, clientId: sent.clientId ?? optimisticId },
+                    currentUserIdRef.current
+                  ),
+                }
+              : conv
+          ),
+        }));
+      } catch (err) {
+        console.error("send template failed", err);
+        updateBootstrap((prev) => ({
+          ...prev,
+          conversations: prev.conversations.map((conv) =>
+            conv.id === conversationId
+              ? {
+                  ...conv,
+                  messages: conv.messages.map((m) =>
+                    m.id === optimisticId ? { ...m, status: "error" as const } : m
+                  ),
+                }
+              : conv
+          ),
+        }));
+        throw err;
+      }
+    },
+    [currentUser.id, toast, updateBootstrap]
+  );
+
   const handleCancelScheduledMessage = useCallback(
     (conversationId: string, messageId: string) => {
       updateBootstrap((prev) => ({
@@ -2194,6 +2286,7 @@ export default function Index() {
               onToggleTask={handleToggleTask}
               onSendMessage={handleSendMessage}
               onScheduleMessage={handleScheduleMessage}
+              onSendTemplateNow={handleSendTemplateNow}
               onCancelScheduledMessage={handleCancelScheduledMessage}
               onUpdateStage={handleUpdateStage}
               onClearReminder={handleClearReminder}

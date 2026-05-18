@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Clock, CornerUpLeft, Loader2 } from "lucide-react";
+import { Clock, CornerUpLeft, Loader2, Send } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { WabaRegistrationDialog } from "./WabaRegistrationDialog";
@@ -69,6 +69,18 @@ interface WhatsAppTemplateDialogProps {
     // to re-list templates to recover the language at send time.
     templateLanguage?: string;
   }) => Promise<void> | void;
+  // Instant-send path ("Enviar ahora" button). Same payload as
+  // onSubmit minus scheduledFor — the parent fires the template
+  // through the regular send pipeline immediately instead of queueing
+  // it. Optional so existing callers that only want scheduling can
+  // omit it and the button hides.
+  onSendNow?: (payload: {
+    text: string;
+    channel: NonNullable<Message["channel"]>;
+    templateId: string;
+    templateName?: string;
+    templateLanguage?: string;
+  }) => Promise<void> | void;
 }
 
 // Best-effort splitter — many templates are written as a single body
@@ -88,6 +100,7 @@ export function ScheduleMessageDialog({
   conversation,
   channel,
   onSubmit,
+  onSendNow,
 }: WhatsAppTemplateDialogProps) {
   const { toast } = useToast();
   const [templates, setTemplates] = useState<MessageTemplate[] | null>(null);
@@ -96,6 +109,7 @@ export function ScheduleMessageDialog({
   const [scheduleOptionId, setScheduleOptionId] = useState<ScheduleOptionId>("manana_9am");
   const [customDatetime, setCustomDatetime] = useState(defaultLocalDatetime);
   const [submitting, setSubmitting] = useState(false);
+  const [sendingNow, setSendingNow] = useState(false);
   // When the backend reports WABA_MISSING we pop the registration
   // modal; on a successful save we re-run the templates fetch via this
   // bumper instead of duplicating the effect logic inline.
@@ -153,7 +167,31 @@ export function ScheduleMessageDialog({
   );
   const split = useMemo(() => splitTemplateBody(selected?.body ?? ""), [selected]);
 
-  const canSubmit = !!selectedId && !submitting;
+  const canSubmit = !!selectedId && !submitting && !sendingNow;
+  const canSendNow = !!selectedId && !!onSendNow && !submitting && !sendingNow;
+
+  const handleSendNow = async () => {
+    if (!canSendNow || !selected || !onSendNow) return;
+    setSendingNow(true);
+    try {
+      await onSendNow({
+        text: selected.body,
+        channel,
+        templateId: selected.id,
+        templateName: selected.name,
+        templateLanguage: selected.language,
+      });
+      onOpenChange(false);
+    } catch (err) {
+      toast({
+        title: "No se pudo enviar la plantilla",
+        description: (err as Error)?.message ?? String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setSendingNow(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!canSubmit || !selected) return;
@@ -351,9 +389,28 @@ export function ScheduleMessageDialog({
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+            <Button
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting || sendingNow}
+            >
               Cancelar
             </Button>
+            {onSendNow && (
+              <Button
+                variant="outline"
+                onClick={handleSendNow}
+                disabled={!canSendNow}
+                className="gap-2"
+              >
+                {sendingNow ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Enviar ahora
+              </Button>
+            )}
             <Button onClick={handleSubmit} disabled={!canSubmit} className="gap-2">
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

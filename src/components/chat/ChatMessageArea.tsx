@@ -48,6 +48,15 @@ interface ChatMessageAreaProps {
     channel?: Message["channel"],
     template?: { id: string; name?: string; language?: string }
   ) => void;
+  // "Enviar ahora" path from the WhatsApp template dialog. Same shape
+  // as onScheduleMessage minus the date — the parent fires the
+  // template through the regular send pipeline immediately.
+  onSendTemplateNow?: (
+    conversationId: string,
+    text: string,
+    channel: NonNullable<Message["channel"]>,
+    template: { id: string; name?: string; language?: string }
+  ) => Promise<void> | void;
   onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
   onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
   onClearReminder?: (id: string) => void;
@@ -293,6 +302,7 @@ export function ChatMessageArea({
   onToggleTask,
   onSendMessage,
   onScheduleMessage,
+  onSendTemplateNow,
   onCancelScheduledMessage,
   onUpdateStage,
   onClearReminder,
@@ -1574,6 +1584,22 @@ export function ChatMessageArea({
               : undefined
           );
         }}
+        onSendNow={
+          onSendTemplateNow
+            ? async (payload) => {
+                await onSendTemplateNow(
+                  conversation.id,
+                  payload.text,
+                  payload.channel,
+                  {
+                    id: payload.templateId,
+                    name: payload.templateName,
+                    language: payload.templateLanguage,
+                  }
+                );
+              }
+            : undefined
+        }
       />
 
       {/* WhatsApp 24h-window expired banner. Sticky at the top of the

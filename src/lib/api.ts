@@ -376,6 +376,15 @@ export const api = {
         mentions?: string[];
         reminder?: string;
         clientId?: string;
+        // WhatsApp template fields for instant template sends (the
+        // "Enviar ahora" path in ScheduleMessageDialog). When set, the
+        // backend routes the call through GHL's templated WhatsApp
+        // send so the approved bubble is rendered — required past
+        // Meta's 24h customer-service window. `text` is sent as a
+        // preview/log string only and is ignored by Meta's renderer.
+        templateId?: string;
+        templateName?: string;
+        templateLanguage?: string;
       }
     ) => request<Message>("POST", `/conversations/${id}/messages`, payload),
     patch: (
