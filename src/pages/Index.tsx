@@ -1194,6 +1194,17 @@ export default function Index() {
   const displayConversations = archivedFilterActive
     ? displayConversationsBase
     : displayConversationsBase.filter((c) => !c.isArchived);
+  // True while the active tab's scoped fetch (assignedTo / followers /
+  // status=unread) is still in flight. The corresponding result state
+  // is `null` before the first fetch resolves, then an array (possibly
+  // empty) afterwards — so `=== null` is the precise "still loading"
+  // signal. `myUserId` gating mirrors the fetch effects: when there's
+  // no user, the assigned/seguidos queries don't run and the empty
+  // state is the truthful answer, not a loading one.
+  const isLoadingConversationList =
+    (assignedFilterActive && Boolean(myUserId) && assignedResults === null) ||
+    (followedFilterActive && Boolean(myUserId) && followedResults === null) ||
+    (unreadFilterActive && unreadResults === null);
   const activeConversation = conversations.find((c) => c.id === activeId);
 
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
@@ -2358,6 +2369,7 @@ export default function Index() {
                         : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
+              isLoadingList={isLoadingConversationList}
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               isSearching={isSearching}
@@ -2427,6 +2439,7 @@ export default function Index() {
                         : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
+              isLoadingList={isLoadingConversationList}
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               isSearching={isSearching}

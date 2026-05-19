@@ -67,6 +67,11 @@ interface ChatSidebarProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   isLoadingMore?: boolean;
+  // True while the first page of the active tab's scoped result set
+  // (Asignados / Seguidos / No leídos) is still in flight. Drives a
+  // spinner in the empty-state so the user doesn't briefly see
+  // "No hay conversaciones" before the fetch lands.
+  isLoadingList?: boolean;
   // Search is controlled by the parent: typing in the input drives a
   // server-side query against the whole GHL location (not just the loaded
   // window), so name matching must live outside this component.
@@ -132,6 +137,7 @@ export function ChatSidebar({
   onLoadMore,
   hasMore = false,
   isLoadingMore = false,
+  isLoadingList = false,
   searchValue,
   onSearchChange,
   isSearching = false,
@@ -1066,12 +1072,24 @@ export function ChatSidebar({
       <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="flex flex-col gap-0.5 p-2">
           {filteredConversations.length === 0 ? (
-            <div className="text-center p-4 text-sm text-muted-foreground">
-              {search.trim()
-                ? isSearching
-                  ? "Buscando en GoHighLevel..."
-                  : `Sin resultados para "${search.trim()}"`
-                : "No hay conversaciones"}
+            <div className="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
+              {search.trim() ? (
+                isSearching ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Buscando en GoHighLevel...</span>
+                  </>
+                ) : (
+                  <span>{`Sin resultados para "${search.trim()}"`}</span>
+                )
+              ) : isLoadingList ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Cargando conversaciones...</span>
+                </>
+              ) : (
+                <span>No hay conversaciones</span>
+              )}
             </div>
           ) : (
             filteredConversations.map((conv) => {
