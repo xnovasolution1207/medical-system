@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  DEFAULT_TAB,
+  pathToNav,
+  tabToPath,
+  viewIdToPath,
+} from "@/lib/chattingRoutes";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { TaskList } from "@/components/chat/TaskList";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
@@ -257,8 +264,42 @@ export default function Index() {
   // client-side: which conversation/tab is open, search input, etc.
   const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL_SAVED_VIEWS);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [activeViewId, setActiveViewId] = useState<string | null>(null);
-  const [activeMainTab, setActiveMainTab] = useState("todos");
+  // activeMainTab / activeViewId are derived from the /chatting/* URL.
+  // Sidebar clicks call the setter shims below, which navigate to the
+  // canonical path; the URL is the source of truth so refresh/share
+  // links round-trip.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { tab: activeMainTab, viewId: activeViewId } = useMemo(
+    () => pathToNav(location.pathname),
+    [location.pathname]
+  );
+  // setActiveMainTab("") is fired by MainSidebar as a paired call right
+  // before onSelectView(viewId) — we let the view-id setter own the
+  // navigation in that case, so the empty value is a no-op.
+  const setActiveMainTab = useCallback(
+    (id: string) => {
+      if (id === "") return;
+      navigate(tabToPath(id));
+    },
+    [navigate]
+  );
+  // MainSidebar pairs onSelectTab(id) with onSelectView(null) on every
+  // non-view click — so a null here must NOT clobber the sibling tab
+  // navigation. Only navigate to the default when we're actually
+  // leaving an active saved view (or the view was just deleted).
+  const setActiveViewId = useCallback(
+    (id: string | null) => {
+      if (id) {
+        navigate(viewIdToPath(id));
+        return;
+      }
+      if (activeViewId !== null) {
+        navigate(tabToPath(DEFAULT_TAB));
+      }
+    },
+    [navigate, activeViewId]
+  );
   const [taskUserFilters, setTaskUserFilters] = useState<string[]>([]);
 
   // Unread-conversation count for the "No leídos" sidebar badge —
@@ -466,15 +507,21 @@ export default function Index() {
     }
   }, []);
 
-  const handleSelectMainTab = useCallback((id: string) => {
-    setActiveMainTab(id);
-    setIsMobileNavOpen(false);
-  }, []);
+  const handleSelectMainTab = useCallback(
+    (id: string) => {
+      setActiveMainTab(id);
+      setIsMobileNavOpen(false);
+    },
+    [setActiveMainTab]
+  );
 
-  const handleSelectViewMobile = useCallback((id: string | null) => {
-    setActiveViewId(id);
-    setIsMobileNavOpen(false);
-  }, []);
+  const handleSelectViewMobile = useCallback(
+    (id: string | null) => {
+      setActiveViewId(id);
+      setIsMobileNavOpen(false);
+    },
+    [setActiveViewId]
+  );
 
   // Wraps `setActiveId` so that picking a row in the mobile lead-list drawer
   // also dismisses the drawer — otherwise the user has to tap outside the
@@ -1897,18 +1944,24 @@ export default function Index() {
     [updateBootstrap]
   );
 
-  const handleSaveView = useCallback((view: SavedView) => {
-    setSavedViews((prev) => {
-      const exists = prev.find((v) => v.id === view.id);
-      return exists ? prev.map((v) => (v.id === view.id ? view : v)) : [...prev, view];
-    });
-    setActiveViewId(view.id);
-  }, []);
+  const handleSaveView = useCallback(
+    (view: SavedView) => {
+      setSavedViews((prev) => {
+        const exists = prev.find((v) => v.id === view.id);
+        return exists ? prev.map((v) => (v.id === view.id ? view : v)) : [...prev, view];
+      });
+      setActiveViewId(view.id);
+    },
+    [setActiveViewId]
+  );
 
-  const handleDeleteView = useCallback((id: string) => {
-    setSavedViews((prev) => prev.filter((v) => v.id !== id));
-    setActiveViewId((current) => (current === id ? null : current));
-  }, []);
+  const handleDeleteView = useCallback(
+    (id: string) => {
+      setSavedViews((prev) => prev.filter((v) => v.id !== id));
+      if (activeViewId === id) setActiveViewId(null);
+    },
+    [activeViewId, setActiveViewId]
+  );
 
   const handleMoveOpportunity = useCallback(
     (id: string, stageId: string) => {
