@@ -229,6 +229,10 @@ export type Conversation = {
   lastMessageDirection?: "inbound" | "outbound";
   messages: Message[];
   isFavorite?: boolean;
+  // Local archive flag. Archived conversations are hidden from the inbox
+  // until the user unarchives them. GHL has no native archived bit, so
+  // this resets on backend restart (lives in the in-memory flagsStore).
+  isArchived?: boolean;
   activeReminder?: string;
   scheduledMessages?: ScheduledMessage[];
   // Stack of pinned messages ("cintillos superiores"). Local-only —

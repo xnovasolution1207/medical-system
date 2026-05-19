@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut, MessageSquare } from "lucide-react";
+import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut, MessageSquare, Archive } from "lucide-react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/authContext";
@@ -111,6 +111,7 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
     { id: "seguidos", label: "Seguidos por mí", icon: Eye },
     { id: "recordatorios", label: "Recordatorios", icon: Bell },
     { id: "oportunidades", label: "Oportunidades", icon: Kanban },
+    { id: "archivados", label: "Archivados", icon: Archive },
   ];
 
   const taskOptions = [

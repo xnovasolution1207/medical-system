@@ -55,6 +55,10 @@ interface ChatSidebarProps {
   activeConversationId: string;
   onSelectConversation: (id: string) => void;
   onToggleFavorite?: (id: string) => void;
+  // Toggle the conversation's local archive flag. Index.tsx hides
+  // archived rows from every inbox view and surfaces an Undo toast,
+  // so the row vanishes the instant this callback fires.
+  onArchiveConversation?: (id: string) => void;
   savedViews?: SavedView[];
   activeViewId?: string | null;
   onSaveView?: (view: SavedView) => void;
@@ -119,6 +123,7 @@ export function ChatSidebar({
   activeConversationId,
   onSelectConversation,
   onToggleFavorite,
+  onArchiveConversation,
   savedViews = [],
   activeViewId = null,
   onSaveView,
@@ -1138,9 +1143,15 @@ export function ChatSidebar({
                               <Star className={cn("h-4 w-4", conv.isFavorite && "fill-yellow-400 text-yellow-400")} />
                               <span>{conv.isFavorite ? "Quitar de favoritos" : "Favorito"}</span>
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="gap-2 cursor-pointer">
+                            <DropdownMenuItem
+                              className="gap-2 cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onArchiveConversation?.(conv.id);
+                              }}
+                            >
                               <Archive className="h-4 w-4" />
-                              <span>Archivar</span>
+                              <span>{conv.isArchived ? "Desarchivar" : "Archivar"}</span>
                             </DropdownMenuItem>
                             <DropdownMenuItem className="gap-2 cursor-pointer">
                               <CheckCheck className="h-4 w-4" />

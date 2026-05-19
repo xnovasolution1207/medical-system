@@ -42,6 +42,7 @@ const TOP_LEVEL_TABS = new Set([
   "seguidos",
   "recordatorios",
   "oportunidades",
+  "archivados",
 ]);
 
 /** Parse a router pathname into the (tab, viewId) pair Index.tsx consumes. */

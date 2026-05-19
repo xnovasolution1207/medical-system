@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { api, BootstrapPayload } from "@/lib/api";
 import { subscribe } from "@/lib/socket";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 
 const INITIAL_SAVED_VIEWS: SavedView[] = [
   { id: "v1", name: "Meta", filters: [], logic: "AND" },
@@ -1166,15 +1167,33 @@ export default function Index() {
   // (Asignados / Seguidos / No leídos) into the request, so the
   // returned list is the intersection of "matches query" AND "tab
   // scope". Clearing the search restores the tab's own results.
-  const displayConversations = isSearchActive
-    ? searchResults ?? []
-    : unreadFilterActive
-      ? unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0)
-      : assignedFilterActive
-        ? assignedResults ?? []
-        : followedFilterActive
-          ? followedResults ?? []
-          : conversations;
+  // Archivados is purely a local toggle — `isArchived` lives on the
+  // backend flagsStore which has no GHL counterpart, so we can't ask
+  // GHL for "all archived". The view therefore shows whichever
+  // archived rows are currently in the locally-loaded conversation
+  // window (bootstrap + any pages the operator has scrolled into).
+  // Search / Unread / Asignados / Seguidos filters are bypassed on
+  // this tab; the operator is here specifically to find or restore
+  // archived leads.
+  const archivedFilterActive = activeMainTab === "archivados";
+  const displayConversationsBase = archivedFilterActive
+    ? conversations.filter((c) => c.isArchived)
+    : isSearchActive
+      ? searchResults ?? []
+      : unreadFilterActive
+        ? unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0)
+        : assignedFilterActive
+          ? assignedResults ?? []
+          : followedFilterActive
+            ? followedResults ?? []
+            : conversations;
+  // Everywhere except the Archivados tab, archived rows are hidden so
+  // they don't pollute the working inbox. The flag is patched
+  // optimistically by handleToggleArchive, so a row vanishes the
+  // moment the operator clicks "Archivar".
+  const displayConversations = archivedFilterActive
+    ? displayConversationsBase
+    : displayConversationsBase.filter((c) => !c.isArchived);
   const activeConversation = conversations.find((c) => c.id === activeId);
 
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
@@ -1730,6 +1749,53 @@ export default function Index() {
     [updateBootstrap]
   );
 
+  // Archive / unarchive a conversation. Optimistically flips the local
+  // flag (which Index hides from displayConversations), persists via
+  // PATCH, and surfaces a toast with Undo so an accidental archive can
+  // be reverted in one click. The toast is omitted on unarchive — the
+  // operator chose to bring it back, no extra confirmation needed.
+  const handleToggleArchive = useCallback(
+    (id: string) => {
+      let nextValue = false;
+      let participantName = "";
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => {
+          if (c.id !== id) return c;
+          nextValue = !c.isArchived;
+          participantName = c.participant?.name ?? "";
+          return { ...c, isArchived: nextValue };
+        }),
+      }));
+      if (!isStubConvId(id)) {
+        api.conversations
+          .patch(id, { isArchived: nextValue })
+          .catch((err) => console.error("toggle archive failed", err));
+      }
+      // Drop focus when the active conversation just disappeared from
+      // the inbox — otherwise the message area still shows it but the
+      // sidebar pretends it doesn't exist.
+      if (nextValue) {
+        setActiveId((current) => (current === id ? null : current));
+        toast({
+          title: "Conversación archivada",
+          description: participantName
+            ? `${participantName} fue archivada.`
+            : undefined,
+          action: (
+            <ToastAction
+              altText="Deshacer"
+              onClick={() => handleToggleArchive(id)}
+            >
+              Deshacer
+            </ToastAction>
+          ),
+        });
+      }
+    },
+    [toast, updateBootstrap]
+  );
+
   // Pin or unpin a message in the active conversation. Optimistically
   // updates the local cache so the banner pops in immediately, then
   // persists via PATCH /conversations/:id. The backend keeps a
@@ -2273,6 +2339,7 @@ export default function Index() {
               activeConversationId={activeId || ""}
               onSelectConversation={handleSelectConversationMobile}
               onToggleFavorite={handleToggleFavorite}
+              onArchiveConversation={handleToggleArchive}
               activeViewId={activeViewId}
               savedViews={savedViews}
               onSaveView={handleSaveView}
@@ -2341,6 +2408,7 @@ export default function Index() {
               activeConversationId={activeId || ""}
               onSelectConversation={setActiveId}
               onToggleFavorite={handleToggleFavorite}
+              onArchiveConversation={handleToggleArchive}
               activeViewId={activeViewId}
               savedViews={savedViews}
               onSaveView={handleSaveView}

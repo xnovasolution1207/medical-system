@@ -391,6 +391,7 @@ export const api = {
       id: string,
       patch: Partial<{
         isFavorite: boolean;
+        isArchived: boolean;
         activeReminder: string | null;
         stage: string;
         // Add a snapshot to the conversation's pinned-message stack
