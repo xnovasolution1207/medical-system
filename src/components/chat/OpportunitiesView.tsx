@@ -988,6 +988,16 @@ export function OpportunitiesView({
                   (sum, opp) => sum + (opp.monetaryValue ?? 0),
                   0
                 );
+                // Stage-level select-all state. `indeterminate` when only
+                // some cards in the column are picked, so the operator
+                // can see partial selection without inspecting each card.
+                const selectedInStage = stageOpps.filter((o) =>
+                  selectedOppIds.has(o.id)
+                ).length;
+                const stageAllSelected =
+                  stageOpps.length > 0 && selectedInStage === stageOpps.length;
+                const stageSomeSelected =
+                  selectedInStage > 0 && !stageAllSelected;
                 return (
                   <div
                     key={stage.id}
@@ -995,7 +1005,7 @@ export function OpportunitiesView({
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, stage.id)}
                   >
-                    <div className="p-3 border-b bg-muted/50 rounded-t-lg shrink-0">
+                    <div className="group p-3 border-b bg-muted/50 rounded-t-lg shrink-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           {/* Per-stage color dot — the same swatch the
@@ -1025,6 +1035,47 @@ export function OpportunitiesView({
                           <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border">
                             {stageOpps.length}
                           </span>
+                          {/* Select-all for this stage. Hidden when the
+                              column is empty (nothing to select); only
+                              revealed on hover so it doesn't compete
+                              with the count pill at rest. Stays visible
+                              once any card in the stage is picked so the
+                              operator can see / clear the selection
+                              without re-hovering. Indeterminate when
+                              partially selected; clicking adds or removes
+                              every card in this stage from the selection
+                              set. */}
+                          {stageOpps.length > 0 && (
+                            <Checkbox
+                              checked={
+                                stageAllSelected
+                                  ? true
+                                  : stageSomeSelected
+                                    ? "indeterminate"
+                                    : false
+                              }
+                              onCheckedChange={(checked) => {
+                                setSelectedOppIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (checked === true) {
+                                    for (const o of stageOpps) next.add(o.id);
+                                  } else {
+                                    for (const o of stageOpps)
+                                      next.delete(o.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Seleccionar todos en ${stage.label}`}
+                              className={cn(
+                                "transition-opacity",
+                                stageAllSelected || stageSomeSelected
+                                  ? "opacity-100"
+                                  : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                              )}
+                            />
+                          )}
                         </div>
                       </div>
                     </div>
