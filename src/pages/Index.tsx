@@ -2378,6 +2378,8 @@ export default function Index() {
                 setIsMobileNavOpen(true);
               }}
               onCreateContact={handleCreateContact}
+              onCreateOpportunity={handleCreateOpportunity}
+              pipelineId={opportunitiesPipeline?.id}
               users={users}
               advancedFilters={advancedFilters}
               advancedLogic={advancedLogic}
@@ -2445,6 +2447,8 @@ export default function Index() {
               isSearching={isSearching}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
               onCreateContact={handleCreateContact}
+              onCreateOpportunity={handleCreateOpportunity}
+              pipelineId={opportunitiesPipeline?.id}
               users={users}
               advancedFilters={advancedFilters}
               advancedLogic={advancedLogic}

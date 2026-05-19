@@ -44,6 +44,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FilterBuilder } from "./FilterBuilder";
+import { AddContactDialog } from "./AddContactDialog";
 import { FilterCondition, SavedView } from "./types";
 import { UserPlus, Users } from "lucide-react";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -93,6 +94,21 @@ interface ChatSidebarProps {
     phone?: string;
     email?: string;
   }) => Promise<{ id: string } | null>;
+  // Optional opportunity hook — forwarded to AddContactDialog so the
+  // "Etapa de oportunidad" picker on the new-contact form can chain
+  // an opportunity create after the contact is saved (mirrors the
+  // Oportunidades view's Agregar contacto flow).
+  onCreateOpportunity?: (payload: {
+    name: string;
+    contactId: string;
+    pipelineId: string;
+    stageId: string;
+    monetaryValue?: number;
+  }) => void | Promise<void>;
+  // Active GHL pipeline id, required to chain an opportunity from
+  // the AddContactDialog stage picker. Omit when the pipeline isn't
+  // loaded yet — the picker still renders, just doesn't write.
+  pipelineId?: string;
   // Agent roster from the bootstrap payload — drives the FilterBuilder's
   // user pickers (Asignado / Seguidor / Mención).
   users?: AgentUser[];
@@ -145,6 +161,8 @@ export function ChatSidebar({
   onDeleteConversation,
   onOpenMobileNav,
   onCreateContact,
+  onCreateOpportunity,
+  pipelineId,
   users = [],
   advancedFilters,
   advancedLogic,
@@ -173,18 +191,7 @@ export function ChatSidebar({
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
-  // Add-contact form state. We keep it locally rather than forwarding the
-  // form object up so the dialog can reset itself on close without parent
-  // entanglement.
-  const [contactName, setContactName] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
-  const [isCreatingContact, setIsCreatingContact] = useState(false);
-  const resetContactForm = () => {
-    setContactName("");
-    setContactPhone("");
-    setContactEmail("");
-  };
+  // Add-contact form state lives inside AddContactDialog now.
   // New-conversation search: lets the user pick an existing contact (by name
   // / phone / email) and navigate to their conversation. Powered by the same
   // server-side conversation-list query used by the sidebar's main search.
@@ -660,122 +667,19 @@ export function ChatSidebar({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Dialog
+          {/* Comprehensive Agregar contacto modal — shared with the
+              Oportunidades view so a contact created from either
+              surface captures the same fields (name/phone/email +
+              address/birthdate/document + family links + optional
+              opportunity stage). */}
+          <AddContactDialog
             open={isAddContactOpen}
-            onOpenChange={(open) => {
-              setIsAddContactOpen(open);
-              if (!open) resetContactForm();
-            }}
-          >
-            <DialogContent className="sm:max-w-[425px] p-6 rounded-[24px]">
-              <DialogHeader className="mb-4">
-                <DialogTitle className="text-xl font-semibold">Agregar contacto</DialogTitle>
-              </DialogHeader>
-              <form
-                className="space-y-4"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  // Required-field check: at least name OR phone must be set
-                  // (matches what the GHL contacts/ POST will accept). Email
-                  // alone also counts since GHL allows email-only contacts,
-                  // but our form leaves email optional below the fold so we
-                  // surface the most-helpful message here.
-                  const hasIdentity =
-                    contactName.trim().length > 0 || contactPhone.trim().length > 0;
-                  if (!hasIdentity) {
-                    toast({
-                      title: "Información incompleta",
-                      description: "Ingresa al menos un nombre o un teléfono.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  if (!onCreateContact) {
-                    toast({
-                      title: "No disponible",
-                      description: "El backend no expone la creación de contactos.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  setIsCreatingContact(true);
-                  try {
-                    const created = await onCreateContact({
-                      name: contactName.trim() || undefined,
-                      phone: contactPhone.trim() || undefined,
-                      email: contactEmail.trim() || undefined,
-                    });
-                    if (created) {
-                      toast({
-                        title: "Contacto agregado",
-                        description:
-                          "Aparecerá en la lista cuando GoHighLevel confirme el registro.",
-                      });
-                      setIsAddContactOpen(false);
-                      resetContactForm();
-                    }
-                  } catch (err) {
-                    toast({
-                      title: "No se pudo agregar el contacto",
-                      description: String((err as Error)?.message ?? err),
-                      variant: "destructive",
-                    });
-                  } finally {
-                    setIsCreatingContact(false);
-                  }
-                }}
-              >
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nombre y apellido *</Label>
-                  <Input
-                    id="name"
-                    placeholder="Ej. Juan Pérez"
-                    value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Teléfono *</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    placeholder="Ej. +1 234 567 8900"
-                    value={contactPhone}
-                    onChange={(e) => setContactPhone(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="Ej. juan@example.com"
-                    value={contactEmail}
-                    onChange={(e) => setContactEmail(e.target.value)}
-                  />
-                </div>
-                <div className="pt-4 flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsAddContactOpen(false)}
-                    className="rounded-full"
-                    disabled={isCreatingContact}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="rounded-full"
-                    disabled={isCreatingContact}
-                  >
-                    {isCreatingContact ? "Guardando…" : "Guardar contacto"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+            onOpenChange={setIsAddContactOpen}
+            onCreateContact={onCreateContact}
+            onCreateOpportunity={onCreateOpportunity}
+            pipelineId={pipelineId}
+            stages={stages}
+          />
           <Dialog
             open={isNewConversationOpen}
             onOpenChange={(open) => {
