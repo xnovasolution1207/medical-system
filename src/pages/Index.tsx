@@ -351,16 +351,22 @@ export default function Index() {
   // Count of conversations assigned to the logged-in agent across the
   // whole tenant — not just the locally-loaded window. Drives the
   // badge next to "Asignados a mí" in MainSidebar. Re-runs on
-  // `lead.updated` via the same invalidation path as the unread count.
-  const { data: assignedListData } = useQuery<{ conversations: unknown[] }>({
-    queryKey: ["conversations", "assigned-count", myUserId ?? null],
+  // `lead.updated` via the same invalidation path as the unread count;
+  // `handleUpdateAssignment` also mutates this cache optimistically so
+  // self-assigning a lead bumps the badge immediately.
+  const assignedCountQueryKey = useMemo(
+    () => ["conversations", "assigned-count", myUserId ?? null] as const,
+    [myUserId]
+  );
+  const { data: assignedCountData } = useQuery<{ count: number }>({
+    queryKey: assignedCountQueryKey,
     queryFn: async () => {
-      if (!myUserId) return { conversations: [] };
+      if (!myUserId) return { count: 0 };
       const result = await api.conversations.list({
         assignedTo: myUserId,
         limit: 100,
       });
-      return { conversations: result.conversations };
+      return { count: result.conversations.length };
     },
     enabled: !!myUserId,
     staleTime: 60_000,
@@ -368,7 +374,7 @@ export default function Index() {
     refetchOnWindowFocus: false,
     retry: 1,
   });
-  const assignedToMeCount = assignedListData?.conversations.length ?? 0;
+  const assignedToMeCount = assignedCountData?.count ?? 0;
   // Default the contact sidebar open only on screens wide enough to host
   // every column comfortably. Below 2xl (1536px) the four-region shell would
   // squeeze the message area and cause the chat header buttons to spill into
@@ -1851,6 +1857,16 @@ export default function Index() {
       contactId: string,
       patch: { assignedTo?: string | null; followers?: string[] }
     ) => {
+      // Capture the previous assignment before the optimistic mutation
+      // overwrites it, so we can compute the badge delta accurately.
+      const prevBootstrap = queryClient.getQueryData<BootstrapPayload>(
+        BOOTSTRAP_QUERY_KEY
+      );
+      const prevConv = prevBootstrap?.conversations.find(
+        (c) => c.contactId === contactId || c.participant.id === contactId
+      );
+      const prevAssignedTo = prevConv?.participant.assignedTo ?? null;
+
       updateBootstrap((prev) => ({
         ...prev,
         conversations: prev.conversations.map((c) => {
@@ -1871,6 +1887,26 @@ export default function Index() {
           };
         }),
       }));
+
+      // Optimistically nudge the "Asignados a mí" badge so self-assigning
+      // a lead bumps the count immediately, without waiting for the
+      // 60s staleTime or the GHL webhook round-trip.
+      if (
+        myUserId &&
+        patch.assignedTo !== undefined &&
+        prevConv // skip if the bootstrap didn't know this contact (avoids double-count when the webhook later syncs)
+      ) {
+        const wasMine = prevAssignedTo === myUserId;
+        const isMine = patch.assignedTo === myUserId;
+        const delta = (isMine ? 1 : 0) - (wasMine ? 1 : 0);
+        if (delta !== 0) {
+          queryClient.setQueryData<{ count: number }>(
+            assignedCountQueryKey,
+            (prev) => ({ count: Math.max(0, (prev?.count ?? 0) + delta) })
+          );
+        }
+      }
+
       api.contacts.update(contactId, patch).catch((err) => {
         console.error("contact assignment update failed", err);
         toast({
@@ -1880,7 +1916,7 @@ export default function Index() {
         });
       });
     },
-    [toast, updateBootstrap]
+    [assignedCountQueryKey, myUserId, queryClient, toast, updateBootstrap]
   );
 
   const handleAddTask = useCallback(
