@@ -965,10 +965,20 @@ export default function Index() {
     [advancedFilters, advancedLogic, buildServerFilterParams]
   );
 
+  // Active-tab booleans for the assignedTo / followers sidebar tabs.
+  // Derived locally so the fetch effects below only re-run on real
+  // tab toggles, not on every render.
+  const assignedFilterActive = activeMainTab === "asignados";
+  const followedFilterActive = activeMainTab === "seguidos";
+
   // ---- Server-side search + filter (debounced) ----
   // Triggers when either the text-search box changes OR the advanced filter
   // builder produces a server-translatable condition. The same fetch is
   // reused so the result list always reflects the union of both inputs.
+  // The active sidebar tab (Asignados a mí / Seguidos por mí / No leídos)
+  // is folded in as additional scope so a search on "Asignados a mí"
+  // returns "matches query AND assigned to me" instead of all matches.
+  // User-supplied advanced filter params win on conflicting keys.
   useEffect(() => {
     const q = searchQuery.trim();
     const { params: filterParams, hasServerParam } = buildServerFilterParams(
@@ -988,6 +998,13 @@ export default function Index() {
         .list({
           limit: 25,
           ...(q ? { query: q } : {}),
+          ...(assignedFilterActive && myUserId
+            ? { assignedTo: myUserId }
+            : {}),
+          ...(followedFilterActive && myUserId
+            ? { followers: myUserId }
+            : {}),
+          ...(unreadFilterActive ? { status: "unread" } : {}),
           ...filterParams,
         })
         .then((result) => {
@@ -1009,7 +1026,16 @@ export default function Index() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [searchQuery, advancedFilters, advancedLogic, buildServerFilterParams]);
+  }, [
+    searchQuery,
+    advancedFilters,
+    advancedLogic,
+    buildServerFilterParams,
+    assignedFilterActive,
+    followedFilterActive,
+    unreadFilterActive,
+    myUserId,
+  ]);
 
   // Active iff the search effect is actually fetching: a text query, or at
   // least one *valued* filter condition that translates to a GHL param.
@@ -1019,11 +1045,6 @@ export default function Index() {
   // implementation suffered from.
   const isSearchActive =
     searchQuery.trim().length > 0 || advancedFilterServerInfo.hasServerParam;
-  // Active-tab booleans for the assignedTo / followers sidebar tabs.
-  // Derived locally so the fetch effects below only re-run on real
-  // tab toggles, not on every render.
-  const assignedFilterActive = activeMainTab === "asignados";
-  const followedFilterActive = activeMainTab === "seguidos";
 
   // Fetch the first GHL-wide unread page whenever the No leídos tab
   // activates. Combined with the active sidebar tab — clicking
@@ -1139,14 +1160,20 @@ export default function Index() {
     };
   }, [followedFilterActive, myUserId, totalUnread]);
 
-  const displayConversations = unreadFilterActive
-    ? unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0)
-    : assignedFilterActive
-      ? assignedResults ?? []
-      : followedFilterActive
-        ? followedResults ?? []
-        : isSearchActive
-          ? searchResults ?? []
+  // When the user is typing a query (or has applied an advanced filter
+  // that translates to a GHL param), the search results win over the
+  // tab's base scope — the search effect already folds the active tab
+  // (Asignados / Seguidos / No leídos) into the request, so the
+  // returned list is the intersection of "matches query" AND "tab
+  // scope". Clearing the search restores the tab's own results.
+  const displayConversations = isSearchActive
+    ? searchResults ?? []
+    : unreadFilterActive
+      ? unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0)
+      : assignedFilterActive
+        ? assignedResults ?? []
+        : followedFilterActive
+          ? followedResults ?? []
           : conversations;
   const activeConversation = conversations.find((c) => c.id === activeId);
 
@@ -1533,20 +1560,26 @@ export default function Index() {
 
   const handleLoadMoreConversations = useCallback(async () => {
     const q = searchQuery.trim();
+    const { params: filterParams } = buildServerFilterParams(
+      advancedFilters,
+      advancedLogic
+    );
     // Mode precedence matches displayConversations:
-    //   1. unread tab          → page through status=unread results
-    //   2. asignados tab       → page through assignedTo= results
-    //   3. seguidos tab        → page through followers= results
-    //   4. search/filter       → page through searchResults
+    //   1. search/filter active → page through searchResults (search
+    //      effect already folds the active tab scope in, and load-more
+    //      mirrors that here so subsequent pages keep the intersection)
+    //   2. unread tab          → page through status=unread results
+    //   3. asignados tab       → page through assignedTo= results
+    //   4. seguidos tab        → page through followers= results
     //   5. default             → page through the bootstrap list
-    const cursor = unreadFilterActive
-      ? unreadNextCursor
-      : assignedFilterActive
-        ? assignedNextCursor
-        : followedFilterActive
-          ? followedNextCursor
-          : q
-            ? searchNextCursor
+    const cursor = isSearchActive
+      ? searchNextCursor
+      : unreadFilterActive
+        ? unreadNextCursor
+        : assignedFilterActive
+          ? assignedNextCursor
+          : followedFilterActive
+            ? followedNextCursor
             : conversationsNextCursor;
     if (!cursor || isLoadingMoreConversationsRef.current) return;
     isLoadingMoreConversationsRef.current = true;
@@ -1555,24 +1588,36 @@ export default function Index() {
       const result = await api.conversations.list({
         limit: 25,
         startAfterDate: cursor,
-        query:
-          unreadFilterActive || assignedFilterActive || followedFilterActive
-            ? undefined
-            : q || undefined,
+        // Search query rides on every search-active page; tab-only
+        // pages drop it so the cursor matches the original tab fetch.
+        query: isSearchActive && q ? q : undefined,
+        // Tab scope applies on every page (including search-active
+        // ones) so the cascade reads "matches query AND tab scope".
         status: unreadFilterActive ? "unread" : undefined,
-        // When the unread tab is active *while* a scope tab is also
-        // active, fold both filters into the page request so the next
-        // page matches the same combined criteria.
         assignedTo:
-          assignedFilterActive || (unreadFilterActive && activeMainTab === "asignados")
+          assignedFilterActive ||
+          (unreadFilterActive && activeMainTab === "asignados")
             ? myUserId
             : undefined,
         followers:
-          followedFilterActive || (unreadFilterActive && activeMainTab === "seguidos")
+          followedFilterActive ||
+          (unreadFilterActive && activeMainTab === "seguidos")
             ? myUserId
             : undefined,
+        // Advanced filter params from the filter builder. Only forward
+        // them while search/filter is active — otherwise we'd narrow
+        // tab-only pagination by stale filter values.
+        ...(isSearchActive ? filterParams : {}),
       });
-      if (unreadFilterActive) {
+      if (isSearchActive) {
+        setSearchResults((prev) => {
+          const base = prev ?? [];
+          const existingIds = new Set(base.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return fresh.length ? [...base, ...fresh] : base;
+        });
+        setSearchNextCursor(result.nextCursor);
+      } else if (unreadFilterActive) {
         setUnreadResults((prev) => {
           const base = prev ?? [];
           const existingIds = new Set(base.map((c) => c.id));
@@ -1596,14 +1641,6 @@ export default function Index() {
           return fresh.length ? [...base, ...fresh] : base;
         });
         setFollowedNextCursor(result.nextCursor);
-      } else if (q) {
-        setSearchResults((prev) => {
-          const base = prev ?? [];
-          const existingIds = new Set(base.map((c) => c.id));
-          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
-          return fresh.length ? [...base, ...fresh] : base;
-        });
-        setSearchNextCursor(result.nextCursor);
       } else {
         updateBootstrap((prev) => {
           const existingIds = new Set(prev.conversations.map((c) => c.id));
@@ -1622,7 +1659,11 @@ export default function Index() {
       setIsLoadingMoreConversations(false);
     }
   }, [
+    advancedFilters,
+    advancedLogic,
+    buildServerFilterParams,
     conversationsNextCursor,
+    isSearchActive,
     searchNextCursor,
     searchQuery,
     unreadFilterActive,
