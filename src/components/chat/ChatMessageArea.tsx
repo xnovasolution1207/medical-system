@@ -279,6 +279,30 @@ function renderTextWithMentions(text: string, mentions: string[]): React.ReactNo
   return out;
 }
 
+// Substitute WhatsApp template placeholders (`{{1}}`, `{{2}}`, …) with
+// the recipient's first/last name so the SPA bubble matches what Meta
+// actually delivers. GHL fills these in at send time — but the local
+// optimistic message echoes the raw template body, so without this
+// the agent sees "Hola {{1}}" instead of "Hola Yaqui".
+//
+// Conservative: only operates on `{{N}}` numeric tokens. Plain text
+// that happens to contain a literal "{{1}}" gets substituted too,
+// but that's vanishingly rare in real conversation content.
+function substituteTemplateVars(
+  text: string,
+  contactName: string | undefined
+): string {
+  if (!text || !contactName) return text;
+  const trimmed = contactName.trim();
+  if (!trimmed) return text;
+  const parts = trimmed.split(/\s+/);
+  const first = parts[0] ?? trimmed;
+  const last = parts.slice(1).join(" ");
+  return text
+    .replace(/\{\{\s*1\s*\}\}/g, first)
+    .replace(/\{\{\s*2\s*\}\}/g, last || first);
+}
+
 // True when the bubble would otherwise render nothing visible: no text, no
 // system event, not an internal-channel notes bubble, and no attachment with
 // a recognised type. This catches outbound voice notes recorded in the GHL
@@ -2030,7 +2054,7 @@ export function ChatMessageArea({
                       <span className="whitespace-pre-wrap leading-relaxed">
                         {message.channel === "internal" && message.mentions && message.mentions.length > 0
                           ? renderTextWithMentions(message.text, message.mentions)
-                          : message.text}
+                          : substituteTemplateVars(message.text, conversation.participant?.name)}
                       </span>
                     )}
 
