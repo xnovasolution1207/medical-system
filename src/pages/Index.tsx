@@ -176,6 +176,45 @@ function mergeIncomingMessage(
     }
   }
 
+  // Special-case: WhatsApp template sends route through a GHL
+  // Workflow webhook (fire-and-forget — no real Meta id at HTTP
+  // response time). The backend returns a synthetic `wf-pending-…`
+  // id, so the optimistic message ends up with that id after the
+  // HTTP 201 merge. When GHL's outbound webhook later delivers the
+  // real message, it arrives with a fresh Meta id and a body where
+  // {{1}}/{{2}} have already been substituted by GHL — so clientId,
+  // id, AND text all differ from the optimistic. None of the three
+  // matches above can dedupe.
+  //
+  // The remaining signals that link the two: same sender, same
+  // channel, and the optimistic's id starts with `wf-pending-`
+  // (only ever assigned to template sends). Match by those: replace
+  // the OLDEST such pending in the list with the incoming real
+  // message. Conservative — only the wf-pending- prefix qualifies,
+  // so normal text sends (which dedupe by clientId successfully)
+  // aren't affected.
+  if (
+    currentUserId &&
+    incoming.senderId === currentUserId &&
+    incoming.channel === "whatsapp"
+  ) {
+    const idx = messages.findIndex(
+      (m) =>
+        m.senderId === currentUserId &&
+        m.channel === "whatsapp" &&
+        m.id.startsWith("wf-pending-")
+    );
+    if (idx !== -1) {
+      const next = messages.slice();
+      next[idx] = {
+        ...incoming,
+        clientId: messages[idx].clientId ?? incoming.clientId,
+        replyTo: messages[idx].replyTo ?? incoming.replyTo,
+      };
+      return next;
+    }
+  }
+
   return [...messages, incoming];
 }
 

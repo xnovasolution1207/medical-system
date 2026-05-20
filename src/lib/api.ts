@@ -487,35 +487,41 @@ export const api = {
       request<
         Array<{
           templateName: string;
+          templateLanguage: string;
           webhookUrl: string;
           updatedAt: string;
         }>
       >("GET", "/whatsapp-template-webhooks"),
-    // upsert auto-fires a probe POST to GHL on success — the response
-    // includes the probe outcome so the SPA can show whether the
-    // sample landed and the workflow can now be published.
-    upsert: (templateName: string, webhookUrl: string) =>
+    // Mappings are keyed per (templateName, language) — Meta lets the
+    // same name exist with multiple language variants, each rendered
+    // as its own row in the settings page. `language` is passed as a
+    // query param so callers can use "" for the language-agnostic
+    // fallback row (a single workflow that serves every variant).
+    upsert: (
+      templateName: string,
+      templateLanguage: string,
+      webhookUrl: string
+    ) =>
       request<{
-        // when webhookUrl is empty, the row was deleted; data is null
         templateName?: string;
+        templateLanguage?: string;
         webhookUrl?: string;
         updatedAt?: string;
-        // present on save with non-empty URL
         probe?: { ok: boolean; status: number; message?: string } | null;
       }>(
         "PUT",
-        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}`,
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}?language=${encodeURIComponent(templateLanguage)}`,
         { webhookUrl }
       ),
-    probe: (templateName: string) =>
+    probe: (templateName: string, templateLanguage: string) =>
       request<{ ok: boolean; status: number; message?: string }>(
         "POST",
-        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}/probe`
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}/probe?language=${encodeURIComponent(templateLanguage)}`
       ),
-    remove: (templateName: string) =>
+    remove: (templateName: string, templateLanguage: string) =>
       request<null>(
         "DELETE",
-        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}`
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}?language=${encodeURIComponent(templateLanguage)}`
       ),
   },
 

@@ -46,6 +46,7 @@ interface MetaTemplate {
 
 interface WebhookRow {
   templateName: string;
+  templateLanguage: string;
   webhookUrl: string;
   updatedAt: string;
 }
@@ -57,6 +58,13 @@ interface RowState {
   lastProbe: { ok: boolean; status: number; message?: string } | null;
   dirty: boolean;
   initialUrl: string;
+}
+
+// Key for the per-row state map. Meta lets the same template name
+// exist with multiple language variants (e.g. en + es); each variant
+// is a separate row with its own URL.
+function rowKey(templateName: string, templateLanguage: string | undefined): string {
+  return `${templateName}::${templateLanguage ?? ""}`;
 }
 
 const EMPTY_ROW: RowState = {
@@ -94,17 +102,27 @@ const SettingsWhatsAppTemplates: React.FC = () => {
         const tplList = Array.isArray(tplPayload)
           ? tplPayload
           : tplPayload?.templates ?? [];
-        const byName: Record<string, RowState> = {};
+        const byKey: Record<string, RowState> = {};
         for (const tpl of tplList) {
-          const hook = hooks.find((h) => h.templateName === tpl.name);
-          byName[tpl.name] = {
+          const lang = tpl.language ?? "";
+          // Prefer an exact (name, language) match; fall back to a
+          // language-agnostic ("") row when the operator hasn't
+          // differentiated.
+          const hook =
+            hooks.find(
+              (h) => h.templateName === tpl.name && h.templateLanguage === lang
+            ) ??
+            hooks.find(
+              (h) => h.templateName === tpl.name && !h.templateLanguage
+            );
+          byKey[rowKey(tpl.name, lang)] = {
             ...EMPTY_ROW,
             url: hook?.webhookUrl ?? "",
             initialUrl: hook?.webhookUrl ?? "",
           };
         }
         setTemplates(tplList);
-        setRows(byName);
+        setRows(byKey);
       } catch (err) {
         if (!cancelled) {
           setError(
@@ -120,22 +138,28 @@ const SettingsWhatsAppTemplates: React.FC = () => {
     };
   }, []);
 
-  const updateRow = (name: string, patch: Partial<RowState>) => {
+  const updateRow = (
+    name: string,
+    language: string,
+    patch: Partial<RowState>
+  ) => {
+    const key = rowKey(name, language);
     setRows((prev) => ({
       ...prev,
-      [name]: { ...(prev[name] ?? EMPTY_ROW), ...patch },
+      [key]: { ...(prev[key] ?? EMPTY_ROW), ...patch },
     }));
   };
 
-  const handleUrlChange = (name: string, value: string) => {
-    updateRow(name, {
+  const handleUrlChange = (name: string, language: string, value: string) => {
+    const key = rowKey(name, language);
+    updateRow(name, language, {
       url: value,
-      dirty: value !== (rows[name]?.initialUrl ?? ""),
+      dirty: value !== (rows[key]?.initialUrl ?? ""),
     });
   };
 
-  const handleSave = async (name: string) => {
-    const row = rows[name];
+  const handleSave = async (name: string, language: string) => {
+    const row = rows[rowKey(name, language)];
     if (!row) return;
     const trimmed = row.url.trim();
     if (
@@ -150,11 +174,15 @@ const SettingsWhatsAppTemplates: React.FC = () => {
       });
       return;
     }
-    updateRow(name, { saving: true });
+    updateRow(name, language, { saving: true });
     try {
-      const result = await api.whatsappTemplateWebhooks.upsert(name, trimmed);
+      const result = await api.whatsappTemplateWebhooks.upsert(
+        name,
+        language,
+        trimmed
+      );
       const probe = result?.probe ?? null;
-      updateRow(name, {
+      updateRow(name, language, {
         saving: false,
         dirty: false,
         initialUrl: trimmed,
@@ -178,7 +206,7 @@ const SettingsWhatsAppTemplates: React.FC = () => {
         });
       }
     } catch (err) {
-      updateRow(name, { saving: false });
+      updateRow(name, language, { saving: false });
       toast({
         title: "Error al guardar",
         description: err instanceof Error ? err.message : String(err),
@@ -187,13 +215,13 @@ const SettingsWhatsAppTemplates: React.FC = () => {
     }
   };
 
-  const handleProbe = async (name: string) => {
-    const row = rows[name];
+  const handleProbe = async (name: string, language: string) => {
+    const row = rows[rowKey(name, language)];
     if (!row) return;
-    updateRow(name, { probing: true });
+    updateRow(name, language, { probing: true });
     try {
-      const probe = await api.whatsappTemplateWebhooks.probe(name);
-      updateRow(name, { probing: false, lastProbe: probe });
+      const probe = await api.whatsappTemplateWebhooks.probe(name, language);
+      updateRow(name, language, { probing: false, lastProbe: probe });
       if (probe.ok) {
         toast({
           title: "Muestra reenviada",
@@ -207,7 +235,7 @@ const SettingsWhatsAppTemplates: React.FC = () => {
         });
       }
     } catch (err) {
-      updateRow(name, { probing: false });
+      updateRow(name, language, { probing: false });
       toast({
         title: "Error al reenviar muestra",
         description: err instanceof Error ? err.message : String(err),
@@ -216,11 +244,11 @@ const SettingsWhatsAppTemplates: React.FC = () => {
     }
   };
 
-  const handleClear = async (name: string) => {
-    updateRow(name, { saving: true });
+  const handleClear = async (name: string, language: string) => {
+    updateRow(name, language, { saving: true });
     try {
-      await api.whatsappTemplateWebhooks.remove(name);
-      updateRow(name, {
+      await api.whatsappTemplateWebhooks.remove(name, language);
+      updateRow(name, language, {
         saving: false,
         dirty: false,
         url: "",
@@ -229,7 +257,7 @@ const SettingsWhatsAppTemplates: React.FC = () => {
       });
       toast({ title: "Webhook eliminado", description: name });
     } catch (err) {
-      updateRow(name, { saving: false });
+      updateRow(name, language, { saving: false });
       toast({
         title: "Error al eliminar",
         description: err instanceof Error ? err.message : String(err),
@@ -241,7 +269,9 @@ const SettingsWhatsAppTemplates: React.FC = () => {
   const stats = useMemo(() => {
     const total = templates.length;
     const wired = templates.filter(
-      (t) => (rows[t.name]?.initialUrl ?? "").trim().length > 0
+      (t) =>
+        (rows[rowKey(t.name, t.language ?? "")]?.initialUrl ?? "").trim()
+          .length > 0
     ).length;
     return { total, wired, missing: total - wired };
   }, [templates, rows]);
@@ -337,14 +367,15 @@ const SettingsWhatsAppTemplates: React.FC = () => {
         ) : (
           <div className="space-y-3">
             {templates.map((tpl) => {
-              const row = rows[tpl.name] ?? EMPTY_ROW;
+              const lang = tpl.language ?? "";
+              const row = rows[rowKey(tpl.name, lang)] ?? EMPTY_ROW;
               const isWired =
                 (row.initialUrl ?? "").trim().length > 0 && !row.dirty;
               const status = tpl.whatsappDetail?.status ?? "APPROVED";
               const category = tpl.whatsappDetail?.category ?? "";
               return (
                 <div
-                  key={tpl.id}
+                  key={`${tpl.id}-${lang}`}
                   className="rounded-lg border bg-card p-4 shadow-sm"
                 >
                   <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
@@ -395,12 +426,12 @@ const SettingsWhatsAppTemplates: React.FC = () => {
                     <Input
                       placeholder="https://services.leadconnectorhq.com/hooks/.../webhook-trigger/..."
                       value={row.url}
-                      onChange={(e) => handleUrlChange(tpl.name, e.target.value)}
+                      onChange={(e) => handleUrlChange(tpl.name, lang, e.target.value)}
                       className="font-mono text-xs"
                     />
                     <div className="flex shrink-0 gap-2">
                       <Button
-                        onClick={() => handleSave(tpl.name)}
+                        onClick={() => handleSave(tpl.name, lang)}
                         disabled={row.saving || (!row.dirty && row.initialUrl === row.url)}
                         size="sm"
                       >
@@ -417,7 +448,7 @@ const SettingsWhatsAppTemplates: React.FC = () => {
                         <>
                           <Button
                             variant="outline"
-                            onClick={() => handleProbe(tpl.name)}
+                            onClick={() => handleProbe(tpl.name, lang)}
                             disabled={row.probing || row.dirty}
                             size="sm"
                             title="Reenviar muestra a GHL"
@@ -430,7 +461,7 @@ const SettingsWhatsAppTemplates: React.FC = () => {
                           </Button>
                           <Button
                             variant="ghost"
-                            onClick={() => handleClear(tpl.name)}
+                            onClick={() => handleClear(tpl.name, lang)}
                             disabled={row.saving}
                             size="sm"
                             className="text-destructive hover:text-destructive"
