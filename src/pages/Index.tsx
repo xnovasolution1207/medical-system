@@ -778,10 +778,22 @@ export default function Index() {
               conversations = [inc, ...conversations];
             } else {
               const existing = conversations[idx];
-              // Preserve the richer local message list; append only genuinely
-              // new messages from GHL (identified by id not yet in cache).
-              const existingIds = new Set(existing.messages.map((m) => m.id));
-              const freshMsgs = inc.messages.filter((m) => !existingIds.has(m.id));
+              // Merge each incoming message via mergeIncomingMessage so
+              // the dedup heuristics (clientId, id, tmp- prefix,
+              // wf-pending- prefix for workflow-routed WhatsApp template
+              // sends) fire. The previous "filter by id, append the
+              // rest" approach missed cases where an optimistic message
+              // already in the cache has a different id than the
+              // server-canonical version arriving via `lead.updated` —
+              // most notably workflow template sends, where the
+              // optimistic ends up with a synthetic `wf-pending-…` id
+              // while GHL's webhook brings the real Meta message id.
+              const mergedMessages = inc.messages.reduce(
+                (acc, m) =>
+                  mergeIncomingMessage(acc, m, currentUserIdRef.current),
+                existing.messages
+              );
+              const hasNewActivity = mergedMessages.length > existing.messages.length;
               const merged: Conversation = {
                 ...inc,
                 // The conversation mapper only carries id/name/avatar/tags on
@@ -790,9 +802,7 @@ export default function Index() {
                 // bundle on top so picking an owner doesn't appear to revert
                 // when the lead.updated webhook echoes back.
                 participant: { ...inc.participant, ...event.lead.contact },
-                messages: freshMsgs.length
-                  ? [...existing.messages, ...freshMsgs]
-                  : existing.messages,
+                messages: mergedMessages,
                 scheduledMessages:
                   existing.scheduledMessages ?? inc.scheduledMessages,
               };
@@ -802,7 +812,7 @@ export default function Index() {
               // ContactUpdate) should leave the row in place; otherwise picking
               // an owner would jump the lead to the top, which the user
               // explicitly does not want.
-              if (freshMsgs.length > 0) {
+              if (hasNewActivity) {
                 conversations = moveConversationToFront(conversations, inc.id, merged);
               } else {
                 conversations = conversations.map((c) =>
@@ -1439,6 +1449,13 @@ export default function Index() {
         clientId: optimisticId,
         senderId: currentUser.id,
         text,
+        // Pin the ISO date so day-grouping places the optimistic on
+        // today. Without this, the bubble has an undefined `date` and
+        // the day-separator logic puts it in an "unknown" group while
+        // the eventual webhook-arrived real message lands under
+        // "Hoy" — producing two visually separated bubbles even when
+        // dedup later resolves them.
+        date: new Date().toISOString(),
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         isRead: true,
         channel,
