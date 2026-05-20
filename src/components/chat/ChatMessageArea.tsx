@@ -279,11 +279,20 @@ function renderTextWithMentions(text: string, mentions: string[]): React.ReactNo
   return out;
 }
 
-// Substitute WhatsApp template placeholders (`{{1}}`, `{{2}}`, …) with
-// the recipient's first/last name so the SPA bubble matches what Meta
-// actually delivers. GHL fills these in at send time — but the local
-// optimistic message echoes the raw template body, so without this
-// the agent sees "Hola {{1}}" instead of "Hola Yaqui".
+// Substitute WhatsApp template placeholders (`{{1}}`, `{{2}}`, …)
+// with the recipient's name fields so the SPA bubble matches what
+// Meta actually delivers. GHL fills these in at send time — but the
+// local optimistic message echoes the raw template body, so without
+// this the agent sees "Hola {{1}}" instead of the substituted value.
+//
+// Heuristic for the mapping:
+//   - Template uses ONLY {{1}}            → {{1}} = full contact name
+//     (matches the common GHL setup `{{contact.name}}` for the only
+//     variable in a template).
+//   - Template uses BOTH {{1}} and {{2}}  → {{1}} = first name,
+//     {{2}} = last name (split on whitespace).
+//   - Higher placeholders ({{3}}+) stay literal — we don't try to
+//     guess what they map to.
 //
 // Conservative: only operates on `{{N}}` numeric tokens. Plain text
 // that happens to contain a literal "{{1}}" gets substituted too,
@@ -295,12 +304,16 @@ function substituteTemplateVars(
   if (!text || !contactName) return text;
   const trimmed = contactName.trim();
   if (!trimmed) return text;
-  const parts = trimmed.split(/\s+/);
-  const first = parts[0] ?? trimmed;
-  const last = parts.slice(1).join(" ");
-  return text
-    .replace(/\{\{\s*1\s*\}\}/g, first)
-    .replace(/\{\{\s*2\s*\}\}/g, last || first);
+  const hasVar2 = /\{\{\s*2\s*\}\}/.test(text);
+  if (hasVar2) {
+    const parts = trimmed.split(/\s+/);
+    const first = parts[0] ?? trimmed;
+    const last = parts.slice(1).join(" ") || first;
+    return text
+      .replace(/\{\{\s*1\s*\}\}/g, first)
+      .replace(/\{\{\s*2\s*\}\}/g, last);
+  }
+  return text.replace(/\{\{\s*1\s*\}\}/g, trimmed);
 }
 
 // True when the bubble would otherwise render nothing visible: no text, no
