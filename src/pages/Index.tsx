@@ -133,6 +133,9 @@ function mergeIncomingMessage(
         ...incoming,
         clientId: messages[idx].clientId ?? incoming.clientId,
         replyTo: messages[idx].replyTo ?? incoming.replyTo,
+        // GHL's echo strips template structure (buttons/header), so
+        // keep what the optimistic seeded from the picked template.
+        buttons: messages[idx].buttons ?? incoming.buttons,
       };
       return next;
     }
@@ -151,6 +154,7 @@ function mergeIncomingMessage(
         ...incoming,
         clientId: existing.clientId ?? incoming.clientId,
         replyTo: existing.replyTo ?? incoming.replyTo,
+        buttons: existing.buttons ?? incoming.buttons,
       };
       return next;
     }
@@ -171,6 +175,7 @@ function mergeIncomingMessage(
         ...incoming,
         clientId: messages[idx].clientId,
         replyTo: messages[idx].replyTo ?? incoming.replyTo,
+        buttons: messages[idx].buttons ?? incoming.buttons,
       };
       return next;
     }
@@ -210,6 +215,7 @@ function mergeIncomingMessage(
         ...incoming,
         clientId: messages[idx].clientId ?? incoming.clientId,
         replyTo: messages[idx].replyTo ?? incoming.replyTo,
+        buttons: messages[idx].buttons ?? incoming.buttons,
       };
       return next;
     }
@@ -1432,7 +1438,7 @@ export default function Index() {
       conversationId: string,
       text: string,
       channel: NonNullable<Message["channel"]>,
-      template: { id: string; name?: string; language?: string }
+      template: { id: string; name?: string; language?: string; buttons?: Message["buttons"] }
     ) => {
       if (isStubConvId(conversationId)) {
         toast({
@@ -1461,6 +1467,12 @@ export default function Index() {
         channel,
         status: "sent",
         templateName: template.name,
+        // Carry the template's action buttons forward so the bubble
+        // renders them under the message. GHL strips template
+        // structure off the echoed message that comes back via HTTP /
+        // WS, so mergeIncomingMessage preserves these once they're
+        // attached here.
+        buttons: template.buttons,
       };
       updateBootstrap((prev) => {
         const idx = prev.conversations.findIndex((c) => c.id === conversationId);

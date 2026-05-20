@@ -53,6 +53,13 @@ export type TagSummary = {
 export type MessageButton = {
   id: string;
   text: string;
+  // Meta WhatsApp button type. QUICK_REPLY renders as a plain action
+  // pill; URL / PHONE_NUMBER turn the pill into an anchor so the agent
+  // can preview what the recipient will tap. Anything else falls back
+  // to the QUICK_REPLY rendering.
+  type?: "QUICK_REPLY" | "URL" | "PHONE_NUMBER" | "COPY_CODE" | "OTP" | string;
+  url?: string;
+  phoneNumber?: string;
 };
 
 export type Message = {

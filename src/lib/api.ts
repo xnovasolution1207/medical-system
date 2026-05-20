@@ -9,6 +9,7 @@ import type {
   FamilyMember,
   LeadBundle,
   Message,
+  MessageTemplate,
   Opportunity,
   Pipeline,
   TagSummary,
@@ -448,14 +449,11 @@ export const api = {
       const qs = new URLSearchParams();
       if (params?.type) qs.set("type", params.type);
       const q = qs.toString();
+      // For WhatsApp templates the backend attaches the rich Meta
+      // payload (status, category, components → buttons, …) under
+      // `whatsappDetail`. SMS/email templates omit it.
       return request<{
-        templates: {
-          id: string;
-          name: string;
-          type: string;
-          body: string;
-          language?: string;
-        }[];
+        templates: MessageTemplate[];
       }>("GET", `/templates${q ? `?${q}` : ""}`);
     },
   },

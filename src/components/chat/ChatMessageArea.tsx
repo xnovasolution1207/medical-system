@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Label } from "@/components/ui/label";
 import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Conversation, Message, User, Task, AgentUser } from "./types";
+import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
 import { proxyMediaUrl, api } from "@/lib/api";
 
@@ -55,7 +55,7 @@ interface ChatMessageAreaProps {
     conversationId: string,
     text: string,
     channel: NonNullable<Message["channel"]>,
-    template: { id: string; name?: string; language?: string }
+    template: { id: string; name?: string; language?: string; buttons?: MessageButton[] }
   ) => Promise<void> | void;
   onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
   onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
@@ -1632,6 +1632,7 @@ export function ChatMessageArea({
                     id: payload.templateId,
                     name: payload.templateName,
                     language: payload.templateLanguage,
+                    buttons: payload.buttons,
                   }
                 );
               }
@@ -2098,16 +2099,51 @@ export function ChatMessageArea({
 
                   {message.buttons && message.buttons.length > 0 && (
                     <div className="flex flex-col gap-2 w-full mt-2">
-                      {message.buttons.map((btn) => (
-                        <button 
-                          key={btn.id}
-                          className={cn(
-                            "flex items-center justify-center gap-2 w-full py-2.5 px-4 text-primary dark:text-primary-foreground text-[14px] font-medium hover:bg-primary/5 dark:hover:bg-primary/20 transition-colors rounded-full border border-primary/20 dark:border-primary/30 bg-background shadow-sm"
-                          )}
-                        >
-                          <span className="truncate">{btn.text}</span>
-                        </button>
-                      ))}
+                      {message.buttons.map((btn) => {
+                        const buttonClasses = "flex items-center justify-center gap-2 w-full py-2.5 px-4 text-primary text-[14px] font-medium hover:bg-primary/5 dark:hover:bg-primary/20 transition-colors rounded-full border border-primary/20 dark:border-primary/30 bg-background shadow-sm";
+                        // URL / PHONE_NUMBER buttons turn the pill into an
+                        // anchor so the agent can preview the destination
+                        // (and click through to verify it). QUICK_REPLY
+                        // stays a passive button — the recipient is the
+                        // one who taps it on their phone.
+                        if (btn.type === "URL" && btn.url) {
+                          return (
+                            <a
+                              key={btn.id}
+                              href={btn.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={buttonClasses}
+                              title={btn.url}
+                            >
+                              <LinkIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                              <span className="truncate">{btn.text}</span>
+                            </a>
+                          );
+                        }
+                        if (btn.type === "PHONE_NUMBER" && btn.phoneNumber) {
+                          return (
+                            <a
+                              key={btn.id}
+                              href={`tel:${btn.phoneNumber}`}
+                              className={buttonClasses}
+                              title={btn.phoneNumber}
+                            >
+                              <Phone className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                              <span className="truncate">{btn.text}</span>
+                            </a>
+                          );
+                        }
+                        return (
+                          <button
+                            key={btn.id}
+                            type="button"
+                            className={buttonClasses}
+                          >
+                            <span className="truncate">{btn.text}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 

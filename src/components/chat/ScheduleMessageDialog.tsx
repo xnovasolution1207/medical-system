@@ -37,7 +37,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Clock, CornerUpLeft, Loader2, Send } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/api";
+import { useTemplates, useInvalidateTemplates, templateButtonsFor } from "@/lib/templatesQuery";
 import { useToast } from "@/hooks/use-toast";
 import { WabaRegistrationDialog } from "./WabaRegistrationDialog";
 import {
@@ -47,7 +48,7 @@ import {
   resolveScheduleOption,
   type ScheduleOptionId,
 } from "./scheduleOptions";
-import type { Conversation, Message, MessageTemplate } from "./types";
+import type { Conversation, Message, MessageButton, MessageTemplate } from "./types";
 
 interface WhatsAppTemplateDialogProps {
   open: boolean;
@@ -68,6 +69,10 @@ interface WhatsAppTemplateDialogProps {
     // BCP-47 tag captured at pick-time so the dispatcher doesn't need
     // to re-list templates to recover the language at send time.
     templateLanguage?: string;
+    // Action buttons declared on the Meta template, flattened for the
+    // chat bubble. Forwarded so the optimistic message can render them
+    // (GHL strips template structure off the echoed message).
+    buttons?: MessageButton[];
   }) => Promise<void> | void;
   // Instant-send path ("Enviar ahora" button). Same payload as
   // onSubmit minus scheduledFor — the parent fires the template
@@ -80,6 +85,7 @@ interface WhatsAppTemplateDialogProps {
     templateId: string;
     templateName?: string;
     templateLanguage?: string;
+    buttons?: MessageButton[];
   }) => Promise<void> | void;
 }
 
@@ -103,18 +109,42 @@ export function ScheduleMessageDialog({
   onSendNow,
 }: WhatsAppTemplateDialogProps) {
   const { toast } = useToast();
-  const [templates, setTemplates] = useState<MessageTemplate[] | null>(null);
-  const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
   const [scheduleOptionId, setScheduleOptionId] = useState<ScheduleOptionId>("manana_9am");
   const [customDatetime, setCustomDatetime] = useState(defaultLocalDatetime);
   const [submitting, setSubmitting] = useState(false);
   const [sendingNow, setSendingNow] = useState(false);
-  // When the backend reports WABA_MISSING we pop the registration
-  // modal; on a successful save we re-run the templates fetch via this
-  // bumper instead of duplicating the effect logic inline.
   const [wabaModalOpen, setWabaModalOpen] = useState(false);
-  const [fetchNonce, setFetchNonce] = useState(0);
+
+  // Narrow `channel` to the three the templates endpoint actually
+  // serves — anything else (`internal`, future channels) skips the
+  // fetch entirely.
+  const templateChannel =
+    channel === "whatsapp" || channel === "sms" || channel === "email"
+      ? channel
+      : undefined;
+
+  // React Query owns the templates list now — cached per channel,
+  // shared across the app, instant on reopen. `enabled: open` keeps
+  // the request from firing until the dialog is actually visible.
+  const templatesQuery = useTemplates(templateChannel, { enabled: open });
+  const templates = templatesQuery.data;
+  const loading = templatesQuery.isLoading || templatesQuery.isFetching;
+  const invalidateTemplates = useInvalidateTemplates();
+
+  // WABA_MISSING surfaces as a query error — pop the registration
+  // modal once instead of toasting a generic failure. We rely on the
+  // dialog's `open` gate to avoid re-triggering the modal after the
+  // user closes it: the query won't refetch while closed, and the
+  // post-registration invalidate refreshes the cache so the next
+  // render no longer carries the error.
+  useEffect(() => {
+    if (!open) return;
+    const err = templatesQuery.error;
+    if (err instanceof ApiError && err.code === "WABA_MISSING") {
+      setWabaModalOpen(true);
+    }
+  }, [open, templatesQuery.error]);
 
   // Reset every open so the dialog never resurrects stale state.
   useEffect(() => {
@@ -123,43 +153,6 @@ export function ScheduleMessageDialog({
     setScheduleOptionId("manana_9am");
     setCustomDatetime(defaultLocalDatetime());
   }, [open]);
-
-  // Fetch templates whenever the dialog opens. Filtered to the active
-  // channel (typically whatsapp). Empty list is a real outcome — the
-  // tenant simply hasn't registered any templates of that type yet.
-  //
-  // Special case: when channel=whatsapp and the backend returns
-  // WABA_MISSING (HTTP 409 with ApiError.code), we open the
-  // registration modal instead of showing a generic toast. The modal's
-  // onSaved callback bumps `fetchNonce` so this effect re-runs and
-  // hydrates the picker once the WABA is in place.
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    api.templates
-      .list({ type: channel === "whatsapp" || channel === "sms" || channel === "email" ? channel : undefined })
-      .then((res) => {
-        if (cancelled) return;
-        setTemplates(res.templates ?? []);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.code === "WABA_MISSING") {
-          setTemplates([]);
-          setWabaModalOpen(true);
-          return;
-        }
-        console.warn("[schedule] templates fetch failed", err);
-        setTemplates([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, channel, fetchNonce]);
 
   const selected = useMemo(
     () => templates?.find((t) => t.id === selectedId),
@@ -180,6 +173,7 @@ export function ScheduleMessageDialog({
         templateId: selected.id,
         templateName: selected.name,
         templateLanguage: selected.language,
+        buttons: templateButtonsFor(templates, selected.name, selected.language),
       });
       onOpenChange(false);
     } catch (err) {
@@ -217,6 +211,7 @@ export function ScheduleMessageDialog({
         templateId: selected.id,
         templateName: selected.name,
         templateLanguage: selected.language,
+        buttons: templateButtonsFor(templates, selected.name, selected.language),
       });
       onOpenChange(false);
     } catch (err) {
@@ -247,7 +242,7 @@ export function ScheduleMessageDialog({
     <WabaRegistrationDialog
       open={wabaModalOpen}
       onOpenChange={setWabaModalOpen}
-      onSaved={() => setFetchNonce((n) => n + 1)}
+      onSaved={() => invalidateTemplates(templateChannel)}
     />
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
