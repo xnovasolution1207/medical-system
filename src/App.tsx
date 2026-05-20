@@ -8,6 +8,7 @@ import { DEFAULT_PATH } from "@/lib/chattingRoutes";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
+import SettingsWhatsAppTemplates from "./pages/SettingsWhatsAppTemplates";
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "@/lib/authContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -37,6 +38,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings/whatsapp-templates"
+              element={
+                <ProtectedRoute>
+                  <SettingsWhatsAppTemplates />
                 </ProtectedRoute>
               }
             />

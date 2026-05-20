@@ -476,6 +476,49 @@ export const api = {
       ),
   },
 
+  // Per-template GHL Workflow webhook URLs. Each WhatsApp template
+  // needs its own workflow (because GHL's "Send WhatsApp" action only
+  // accepts a static template selection), so the backend looks up
+  // the right workflow URL by template name at send time. The
+  // Settings → WhatsApp Templates page calls these methods to let
+  // operators register / re-probe / remove mappings without curl.
+  whatsappTemplateWebhooks: {
+    list: () =>
+      request<
+        Array<{
+          templateName: string;
+          webhookUrl: string;
+          updatedAt: string;
+        }>
+      >("GET", "/whatsapp-template-webhooks"),
+    // upsert auto-fires a probe POST to GHL on success — the response
+    // includes the probe outcome so the SPA can show whether the
+    // sample landed and the workflow can now be published.
+    upsert: (templateName: string, webhookUrl: string) =>
+      request<{
+        // when webhookUrl is empty, the row was deleted; data is null
+        templateName?: string;
+        webhookUrl?: string;
+        updatedAt?: string;
+        // present on save with non-empty URL
+        probe?: { ok: boolean; status: number; message?: string } | null;
+      }>(
+        "PUT",
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}`,
+        { webhookUrl }
+      ),
+    probe: (templateName: string) =>
+      request<{ ok: boolean; status: number; message?: string }>(
+        "POST",
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}/probe`
+      ),
+    remove: (templateName: string) =>
+      request<null>(
+        "DELETE",
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}`
+      ),
+  },
+
   // "Plantillas rápidas" — agent's local canned messages. Backed by
   // Prisma/SQLite per-location so they survive reloads + restarts.
   // The Zap toolbar popover and the Gestionar Plantillas dialog both

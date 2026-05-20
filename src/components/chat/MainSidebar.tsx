@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut, MessageSquare, Archive } from "lucide-react";
+import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut, MessageSquare, MessageCircle, Archive } from "lucide-react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/authContext";
@@ -637,6 +637,13 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
             >
               <UserCog className="mr-2 h-4 w-4" />
               <span>Mi Perfil</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="rounded-xl cursor-pointer py-2.5"
+              onClick={() => navigate("/settings/whatsapp-templates")}
+            >
+              <MessageCircle className="mr-2 h-4 w-4" />
+              <span>Plantillas WhatsApp</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1" />
             <DropdownMenuItem
