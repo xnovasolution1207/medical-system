@@ -1254,58 +1254,50 @@ export function ChatMessageArea({
                 <CheckCircle2 className="h-4 w-4" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px] rounded-2xl">
               <DialogHeader>
-                <DialogTitle>Nueva Tarea</DialogTitle>
+                <DialogTitle className="text-xl font-bold">Nueva Tarea</DialogTitle>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-5 py-2">
+                {/* Plantilla — full-width Select-styled trigger as its own
+                    field, matching the new mockup. The Popover body still
+                    drives the preset list (clicking a preset fills the
+                    description input below). */}
                 <div className="grid gap-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="title">Descripción de la tarea</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-8 text-xs font-normal bg-background">
-                          <List className="h-3.5 w-3.5 mr-1.5" />
+                  <Label className="text-sm font-semibold">Plantilla de tarea</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full h-10 justify-between font-normal bg-background"
+                      >
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          <List className="h-4 w-4" />
                           Seleccionar plantilla
-                          <ChevronDown className="h-3.5 w-3.5 ml-2 text-muted-foreground" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" className="w-[300px] p-2">
-                        <div className="space-y-1">
-                          {taskPresets.length === 0 ? (
-                            <div className="p-2 text-xs text-muted-foreground text-center">No hay plantillas guardadas</div>
-                          ) : (
-                            taskPresets.map((preset, idx) => (
-                              <div key={idx} className="flex items-center gap-1">
-                                {editingPresetIndex === idx ? (
-                                  <div className="flex flex-1 items-center gap-1">
-                                    <Input
-                                      value={editingPresetValue}
-                                      onChange={(e) => setEditingPresetValue(e.target.value)}
-                                      className="h-7 text-xs"
-                                      autoFocus
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          if (editingPresetValue.trim() && editingPresetValue.trim() !== preset) {
-                                            const newPresets = [...taskPresets];
-                                            newPresets[idx] = editingPresetValue.trim();
-                                            setTaskPresets(newPresets);
-                                            toast({
-                                              title: "Plantilla actualizada",
-                                              description: "La plantilla se ha modificado correctamente.",
-                                            });
-                                          }
-                                          setEditingPresetIndex(null);
-                                        } else if (e.key === 'Escape') {
-                                          setEditingPresetIndex(null);
-                                        }
-                                      }}
-                                    />
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                                      onClick={() => {
+                        </span>
+                        <ChevronDown className="h-4 w-4 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="w-[var(--radix-popover-trigger-width)] p-2"
+                    >
+                      <div className="space-y-1">
+                        {taskPresets.length === 0 ? (
+                          <div className="p-2 text-xs text-muted-foreground text-center">No hay plantillas guardadas</div>
+                        ) : (
+                          taskPresets.map((preset, idx) => (
+                            <div key={idx} className="flex items-center gap-1">
+                              {editingPresetIndex === idx ? (
+                                <div className="flex flex-1 items-center gap-1">
+                                  <Input
+                                    value={editingPresetValue}
+                                    onChange={(e) => setEditingPresetValue(e.target.value)}
+                                    className="h-7 text-xs"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
                                         if (editingPresetValue.trim() && editingPresetValue.trim() !== preset) {
                                           const newPresets = [...taskPresets];
                                           newPresets[idx] = editingPresetValue.trim();
@@ -1316,71 +1308,95 @@ export function ChatMessageArea({
                                           });
                                         }
                                         setEditingPresetIndex(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingPresetIndex(null);
+                                      }
+                                    }}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() => {
+                                      if (editingPresetValue.trim() && editingPresetValue.trim() !== preset) {
+                                        const newPresets = [...taskPresets];
+                                        newPresets[idx] = editingPresetValue.trim();
+                                        setTaskPresets(newPresets);
+                                        toast({
+                                          title: "Plantilla actualizada",
+                                          description: "La plantilla se ha modificado correctamente.",
+                                        });
+                                      }
+                                      setEditingPresetIndex(null);
+                                    }}
+                                  >
+                                    <Check className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-muted-foreground"
+                                    onClick={() => setEditingPresetIndex(null)}
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div
+                                  className="flex flex-1 items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent cursor-pointer group"
+                                  onClick={() => setNewTaskTitle(preset)}
+                                >
+                                  <span className="truncate pr-2">{preset}</span>
+                                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingPresetIndex(idx);
+                                        setEditingPresetValue(preset);
                                       }}
                                     >
-                                      <Check className="h-3.5 w-3.5" />
+                                      <Edit2 className="h-3 w-3" />
                                     </Button>
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-muted-foreground"
-                                      onClick={() => setEditingPresetIndex(null)}
+                                      className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setTaskPresets(taskPresets.filter((_, i) => i !== idx));
+                                      }}
                                     >
-                                      <X className="h-3.5 w-3.5" />
+                                      <Trash2 className="h-3 w-3" />
                                     </Button>
                                   </div>
-                                ) : (
-                                  <div 
-                                    className="flex flex-1 items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent cursor-pointer group"
-                                    onClick={() => setNewTaskTitle(preset)}
-                                  >
-                                    <span className="truncate pr-2">{preset}</span>
-                                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setEditingPresetIndex(idx);
-                                          setEditingPresetValue(preset);
-                                        }}
-                                      >
-                                        <Edit2 className="h-3 w-3" />
-                                      </Button>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setTaskPresets(taskPresets.filter((_, i) => i !== idx));
-                                        }}
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="title" className="text-sm font-semibold">Descripción de la tarea</Label>
                   <div className="flex gap-2">
                     <Input
                       id="title"
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
                       placeholder="Ej. Llamar para seguimiento..."
-                      className="flex-1"
+                      className="flex-1 h-10"
                     />
                     <Button
                       type="button"
                       variant="outline"
                       size="icon"
+                      className="h-10 w-10 shrink-0"
                       title="Guardar como plantilla"
                       disabled={!newTaskTitle.trim() || taskPresets.includes(newTaskTitle.trim())}
                       onClick={() => {
@@ -1397,10 +1413,11 @@ export function ChatMessageArea({
                     </Button>
                   </div>
                 </div>
+
                 <div className="grid gap-2">
-                  <Label>Vencimiento</Label>
+                  <Label className="text-sm font-semibold">Vencimiento</Label>
                   <Select value={newTaskDueDate} onValueChange={setNewTaskDueDate}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10">
                       <SelectValue placeholder="Selecciona una fecha" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1419,8 +1436,9 @@ export function ChatMessageArea({
                     />
                   )}
                 </div>
+
                 <div className="grid gap-2">
-                  <Label>Asignado a</Label>
+                  <Label className="text-sm font-semibold">Asignado a</Label>
                   {/* Single-option select. Without `users.readonly` scope on
                       the GHL token we don't have a real user roster, so we
                       can't offer assignment to specific GHL users — the
@@ -1428,7 +1446,7 @@ export function ChatMessageArea({
                       would silently drop it. Defaulting to "Yo" mirrors how
                       the agent's own session would assign the task. */}
                   <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10">
                       <SelectValue placeholder="Selecciona un usuario" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1437,13 +1455,20 @@ export function ChatMessageArea({
                   </Select>
                 </div>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsTaskDialogOpen(false)}>Cancelar</Button>
+              <DialogFooter className="sm:justify-center gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  className="rounded-full px-6"
+                  onClick={() => setIsTaskDialogOpen(false)}
+                >
+                  Cancelar
+                </Button>
                 <Button
                   // Block "Crear" until both the title and (when relevant) the
                   // custom datetime are filled in. Without this guard, picking
                   // "Personalizado" without filling the date sends the literal
                   // word and falls back to "tomorrow" silently — surprising.
+                  className="rounded-full px-6"
                   disabled={
                     !newTaskTitle.trim() ||
                     (newTaskDueDate === "Personalizado" && !customDueDateTime)
