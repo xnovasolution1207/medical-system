@@ -29,6 +29,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
 import { proxyMediaUrl, api } from "@/lib/api";
+import {
+  useTemplates,
+  compileTemplateMatchers,
+  matchTemplateByBody,
+  buttonsFromTemplate,
+  templateButtonsFor,
+} from "@/lib/templatesQuery";
 
 interface ChatMessageAreaProps {
   conversation: Conversation;
@@ -420,6 +427,83 @@ export function ChatMessageArea({
     return out;
   }, [conversation.messages, messageFilters]);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+
+  // Template-aware button resolution. Three signals, in order:
+  //   (1) message.buttons — populated by the optimistic send when the
+  //       agent fires a template through the SPA.
+  //   (2) message.templateName — set by the backend decorator when a
+  //       SentTemplate row was reconciled with this messageId. Looked
+  //       up by exact (name, language) in the cached templates list.
+  //   (3) body match — for any outbound whatsapp text that came back
+  //       from GHL stripped of template metadata (the common case
+  //       across reloads / other-agent views), compare against every
+  //       cached template treating `{{N}}` as a wildcard. The most
+  //       specific match wins; an unmatched message renders no buttons.
+  //
+  // The templates list is fetched only when at least one visible
+  // message is a candidate so a pure free-form thread pays nothing.
+  const needsTemplates = useMemo(
+    () =>
+      visibleMessages.some(
+        (m) =>
+          (!m.buttons || m.buttons.length === 0) &&
+          (m.templateName ||
+            (m.channel === "whatsapp" && m.senderId === "agent" && !!m.text))
+      ),
+    [visibleMessages]
+  );
+  const templatesQuery = useTemplates("whatsapp", { enabled: needsTemplates });
+  const templateMatchers = useMemo(
+    () => compileTemplateMatchers(templatesQuery.data),
+    [templatesQuery.data]
+  );
+  // Debug: log the templates cache state once per change so you can
+  // see how many candidates the body-match has to choose from.
+  useEffect(() => {
+    if (!needsTemplates) return;
+    console.log(
+      `[tpl-buttons] templates loaded: ${templatesQuery.data?.length ?? 0}, matchers: ${templateMatchers.length}, querying: ${templatesQuery.isFetching}`
+    );
+  }, [
+    needsTemplates,
+    templatesQuery.data,
+    templateMatchers.length,
+    templatesQuery.isFetching,
+  ]);
+  const resolveButtonsForMessage = useCallback(
+    (m: Message) => {
+      if (m.buttons && m.buttons.length > 0) return m.buttons;
+      if (m.templateName) {
+        const direct = templateButtonsFor(
+          templatesQuery.data,
+          m.templateName,
+          m.templateLanguage
+        );
+        if (direct) return direct;
+      }
+      if (
+        m.channel === "whatsapp" &&
+        m.senderId === "agent" &&
+        m.text &&
+        templateMatchers.length > 0
+      ) {
+        const matched = matchTemplateByBody(templateMatchers, m.text);
+        if (matched) {
+          console.log(
+            `[tpl-buttons] body-match HIT for msg ${m.id}: template "${matched.name}" (${matched.language})`
+          );
+          return buttonsFromTemplate(matched);
+        }
+        // Log the first-line head so you can compare it against the
+        // template bodies in the cache when no match wins.
+        console.log(
+          `[tpl-buttons] body-match MISS for msg ${m.id}: text starts with "${m.text.slice(0, 60).replace(/\n/g, "\\n")}…"`
+        );
+      }
+      return undefined;
+    },
+    [templatesQuery.data, templateMatchers]
+  );
 
   // Meta WhatsApp 24h policy: once the customer has been silent for >24h
   // the agent can only re-engage by sending a Meta-approved template.
@@ -2097,9 +2181,12 @@ export function ChatMessageArea({
                     ) : null}
                   </div>
 
-                  {message.buttons && message.buttons.length > 0 && (
+                  {(() => {
+                    const resolved = resolveButtonsForMessage(message);
+                    if (!resolved || resolved.length === 0) return null;
+                    return (
                     <div className="flex flex-col gap-2 w-full mt-2">
-                      {message.buttons.map((btn) => {
+                      {resolved.map((btn) => {
                         const buttonClasses = "flex items-center justify-center gap-2 w-full py-2.5 px-4 text-primary text-[14px] font-medium hover:bg-primary/5 dark:hover:bg-primary/20 transition-colors rounded-full border border-primary/20 dark:border-primary/30 bg-background shadow-sm";
                         // URL / PHONE_NUMBER buttons turn the pill into an
                         // anchor so the agent can preview the destination
@@ -2145,7 +2232,8 @@ export function ChatMessageArea({
                         );
                       })}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   <div className={cn(
                     "flex items-center gap-1.5 mt-1",

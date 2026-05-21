@@ -61,6 +61,90 @@ export function useInvalidateTemplates() {
     qc.invalidateQueries({ queryKey: templatesQueryKey(channel) });
 }
 
+// Precompiled body-match entry for a single template. We escape the
+// template body and unescape `{{N}}` slots into a non-empty wildcard
+// (`[\s\S]+?` — lazy, so multiple placeholders don't gobble each other,
+// and `[\s\S]` so the substitution can cross line breaks if a contact
+// name happens to have one). `literalLen` measures how much of the
+// template is actual text vs placeholder — used as a specificity score
+// when more than one template happens to match the same body.
+export interface TemplateMatcher {
+  template: MessageTemplate;
+  regex: RegExp;
+  literalLen: number;
+}
+
+// Build a list of body-match entries for the WhatsApp templates in
+// the cache. Run once per templates list in a useMemo, then feed the
+// result to matchTemplateByBody on every render — avoids re-escaping
+// + re-compiling regexes per message bubble.
+//
+// Whitespace is intentionally treated as flexible (`\s+` in the regex
+// wherever the template had any run of whitespace) because the cached
+// template body — produced by joining Meta's header/body/footer
+// components with `\n\n` in backend/src/meta/whatsappTemplates.ts —
+// does NOT have to match the exact whitespace Meta inserts when it
+// renders the same template into an outbound WhatsApp message. In
+// practice GHL ships those messages with a single `\n` between the
+// header and the body even though our cached template has `\n\n`.
+// Without the flexibility the regex would never match.
+export function compileTemplateMatchers(
+  templates: MessageTemplate[] | undefined
+): TemplateMatcher[] {
+  if (!templates) return [];
+  const out: TemplateMatcher[] = [];
+  for (const t of templates) {
+    if (t.type !== "whatsapp") continue;
+    const body = (t.body ?? "").trim();
+    if (!body) continue;
+    // Split on `{{N}}` placeholders, escape each literal segment,
+    // and reassemble with a non-empty wildcard between every two
+    // segments. Going through the split saves us from the
+    // backslash-counting nightmare of trying to undo an escape on
+    // the brace tokens after the fact.
+    const segments = body.split(/\{\{\s*\d+\s*\}\}/);
+    const escapedSegments = segments.map((seg) =>
+      seg
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        // Any run of whitespace in the template (one space, one
+        // newline, the `\n\n` separator flattenBody produces, …)
+        // becomes `\s+` so it matches whatever Meta actually
+        // inserts at that position in the rendered message.
+        .replace(/\s+/g, "\\s+")
+    );
+    const pattern = escapedSegments.join("([\\s\\S]+?)");
+    const literalLen = body.replace(/\{\{\s*\d+\s*\}\}/g, "").length;
+    // Anchor with `\s*` on both ends so leading/trailing whitespace
+    // on either side never blocks a match.
+    out.push({
+      template: t,
+      regex: new RegExp(`^\\s*${pattern}\\s*$`),
+      literalLen,
+    });
+  }
+  return out;
+}
+
+// Body-match heuristic: walk the precompiled matchers and return the
+// most-specific template whose body matches `messageBody` after
+// treating `{{N}}` as a wildcard. Specificity = literal text length,
+// so a template with `Hi {{1}}, your account...` beats a template that
+// is just `{{1}}` when both happen to match.
+export function matchTemplateByBody(
+  matchers: TemplateMatcher[],
+  messageBody: string | undefined | null
+): MessageTemplate | undefined {
+  if (!messageBody) return undefined;
+  const body = messageBody.trim();
+  if (!body) return undefined;
+  let best: TemplateMatcher | undefined;
+  for (const m of matchers) {
+    if (!m.regex.test(body)) continue;
+    if (!best || m.literalLen > best.literalLen) best = m;
+  }
+  return best?.template;
+}
+
 // Pluck the action buttons declared on a Meta-approved template and
 // flatten them into the MessageButton[] shape the chat bubble expects.
 // Returns undefined when the template has no BUTTONS component (or
@@ -88,6 +172,28 @@ export function templateButtonsFor(
     .filter((b) => b.text || b.type)
     .map((b, i) => ({
       id: `${t.id}-btn-${i}`,
+      text: b.text ?? b.type ?? "",
+      type: b.type,
+      url: b.url,
+      phoneNumber: b.phoneNumber,
+    }));
+}
+
+// Same as templateButtonsFor but takes the resolved template directly.
+// Use when the caller has already matched a template (e.g. via
+// matchTemplateByBody) to skip the name+language re-lookup.
+export function buttonsFromTemplate(
+  template: MessageTemplate | undefined
+): MessageButton[] | undefined {
+  if (!template?.whatsappDetail?.components) return undefined;
+  const raw = template.whatsappDetail.components
+    .filter((c) => c.type === "BUTTONS")
+    .flatMap((c) => c.buttons ?? []);
+  if (raw.length === 0) return undefined;
+  return raw
+    .filter((b) => b.text || b.type)
+    .map((b, i) => ({
+      id: `${template.id}-btn-${i}`,
       text: b.text ?? b.type ?? "",
       type: b.type,
       url: b.url,
