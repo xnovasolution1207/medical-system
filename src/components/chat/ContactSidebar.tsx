@@ -44,6 +44,14 @@ interface ContactSidebarProps {
     id: string,
     patch: { status?: Opportunity["status"]; monetaryValue?: number }
   ) => void;
+  // Spin up a brand-new GHL opportunity for the active contact when the
+  // agent edits the empty-state status / monetary fields below. Parent
+  // resolves the pipeline + stage defaults (we don't surface a picker
+  // here — the sidebar just captures the user's intent and the parent
+  // handles the create + later PATCH for non-`open` status).
+  onCreateOpportunity?: (
+    patch: { status?: Opportunity["status"]; monetaryValue?: number }
+  ) => void;
   // Location-level tag library — fills the "Etiquetas" autocomplete with
   // existing GHL tag names so agents don't accidentally create casing
   // variants. Empty when the GHL token lacks `locations.readonly`; the
@@ -117,6 +125,7 @@ export function ContactSidebar({
   onUpdateFollowers,
   opportunity,
   onUpdateOpportunity,
+  onCreateOpportunity,
   availableTags = [],
   onUpdateTags,
 }: ContactSidebarProps) {
@@ -559,63 +568,106 @@ export function ContactSidebar({
           )}
           <p className="text-sm text-muted-foreground mb-4">Lead</p>
 
-          {opportunity && (
-            <div className="flex items-center justify-center gap-2 w-full mb-4">
-              <Select
-                value={opportunity.status}
-                onValueChange={(v) => {
-                  const next = v as Opportunity["status"];
+          {/* Opportunity status + monetary chip. Rendered for every lead so
+              the sidebar layout doesn't jump when toggling between a lead
+              that has an opportunity and one that doesn't. When the contact
+              has no GHL opportunity yet, both fields are EDITABLE empty-
+              state stubs: picking a status or committing a monetary value
+              spins up a brand-new opportunity (via onCreateOpportunity) on
+              the parent's default pipeline + stage. Once the create-then-
+              hydrate round-trip lands the opportunity in state, the next
+              render switches to the regular update path. */}
+          <div className="flex items-center justify-center gap-2 w-full mb-4">
+            <Select
+              value={opportunity ? opportunity.status : ""}
+              onValueChange={(v) => {
+                const next = v as Opportunity["status"];
+                if (opportunity) {
                   if (next === opportunity.status || !onUpdateOpportunity) return;
                   onUpdateOpportunity(opportunity.id, { status: next });
-                }}
+                } else if (onCreateOpportunity) {
+                  onCreateOpportunity({ status: next });
+                }
+              }}
+            >
+              <SelectTrigger
+                className={
+                  opportunity
+                    ? `h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border px-3 text-sm font-medium ${STATUS_TRIGGER_CLASS[opportunity.status]}`
+                    : "h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-400 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-500"
+                }
+                aria-label="Estado de la oportunidad"
               >
-                <SelectTrigger
-                  className={`h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border px-3 text-sm font-medium ${STATUS_TRIGGER_CLASS[opportunity.status]}`}
-                  aria-label="Estado de la oportunidad"
-                >
-                  <SelectValue>{STATUS_LABELS[opportunity.status]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(STATUS_LABELS) as Opportunity["status"][]).map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {STATUS_LABELS[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="relative">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={
-                    monetaryDraft !== null
+                <SelectValue placeholder="—">
+                  {opportunity ? STATUS_LABELS[opportunity.status] : "—"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(STATUS_LABELS) as Opportunity["status"][]).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="relative">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={
+                  opportunity
+                    ? monetaryDraft !== null
                       ? monetaryDraft
                       : formatMonetary(opportunity.monetaryValue)
+                    : monetaryDraft !== null
+                      ? monetaryDraft
+                      : ""
+                }
+                placeholder={opportunity ? undefined : "—"}
+                onFocus={(e) => {
+                  if (opportunity) {
+                    setMonetaryDraft(String(opportunity.monetaryValue ?? 0));
+                  } else {
+                    // No opportunity yet — start the draft blank so the
+                    // agent can just type the amount they want.
+                    setMonetaryDraft("");
                   }
-                  onFocus={(e) => {
-                    setMonetaryDraft(
-                      String(opportunity.monetaryValue ?? 0)
-                    );
-                    // Pre-select so the user can just type to overwrite.
-                    requestAnimationFrame(() => e.target.select());
-                  }}
-                  onChange={(e) => setMonetaryDraft(e.target.value)}
-                  onBlur={commitMonetary}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    } else if (e.key === "Escape") {
-                      setMonetaryDraft(null);
-                      e.currentTarget.blur();
-                    }
-                  }}
-                  className="h-9 w-[110px] rounded-md border border-slate-300 bg-slate-50 px-3 text-center text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-                  aria-label="Valor monetario"
-                />
-              </div>
+                  // Pre-select so the user can just type to overwrite.
+                  requestAnimationFrame(() => e.target.select());
+                }}
+                onChange={(e) => setMonetaryDraft(e.target.value)}
+                onBlur={() => {
+                  if (opportunity) {
+                    commitMonetary();
+                    return;
+                  }
+                  // Empty-state commit: only spin up an opportunity when
+                  // the agent actually typed a positive number. A blank
+                  // blur or "0" keeps the placeholder behaviour from
+                  // creating spurious GHL rows.
+                  if (monetaryDraft === null || !onCreateOpportunity) {
+                    setMonetaryDraft(null);
+                    return;
+                  }
+                  const next = Number(monetaryDraft.replace(/[^\d.-]/g, ""));
+                  setMonetaryDraft(null);
+                  if (!Number.isFinite(next) || next <= 0) return;
+                  onCreateOpportunity({ monetaryValue: next });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  } else if (e.key === "Escape") {
+                    setMonetaryDraft(null);
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="h-9 w-[110px] rounded-md border border-slate-300 bg-slate-50 px-3 text-center text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                aria-label="Valor monetario"
+              />
             </div>
-          )}
+          </div>
 
           <div className="flex gap-2 w-full">
             <Button variant="outline" className="flex-1 gap-2">

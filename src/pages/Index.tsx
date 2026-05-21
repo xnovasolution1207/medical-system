@@ -2316,6 +2316,66 @@ export default function Index() {
     [updateBootstrap, toast]
   );
 
+  // Lightweight create used by ContactSidebar's empty-state opportunity
+  // controls. The sidebar only knows the contact and a small patch of
+  // fields (status / monetaryValue); we fill in name/pipeline/stage
+  // defaults here. After the create lands we follow up with a status
+  // PATCH when the requested status isn't the default `open` —
+  // POST /opportunities doesn't accept `status`.
+  const handleCreateOpportunityForContact = useCallback(
+    (
+      contactId: string,
+      contactName: string | undefined,
+      patch: { status?: Opportunity["status"]; monetaryValue?: number }
+    ) => {
+      const pipeline = pipelines[0];
+      const stage = pipeline?.stages[0];
+      if (!pipeline || !stage) {
+        toast({
+          title: "No se pudo crear la oportunidad",
+          description: "No hay pipelines o etapas configurados en GHL.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const name = (contactName ?? "").trim() || "Lead";
+      api.opportunities
+        .create({
+          name,
+          contactId,
+          pipelineId: pipeline.id,
+          stageId: stage.id,
+          monetaryValue: patch.monetaryValue,
+        })
+        .then((created) => {
+          updateBootstrap((prev) => ({
+            ...prev,
+            opportunities: prev.opportunities.some((o) => o.id === created.id)
+              ? prev.opportunities.map((o) =>
+                  o.id === created.id ? created : o
+                )
+              : [created, ...prev.opportunities],
+          }));
+          // Translate the requested status into a follow-up PATCH — the
+          // create endpoint always lands in `open`, so any other choice
+          // needs a second hop. handleUpdateOpportunity owns the
+          // optimistic update + retry-on-fail.
+          if (patch.status && patch.status !== "open") {
+            handleUpdateOpportunity(created.id, { status: patch.status });
+          }
+        })
+        .catch((err) => {
+          console.error("create opportunity (sidebar) failed", err);
+          toast({
+            title: "No se pudo crear la oportunidad",
+            description: String((err as Error)?.message ?? err),
+            variant: "destructive",
+          });
+        });
+    },
+    [pipelines, toast, updateBootstrap, handleUpdateOpportunity]
+  );
+
   const handleCreateOpportunity = useCallback(
     async (payload: {
       name: string;
@@ -2716,6 +2776,13 @@ export default function Index() {
                 (o) => o.contactId === activeConversation.participant.id
               )}
               onUpdateOpportunity={handleUpdateOpportunity}
+              onCreateOpportunity={(patch) =>
+                handleCreateOpportunityForContact(
+                  activeConversation.participant.id,
+                  activeConversation.participant.name,
+                  patch
+                )
+              }
               onUpdateAssignedTo={(userId) =>
                 handleUpdateAssignment(activeConversation.participant.id, {
                   assignedTo: userId,
@@ -2750,6 +2817,13 @@ export default function Index() {
                 (o) => o.contactId === activeConversation.participant.id
               )}
               onUpdateOpportunity={handleUpdateOpportunity}
+              onCreateOpportunity={(patch) =>
+                handleCreateOpportunityForContact(
+                  activeConversation.participant.id,
+                  activeConversation.participant.name,
+                  patch
+                )
+              }
               onUpdateAssignedTo={(userId) =>
                 handleUpdateAssignment(activeConversation.participant.id, {
                   assignedTo: userId,
@@ -2890,6 +2964,13 @@ export default function Index() {
                         (o) => o.contactId === conv.participant.id
                       )}
                       onUpdateOpportunity={handleUpdateOpportunity}
+                      onCreateOpportunity={(patch) =>
+                        handleCreateOpportunityForContact(
+                          conv.participant.id,
+                          conv.participant.name,
+                          patch
+                        )
+                      }
                       onUpdateAssignedTo={(userId) =>
                         handleUpdateAssignment(conv.participant.id, {
                           assignedTo: userId,

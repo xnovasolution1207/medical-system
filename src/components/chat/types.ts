@@ -98,6 +98,16 @@ export type Message = {
   };
   mentions?: string[];
   reminder?: string;
+  // For outbound WhatsApp messages sent as Meta-approved templates,
+  // these identify which template the bubble came from. Set by the
+  // backend's decorateMessages (see backend/src/store/sentTemplates.ts)
+  // for messages that have been reconciled with a SentTemplate row,
+  // and by the SPA's optimistic-send when the agent fires a template
+  // through the schedule dialog. ChatMessageArea uses this to derive
+  // `buttons` from the React Query templates cache when none are
+  // attached yet.
+  templateName?: string;
+  templateLanguage?: string;
   buttons?: MessageButton[];
   systemEvent?:
     | {
