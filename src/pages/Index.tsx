@@ -26,6 +26,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { api, BootstrapPayload } from "@/lib/api";
+import { useTemplates } from "@/lib/templatesQuery";
 import { subscribe } from "@/lib/socket";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -259,6 +260,16 @@ export default function Index() {
     refetchOnReconnect: false,
     retry: 1,
   });
+
+  // Prefetch the WhatsApp templates list at the app-shell level — fires
+  // in parallel with the bootstrap request so by the time the user
+  // clicks into a conversation, the cache already holds every template
+  // body + buttons. Without this, ChatMessageArea's body-match
+  // heuristic has to wait for a cold templates fetch before it can
+  // attach buttons to the rendered bubbles (1-2 s of "text first,
+  // buttons later" flicker). Result is discarded here — consumers
+  // call useTemplates again and read from the same React Query cache.
+  useTemplates("whatsapp");
 
   // Strongly-typed setter helper. No-ops when the cache is empty (still loading).
   const updateBootstrap = useCallback(
