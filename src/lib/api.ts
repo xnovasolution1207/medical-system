@@ -645,5 +645,13 @@ export const api = {
     }) => request<Task>("POST", "/tasks", payload),
     setCompleted: (contactId: string, taskId: string, completed: boolean) =>
       request<Task>("PATCH", `/tasks/${contactId}/${taskId}`, { completed }),
+    // Update title / due date (and optionally the body) of an existing
+    // GHL task. Backed by the same PATCH endpoint as setCompleted —
+    // the route maps any subset of fields it receives.
+    update: (
+      contactId: string,
+      taskId: string,
+      patch: { title?: string; dueDate?: string; body?: string }
+    ) => request<Task>("PATCH", `/tasks/${contactId}/${taskId}`, patch),
   },
 };

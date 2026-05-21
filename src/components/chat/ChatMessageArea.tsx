@@ -46,6 +46,9 @@ interface ChatMessageAreaProps {
   users?: AgentUser[];
   tasks: Task[];
   onAddTask: (task: Omit<Task, "id">) => void;
+  // Patch an existing task. Only the fields the editor exposes
+  // (title / dueDate) are supported today.
+  onUpdateTask?: (id: string, patch: { title?: string; dueDate?: string }) => void;
   onToggleTask: (id: string) => void;
   onSendMessage: (text: string, attachment?: Message["attachment"], channel?: Message["channel"], mentions?: string[], reminder?: string, replyTo?: Message["replyTo"]) => void;
   onScheduleMessage?: (
@@ -343,6 +346,7 @@ export function ChatMessageArea({
   users = [],
   tasks,
   onAddTask,
+  onUpdateTask,
   onToggleTask,
   onSendMessage,
   onScheduleMessage,
@@ -386,6 +390,46 @@ export function ChatMessageArea({
   })();
   const [activeReminder, setActiveReminder] = useState<string | null>(conversation.activeReminder || null);
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
+  // When non-null, the Nueva Tarea dialog is being used to edit an
+  // existing task (vs. creating a new one). The submit handler branches
+  // on this — if set, it patches via onUpdateTask; if null, it creates
+  // via onAddTask. Reset to null whenever the dialog closes.
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  // Pre-fill the dialog with an existing task's fields and open it in
+  // edit mode. Dialog state is shared with the create flow so we
+  // re-use the same inputs; `editingTaskId` is what flips behaviour.
+  const openTaskEditor = useCallback((task: Task) => {
+    setEditingTaskId(task.id);
+    setNewTaskTitle(task.title);
+    // The backend already maps GHL's ISO dueDate back to the friendly
+    // labels ("Hoy" / "Mañana" / "Próxima semana" / a localised date).
+    // We only need to detect whether the saved label is one of the
+    // four presets; anything else flips to "Personalizado" with the
+    // raw value carried through customDueDateTime so the agent can
+    // edit it without losing precision.
+    const presets = ["Hoy", "Mañana", "Próxima semana"];
+    if (presets.includes(task.dueDate)) {
+      setNewTaskDueDate(task.dueDate);
+      setCustomDueDateTime("");
+    } else {
+      setNewTaskDueDate("Personalizado");
+      // Try to interpret the stored value as an ISO; otherwise leave
+      // the picker empty so the user picks a fresh time. The native
+      // datetime-local input wants "YYYY-MM-DDTHH:mm".
+      const parsed = new Date(task.dueDate);
+      if (!isNaN(parsed.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, "0");
+        setCustomDueDateTime(
+          `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`
+        );
+      } else {
+        setCustomDueDateTime("");
+      }
+    }
+    setNewTaskAssignee(task.assignee.name || currentUser.name);
+    setIsTaskDialogOpen(true);
+  }, [currentUser.name]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDueDate, setNewTaskDueDate] = useState("Hoy");
   // Captured by the datetime-local input when "Personalizado" is the chosen
@@ -1247,8 +1291,23 @@ export function ChatMessageArea({
             </TooltipContent>
           </Tooltip>
 
-          {/* Task Button */}
-          <Dialog open={isTaskDialogOpen} onOpenChange={setIsTaskDialogOpen}>
+          {/* Task Button — opens the dialog in create mode. When the
+              dialog is closed (either by the X button or by clicking
+              outside) we clear `editingTaskId` so the next open lands
+              back in create mode. */}
+          <Dialog
+            open={isTaskDialogOpen}
+            onOpenChange={(open) => {
+              setIsTaskDialogOpen(open);
+              if (!open) {
+                setEditingTaskId(null);
+                setNewTaskTitle("");
+                setNewTaskDueDate("Hoy");
+                setCustomDueDateTime("");
+                setNewTaskAssignee(currentUser.name);
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 dark:bg-purple-500/10 dark:text-purple-400 dark:hover:bg-purple-500/20">
                 <CheckCircle2 className="h-4 w-4" />
@@ -1256,7 +1315,9 @@ export function ChatMessageArea({
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px] rounded-2xl">
               <DialogHeader>
-                <DialogTitle className="text-xl font-bold">Nueva Tarea</DialogTitle>
+                <DialogTitle className="text-xl font-bold">
+                  {editingTaskId ? "Editar Tarea" : "Nueva Tarea"}
+                </DialogTitle>
               </DialogHeader>
               <div className="grid gap-5 py-2">
                 {/* Plantilla — full-width Select-styled trigger as its own
@@ -1486,6 +1547,21 @@ export function ChatMessageArea({
                         ? new Date(customDueDateTime).toISOString()
                         : newTaskDueDate;
 
+                    // Edit mode: patch the existing task via onUpdateTask
+                    // and bail out before the optimistic-create branch.
+                    if (editingTaskId && onUpdateTask) {
+                      onUpdateTask(editingTaskId, {
+                        title: newTaskTitle,
+                        dueDate: dueDateOut,
+                      });
+                      setIsTaskDialogOpen(false);
+                      setEditingTaskId(null);
+                      setNewTaskTitle("");
+                      setNewTaskDueDate("Hoy");
+                      setCustomDueDateTime("");
+                      return;
+                    }
+
                     setIsTaskDialogOpen(false);
 
                     onAddTask({
@@ -1502,7 +1578,7 @@ export function ChatMessageArea({
                     setCustomDueDateTime("");
                   }}
                 >
-                  Crear Tarea
+                  {editingTaskId ? "Guardar Cambios" : "Crear Tarea"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1607,6 +1683,17 @@ export function ChatMessageArea({
               </Badge>
             </div>
           </div>
+          {onUpdateTask && (
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Editar tarea"
+              className="h-7 w-7 rounded-md border border-purple-200 text-purple-700 hover:bg-purple-100 hover:text-purple-900 dark:border-purple-500/40 dark:text-purple-200 dark:hover:bg-purple-500/20"
+              onClick={() => openTaskEditor(task)}
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       ))}
 
@@ -1617,17 +1704,54 @@ export function ChatMessageArea({
             <Bell className="h-4 w-4" />
             <span>Recordatorio configurado para: {activeReminder}</span>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-6 w-6 rounded-full hover:bg-yellow-200 dark:hover:bg-yellow-500/30 text-yellow-800 dark:text-yellow-200"
-            onClick={() => {
-              setActiveReminder(null);
-              onClearReminder?.(conversation.id);
-            }}
-          >
-            <X className="h-3 w-3" />
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {/* Edit pencil opens the same time picker the bell-icon in
+                the header uses. Selecting a value calls onSetReminder
+                which patches the backend; "Personalizado" is treated
+                as a label today (no datetime input here — matches the
+                header dropdown's behaviour). */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Editar recordatorio"
+                  className="h-7 w-7 rounded-md border border-yellow-300 text-yellow-800 hover:bg-yellow-200 dark:border-yellow-500/40 dark:text-yellow-200 dark:hover:bg-yellow-500/30"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                  Activo: <span className="font-medium text-foreground">{activeReminder}</span>
+                </div>
+                <div className="h-px bg-muted my-1 mx-1" />
+                {["10 Min", "20 Min", "30 Min", "60 Min", "Personalizado"].map((time) => (
+                  <DropdownMenuItem
+                    key={time}
+                    onClick={() => {
+                      setActiveReminder(time);
+                      onSetReminder?.(conversation.id, time);
+                    }}
+                  >
+                    {time}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Quitar recordatorio"
+              className="h-6 w-6 rounded-full hover:bg-yellow-200 dark:hover:bg-yellow-500/30 text-yellow-800 dark:text-yellow-200"
+              onClick={() => {
+                setActiveReminder(null);
+                onClearReminder?.(conversation.id);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
         </div>
       )}
 

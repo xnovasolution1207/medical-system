@@ -867,7 +867,27 @@ export default function Index() {
           }
 
           // 3. Upsert tasks (add new, update existing, never remove).
-          const taskMap = new Map(prev.tasks.map((t) => [t.id, t]));
+          //
+          // Before the upsert, drop any still-pending optimistic rows
+          // (`t-tmp-…` ids inserted by handleAddTask) that the incoming
+          // payload is about to provide with a real GHL id. Without
+          // this, creating a task races: the SPA's POST .then or the
+          // direct `task.created` WS event reconciles the optimistic
+          // → real row, but GHL also fires its own `TaskCreate`
+          // webhook which bounces back through here as a fresh
+          // lead.updated. By that point the optimistic may still be in
+          // state (if lead.updated arrives before .then), and a naive
+          // upsert-by-id would leave both rows visible as duplicates.
+          const incomingMatchKeys = new Set<string>();
+          for (const t of event.lead.tasks) {
+            incomingMatchKeys.add(`${t.conversationId}|${t.title}`);
+          }
+          const dedupedPrev = prev.tasks.filter(
+            (t) =>
+              !t.id.startsWith("t-tmp-") ||
+              !incomingMatchKeys.has(`${t.conversationId}|${t.title}`)
+          );
+          const taskMap = new Map(dedupedPrev.map((t) => [t.id, t]));
           for (const t of event.lead.tasks) taskMap.set(t.id, t);
 
           return { ...prev, conversations, tasks: Array.from(taskMap.values()) };
@@ -2154,6 +2174,56 @@ export default function Index() {
     [toast, updateBootstrap]
   );
 
+  // Edit an existing task in place. Mirrors handleAddTask's optimistic
+  // pattern: patch the local cache first, then PATCH the GHL task and
+  // reconcile from the response. On failure we revert to the pre-edit
+  // shape so the banner doesn't show stale state.
+  const handleUpdateTask = useCallback(
+    (id: string, patch: { title?: string; dueDate?: string }) => {
+      let prevSnapshot: Task | undefined;
+      let contactId: string | undefined;
+      updateBootstrap((prev) => {
+        const idx = prev.tasks.findIndex((t) => t.id === id);
+        if (idx === -1) return prev;
+        prevSnapshot = prev.tasks[idx];
+        const conv = prev.conversations.find(
+          (c) => c.id === prevSnapshot!.conversationId
+        );
+        contactId = conv?.contactId ?? conv?.participant.id;
+        const next = prev.tasks.slice();
+        next[idx] = { ...prevSnapshot, ...patch };
+        return { ...prev, tasks: next };
+      });
+      if (!contactId || id.startsWith("t-tmp-")) return;
+      api.tasks
+        .update(contactId, id, patch)
+        .then((saved) => {
+          updateBootstrap((prev) => ({
+            ...prev,
+            tasks: prev.tasks.map((t) =>
+              t.id === id ? { ...t, ...saved } : t
+            ),
+          }));
+        })
+        .catch((err) => {
+          console.error("update task failed", err);
+          if (prevSnapshot) {
+            const snapshot = prevSnapshot;
+            updateBootstrap((prev) => ({
+              ...prev,
+              tasks: prev.tasks.map((t) => (t.id === id ? snapshot : t)),
+            }));
+          }
+          toast({
+            title: "No se pudo actualizar la tarea",
+            description: String(err),
+            variant: "destructive",
+          });
+        });
+    },
+    [toast, updateBootstrap]
+  );
+
   const handleToggleTask = useCallback(
     (id: string) => {
       let nextStatus: Task["status"] = "completed";
@@ -2577,6 +2647,7 @@ export default function Index() {
               stages={stages}
               setStages={setStages}
               onAddTask={handleAddTask}
+              onUpdateTask={handleUpdateTask}
               onToggleTask={handleToggleTask}
               onSendMessage={handleSendMessage}
               onScheduleMessage={handleScheduleMessage}
@@ -2763,6 +2834,7 @@ export default function Index() {
                     stages={stages}
                     setStages={setStages}
                     onAddTask={handleAddTask}
+                    onUpdateTask={handleUpdateTask}
                     onToggleTask={handleToggleTask}
                     onSendMessage={(text, attachment, channel, mentions, reminder, replyTo) => {
                       // Temporarily route through the same handler — it
