@@ -638,13 +638,6 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
               <UserCog className="mr-2 h-4 w-4" />
               <span>Mi Perfil</span>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="rounded-xl cursor-pointer py-2.5"
-              onClick={() => navigate("/settings/whatsapp-templates")}
-            >
-              <MessageCircle className="mr-2 h-4 w-4" />
-              <span>Plantillas WhatsApp</span>
-            </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1" />
             <DropdownMenuItem
               className="rounded-xl text-destructive focus:text-destructive cursor-pointer py-2.5"

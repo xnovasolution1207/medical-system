@@ -193,6 +193,203 @@ const RENDERABLE_ATTACHMENT_TYPES: ReadonlySet<NonNullable<Message["attachment"]
   "link",
 ]);
 
+// Per-channel pre-flight validation for outbound file attachments. The
+// outbound /conversations/messages call goes to GHL, which forwards to
+// Twilio (SMS/MMS) or Meta (WhatsApp). Both providers return opaque
+// wrappers when they reject — "Twilio Error - ERR_BAD_REQUEST" or
+// "Meta Error" with no underlying code — so the only way to give the
+// agent an actionable reason is to validate against each channel's
+// documented media matrix BEFORE we upload. Returns a Spanish-language
+// rejection reason, or null when the file is acceptable.
+//
+// Sources:
+//   - WhatsApp: HighLevel's "WhatsApp integration message types" table
+//     (image JPEG/PNG ≤5 MB, video MP4/3GPP ≤16 MB, audio AAC/MP4/MPEG/AMR/OGG
+//     ≤16 MB, document PDF/Word/Excel/PowerPoint/etc. ≤100 MB,
+//     sticker static WebP outbound).
+//   - SMS: Twilio MMS hard cap of 5 MB (carriers downsample further).
+const WA_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png"]);
+const WA_VIDEO_MIME = new Set(["video/mp4", "video/3gpp"]);
+const WA_AUDIO_MIME = new Set([
+  "audio/aac",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/amr",
+  "audio/ogg",
+  "audio/3gpp",
+]);
+const WA_DOCUMENT_MIME = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "text/csv",
+]);
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// Inspect the first 16 bytes of the file and identify the real format
+// from its magic-byte signature. The browser-supplied `file.type` is
+// based on extension and is unreliable — an iPhone HEIC photo saved as
+// "foo.jpg" still reports `image/jpeg`, a QuickTime/MOV renamed `.mp4`
+// still reports `video/mp4`, etc. Meta and Twilio reject those at the
+// provider edge with opaque wrappers ("Meta Error", "Twilio Error -
+// ERR_BAD_REQUEST"), so we have no way to give the agent a precise
+// reason unless we sniff the bytes locally. Returns the actual MIME or
+// null when the signature is unrecognised.
+async function sniffActualMime(file: File): Promise<string | null> {
+  const slice = file.slice(0, 16);
+  const buf = new Uint8Array(await slice.arrayBuffer());
+  if (buf.length < 4) return null;
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  // PNG: 89 50 4E 47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    return "image/png";
+  }
+  // GIF: "GIF8"
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) {
+    return "image/gif";
+  }
+  // RIFF container — WebP (image) or WAVE (audio). Brand at bytes 8..11.
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf.length >= 12
+  ) {
+    const brand = String.fromCharCode(buf[8], buf[9], buf[10], buf[11]);
+    if (brand === "WEBP") return "image/webp";
+    if (brand === "WAVE") return "audio/wav";
+  }
+  // ISO base media (MP4, MOV, 3GP, HEIC, ...): "ftyp" at bytes 4..7,
+  // brand string at bytes 8..11 disambiguates.
+  if (
+    buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70 &&
+    buf.length >= 12
+  ) {
+    const brand = String.fromCharCode(buf[8], buf[9], buf[10], buf[11]).toLowerCase();
+    if (["heic", "heix", "mif1", "msf1", "heim", "heis"].includes(brand)) return "image/heic";
+    if (brand.startsWith("3g")) return "video/3gpp";
+    if (brand === "qt  ") return "video/quicktime";
+    // Catch-all for the MP4 brand family (isom, iso2, mp41, mp42, avc1,
+    // M4V, M4A, dash, ...). M4A is audio-only but uses the same
+    // container; we can't tell without reading further so report mp4.
+    return "video/mp4";
+  }
+  // PDF: "%PDF"
+  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) {
+    return "application/pdf";
+  }
+  // ID3-tagged MP3 ("ID3")
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return "audio/mpeg";
+  // Raw MP3 frame sync (FF Fx)
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return "audio/mpeg";
+  // OGG: "OggS"
+  if (buf[0] === 0x4f && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) {
+    return "audio/ogg";
+  }
+  // AMR: "#!AMR"
+  if (
+    buf[0] === 0x23 && buf[1] === 0x21 && buf[2] === 0x41 &&
+    buf[3] === 0x4d && buf[4] === 0x52
+  ) {
+    return "audio/amr";
+  }
+  // ZIP-based Office (50 4B 03 04) — too generic to disambiguate docx vs
+  // xlsx vs pptx without unzipping; trust the claimed MIME for those.
+  return null;
+}
+
+// Some MIME pairs are functionally identical and shouldn't be flagged
+// as a mismatch (the browser/OS just labels the same bytes differently).
+function isEquivalentMime(a: string, b: string): boolean {
+  if (a === b) return true;
+  const norm = (m: string): string => {
+    if (m === "image/jpg") return "image/jpeg";
+    if (m === "audio/mp3") return "audio/mpeg";
+    return m;
+  };
+  return norm(a) === norm(b);
+}
+
+async function validateAttachmentForChannel(
+  file: File,
+  channel: NonNullable<Message["channel"]>
+): Promise<string | null> {
+  const claimed = (file.type || "").toLowerCase();
+  const actual = await sniffActualMime(file);
+
+  // Honesty check: if the bytes contradict the browser's MIME claim,
+  // tell the agent before they waste a round-trip uploading a file
+  // Meta/Twilio will reject. iPhone HEIC saved as ".jpg" is the
+  // canonical case; a renamed .mov sent as ".mp4" is the other.
+  if (actual && claimed && !isEquivalentMime(actual, claimed)) {
+    return `El archivo dice ser "${claimed}" pero su contenido real es "${actual}". Conviértelo al formato correcto o renómbralo antes de enviarlo.`;
+  }
+
+  // From here on prefer the sniffed MIME — it's authoritative when we
+  // got one, and the rest of the validator treats `mime` as truth.
+  const mime = actual || claimed;
+  if (channel === "sms") {
+    if (file.size > 5 * 1024 * 1024) {
+      return `Twilio MMS sólo admite hasta 5 MB. Este archivo pesa ${formatBytes(file.size)}. Envíalo por WhatsApp.`;
+    }
+    return null;
+  }
+  if (channel === "whatsapp") {
+    if (mime.startsWith("image/")) {
+      if (mime === "image/webp") {
+        if (file.size > 100 * 1024) {
+          return `WhatsApp limita stickers estáticos (WebP) a 100 KB. Este archivo pesa ${formatBytes(file.size)}.`;
+        }
+        return null;
+      }
+      if (!WA_IMAGE_MIME.has(mime)) {
+        return `WhatsApp sólo admite imágenes JPEG o PNG. Tipo detectado: ${mime || "desconocido"}.`;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return `WhatsApp limita imágenes a 5 MB. Este archivo pesa ${formatBytes(file.size)}.`;
+      }
+      return null;
+    }
+    if (mime.startsWith("video/")) {
+      if (!WA_VIDEO_MIME.has(mime)) {
+        return `WhatsApp sólo admite video MP4 o 3GPP. Tipo detectado: ${mime || "desconocido"}.`;
+      }
+      if (file.size > 16 * 1024 * 1024) {
+        return `WhatsApp limita videos a 16 MB. Este archivo pesa ${formatBytes(file.size)}.`;
+      }
+      return null;
+    }
+    if (mime.startsWith("audio/")) {
+      if (!WA_AUDIO_MIME.has(mime)) {
+        return `WhatsApp sólo admite audio AAC, MP4, MPEG, AMR u OGG. Tipo detectado: ${mime || "desconocido"}.`;
+      }
+      if (file.size > 16 * 1024 * 1024) {
+        return `WhatsApp limita audios a 16 MB. Este archivo pesa ${formatBytes(file.size)}.`;
+      }
+      return null;
+    }
+    // Anything else has to be a document. Reject unknown MIME outright —
+    // sending a random binary makes Meta reject with no useful detail.
+    if (!WA_DOCUMENT_MIME.has(mime)) {
+      return `WhatsApp no admite este tipo de archivo. Tipos válidos: imagen (JPEG/PNG, máx 5 MB), video (MP4/3GPP, máx 16 MB), audio (AAC/MP4/MPEG/AMR/OGG, máx 16 MB), documento (PDF/Word/Excel/PowerPoint/etc., máx 100 MB). Tipo detectado: ${mime || "desconocido"}.`;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      return `WhatsApp limita documentos a 100 MB. Este archivo pesa ${formatBytes(file.size)}.`;
+    }
+    return null;
+  }
+  return null;
+}
+
 // Spanish month abbreviations for the date-separator pills.
 const MONTHS_ES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -753,6 +950,23 @@ export function ChatMessageArea({
     e.preventDefault();
     if (!(inputText.trim() || selectedFile)) return;
     if (isUploading) return;
+
+    // Pre-flight against the channel's media matrix (Twilio MMS for SMS,
+    // Meta/WhatsApp's supported types for whatsapp). The downstream
+    // provider rejections are opaque ("Twilio Error - ERR_BAD_REQUEST",
+    // "Meta Error"), so catching the violation locally is the only way
+    // to tell the agent WHY the file won't go through.
+    if (selectedFile) {
+      const reason = await validateAttachmentForChannel(selectedFile, activeChannel);
+      if (reason) {
+        toast({
+          title: "Archivo no compatible con el canal",
+          description: reason,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
     let attachment: Message["attachment"] | undefined;
     if (selectedFile) {

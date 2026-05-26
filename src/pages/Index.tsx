@@ -1380,9 +1380,24 @@ export default function Index() {
                 : conv
             ),
           }));
+          // Augment the toast when the upstream rejection is a Twilio
+          // failure on an attachment. The bare wrapper ("Twilio Error -
+          // ERR_BAD_REQUEST") doesn't carry the actual Twilio reason code,
+          // and the agent has no way to know that Twilio's MMS layer is
+          // what choked: it's typically the recipient being outside
+          // US/Canada (Twilio MMS doesn't deliver internationally by
+          // default), the file exceeding 5 MB, or an unsupported MIME.
+          // Surfacing this in the toast is the only actionable signal we
+          // can give since the upload itself succeeded.
+          const errMsg = (err as Error)?.message || String(err);
+          const isTwilioError = /twilio error/i.test(errMsg);
+          const description =
+            isTwilioError && attachment
+              ? `${errMsg}\n\nTwilio rechazó el envío del adjunto por SMS. Causas comunes: el destinatario está fuera de EE.UU./Canadá (Twilio MMS no entrega internacionalmente por defecto), el archivo supera 5 MB, o el formato no es compatible con MMS. Prueba enviando el archivo por WhatsApp.`
+              : errMsg;
           toast({
             title: "No se pudo enviar el mensaje",
-            description: String(err),
+            description,
             variant: "destructive",
           });
         });

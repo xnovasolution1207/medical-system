@@ -134,9 +134,15 @@ async function parseErrorPayload(
           ? obj.message
           : null;
     const code = typeof obj.code === "string" ? obj.code : undefined;
+    // GHL wraps upstream provider errors ("Twilio Error", "Meta Error", …)
+    // without forwarding the underlying error code, so the only thing their
+    // support team can correlate against is the traceId. Surface it on the
+    // toast so users can paste it into a ticket.
+    const traceId = typeof obj.traceId === "string" ? obj.traceId : undefined;
     if (direct) {
       console.error(`[api] ${method} ${path} ${res.status}:`, parsed);
-      return { message: direct, code };
+      const message = traceId ? `${direct} (traceId ${traceId})` : direct;
+      return { message, code };
     }
   }
   // Couldn't extract a user-facing message — fall back to status + a
@@ -471,55 +477,6 @@ export const api = {
         "PUT",
         "/location-config/waba",
         { wabaId }
-      ),
-  },
-
-  // Per-template GHL Workflow webhook URLs. Each WhatsApp template
-  // needs its own workflow (because GHL's "Send WhatsApp" action only
-  // accepts a static template selection), so the backend looks up
-  // the right workflow URL by template name at send time. The
-  // Settings → WhatsApp Templates page calls these methods to let
-  // operators register / re-probe / remove mappings without curl.
-  whatsappTemplateWebhooks: {
-    list: () =>
-      request<
-        Array<{
-          templateName: string;
-          templateLanguage: string;
-          webhookUrl: string;
-          updatedAt: string;
-        }>
-      >("GET", "/whatsapp-template-webhooks"),
-    // Mappings are keyed per (templateName, language) — Meta lets the
-    // same name exist with multiple language variants, each rendered
-    // as its own row in the settings page. `language` is passed as a
-    // query param so callers can use "" for the language-agnostic
-    // fallback row (a single workflow that serves every variant).
-    upsert: (
-      templateName: string,
-      templateLanguage: string,
-      webhookUrl: string
-    ) =>
-      request<{
-        templateName?: string;
-        templateLanguage?: string;
-        webhookUrl?: string;
-        updatedAt?: string;
-        probe?: { ok: boolean; status: number; message?: string } | null;
-      }>(
-        "PUT",
-        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}?language=${encodeURIComponent(templateLanguage)}`,
-        { webhookUrl }
-      ),
-    probe: (templateName: string, templateLanguage: string) =>
-      request<{ ok: boolean; status: number; message?: string }>(
-        "POST",
-        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}/probe?language=${encodeURIComponent(templateLanguage)}`
-      ),
-    remove: (templateName: string, templateLanguage: string) =>
-      request<null>(
-        "DELETE",
-        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}?language=${encodeURIComponent(templateLanguage)}`
       ),
   },
 
