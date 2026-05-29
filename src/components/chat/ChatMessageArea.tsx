@@ -586,6 +586,15 @@ export function ChatMessageArea({
     return CHANNEL_ORDER.filter((c) => seen.has(c));
   })();
   const [activeReminder, setActiveReminder] = useState<string | null>(conversation.activeReminder || null);
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   // When non-null, the Nueva Tarea dialog is being used to edit an
   // existing task (vs. creating a new one). The submit handler branches
@@ -943,6 +952,109 @@ export function ChatMessageArea({
     }
     setReplyingToMessage(null);
   };
+
+  const stopRecordingCleanup = useCallback(() => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+    setRecordingDuration(0);
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+        ? "audio/ogg;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "";
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.start(250);
+      setIsRecording(true);
+      setRecordingDuration(0);
+      recordingTimerRef.current = setInterval(
+        () => setRecordingDuration((d) => d + 1),
+        1000
+      );
+    } catch {
+      toast({
+        title: "Micrófono no disponible",
+        description: "Permite el acceso al micrófono en tu navegador.",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
+  const cancelRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    audioChunksRef.current = [];
+    stopRecordingCleanup();
+  }, [stopRecordingCleanup]);
+
+  const pendingVoiceNoteRef = useRef(false);
+
+  const stopAndSendRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+
+    recorder.onstop = () => {
+      const chunks = audioChunksRef.current;
+      if (chunks.length === 0) {
+        stopRecordingCleanup();
+        return;
+      }
+      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/ogg" });
+      const ext = (recorder.mimeType || "").includes("webm") ? "webm" : "ogg";
+      const file = new File([blob], `voice-note-${Date.now()}.${ext}`, {
+        type: blob.type,
+      });
+      audioChunksRef.current = [];
+      stopRecordingCleanup();
+      pendingVoiceNoteRef.current = true;
+      setSelectedFile(file);
+    };
+    recorder.stop();
+  }, [stopRecordingCleanup]);
+
+  // Auto-submit when a voice note file is staged
+  useEffect(() => {
+    if (pendingVoiceNoteRef.current && selectedFile) {
+      pendingVoiceNoteRef.current = false;
+      const form = document.querySelector<HTMLFormElement>("[data-chat-form]");
+      form?.requestSubmit();
+    }
+  }, [selectedFile]);
+
+  // Cleanup on unmount (e.g. switching conversations)
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   const [isUploading, setIsUploading] = useState(false);
 
@@ -2940,6 +3052,7 @@ export function ChatMessageArea({
             </div>
           ) : (
           <form
+            data-chat-form
             onSubmit={handleSend}
             className={cn(
               "flex flex-col rounded-xl border focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all shadow-sm overflow-hidden",
@@ -2953,15 +3066,46 @@ export function ChatMessageArea({
               </div>
             )}
             
+            {isRecording ? (
+              <div className="flex items-center justify-between min-h-[80px] px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                  </span>
+                  <span className="text-sm font-medium text-red-600 dark:text-red-400 tabular-nums">
+                    {String(Math.floor(recordingDuration / 60)).padStart(2, "0")}:{String(recordingDuration % 60).padStart(2, "0")}
+                  </span>
+                  <span className="text-sm text-muted-foreground">Grabando nota de voz…</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-red-500"
+                    title="Cancelar grabación"
+                    onClick={cancelRecording}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 px-5 gap-2 rounded-full bg-indigo-400 hover:bg-indigo-500 text-white font-medium shadow-none"
+                    onClick={stopAndSendRecording}
+                  >
+                    <Send className="h-4 w-4" />
+                    Enviar
+                  </Button>
+                </div>
+              </div>
+            ) : (
             <textarea
               data-composer="true"
               value={inputText}
               onChange={handleTextareaChange}
               onKeyDown={(e) => {
-                // Mention picker intercepts navigation keys before the
-                // default Enter-to-send so the agent can pick an entry with
-                // the keyboard. The picker only opens on the internal
-                // channel, so other channels keep their original behavior.
                 if (isMentionMenuOpen && filteredMentionUsers.length > 0) {
                   if (e.key === "ArrowDown") {
                     e.preventDefault();
@@ -2987,9 +3131,6 @@ export function ChatMessageArea({
                     return;
                   }
                 }
-                // Enter sends; Shift+Enter inserts a newline; skip while an
-                // IME (Korean/Japanese/Chinese) composition is active so
-                // confirming a candidate doesn't fire a send.
                 if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
                 e.preventDefault();
                 e.currentTarget.form?.requestSubmit();
@@ -2997,10 +3138,12 @@ export function ChatMessageArea({
               placeholder={activeChannel === "internal" ? "Escribe un comentario interno..." : `Escribe un mensaje por ${CHANNEL_LABELS[activeChannel]}...`}
               className="min-h-[80px] w-full resize-none border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:ring-0 outline-none"
             />
+            )}
             
-            {/* Toolbar */}
+            {/* Toolbar — hidden while recording (recording UI has its own controls) */}
             <div className={cn(
               "flex items-center justify-between border-t px-2 py-1.5",
+              isRecording && "hidden",
               activeChannel === "internal" ? "bg-amber-100/50 dark:bg-amber-500/10 border-amber-200/50 dark:border-amber-500/20" : "bg-muted/50 dark:bg-muted/30 border-border"
             )}>
               <div className="flex items-center gap-1">
@@ -3024,7 +3167,7 @@ export function ChatMessageArea({
                   ref={fileInputRef}
                   onChange={handleFileChange}
                   className="hidden"
-                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
                 />
                 
                 <Popover>
@@ -3069,7 +3212,8 @@ export function ChatMessageArea({
                   size="icon"
                   className="h-8 w-8 text-muted-foreground"
                   title="Nota de voz"
-                  onClick={() => toast({ title: "Nota de voz", description: "La grabación de notas de voz se habilitará próximamente." })}
+                  onClick={startRecording}
+                  disabled={isRecording}
                 >
                   <Mic className="h-4 w-4" />
                 </Button>
