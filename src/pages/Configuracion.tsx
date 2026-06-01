@@ -49,6 +49,7 @@ export default function Configuracion() {
   const [gaBaseUrl, setGaBaseUrl] = useState("");
   const [gaConfigured, setGaConfigured] = useState(false);
   const [gaSaving, setGaSaving] = useState(false);
+  const [gaDeleting, setGaDeleting] = useState(false);
 
   // --- Bot status webhook ---
   const [botUrl, setBotUrl] = useState("");
@@ -117,6 +118,41 @@ export default function Configuracion() {
       });
     } finally {
       setGaSaving(false);
+    }
+  };
+
+  const deleteGreenApi = async () => {
+    if (
+      !window.confirm(
+        "¿Eliminar las credenciales de Green API de esta sub-cuenta? El envío de archivos por WhatsApp dejará de funcionar hasta que registres unas nuevas."
+      )
+    ) {
+      return;
+    }
+    setGaDeleting(true);
+    try {
+      // Empty values clear the stored credentials on the backend.
+      await api.locationConfig.setGreenApi({
+        instanceId: "",
+        apiToken: "",
+        baseUrl: "",
+      });
+      setGaInstanceId("");
+      setGaApiToken("");
+      setGaBaseUrl("");
+      setGaConfigured(false);
+      toast({
+        title: "Green API eliminado",
+        description: "Las credenciales de la sub-cuenta se borraron.",
+      });
+    } catch (e) {
+      toast({
+        title: "Error al eliminar",
+        description: (e as Error)?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setGaDeleting(false);
     }
   };
 
@@ -347,14 +383,31 @@ export default function Configuracion() {
                 placeholder="https://7107.api.greenapi.com (se deduce si lo dejas vacío)"
               />
             </div>
-            <Button onClick={saveGreenApi} disabled={gaSaving} className="gap-2">
-              {gaSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={saveGreenApi} disabled={gaSaving} className="gap-2">
+                {gaSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Guardar Green API
+              </Button>
+              {gaConfigured && (
+                <Button
+                  onClick={deleteGreenApi}
+                  disabled={gaDeleting}
+                  variant="outline"
+                  className="gap-2 text-destructive hover:text-destructive"
+                >
+                  {gaDeleting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Eliminar credenciales
+                </Button>
               )}
-              Guardar Green API
-            </Button>
+            </div>
           </CardContent>
         </Card>
 
