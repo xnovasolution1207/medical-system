@@ -1874,6 +1874,34 @@ export default function Index() {
     [updateBootstrap]
   );
 
+  // Set the AI bot Active/Paused for a conversation. Optimistically flips
+  // the local state, then fires the backend (which writes the GHL tag mirror
+  // and triggers the bot-status workflow). Reverts on failure.
+  const handleSetBotStatus = useCallback(
+    (id: string, status: "active" | "paused") => {
+      let prevStatus: "active" | "paused" = "active";
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => {
+          if (c.id !== id) return c;
+          prevStatus = c.botStatus ?? "active";
+          return { ...c, botStatus: status };
+        }),
+      }));
+      if (isStubConvId(id)) return;
+      api.conversations.setBotStatus(id, status).catch((err) => {
+        console.error("set bot status failed", err);
+        updateBootstrap((prev) => ({
+          ...prev,
+          conversations: prev.conversations.map((c) =>
+            c.id === id ? { ...c, botStatus: prevStatus } : c
+          ),
+        }));
+      });
+    },
+    [updateBootstrap]
+  );
+
   // Archive / unarchive a conversation. Optimistically flips the local
   // flag (which Index hides from displayConversations), persists via
   // PATCH, and surfaces a toast with Undo so an accidental archive can
@@ -2738,6 +2766,7 @@ export default function Index() {
               onLoadOlderMessages={handleLoadOlderMessages}
               onDeleteLead={handleDeleteLead}
               onToggleFavorite={handleToggleFavorite}
+              onSetBotStatus={handleSetBotStatus}
               onPinMessage={handlePinMessage}
               onUnpinMessage={handleUnpinMessage}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
@@ -2942,6 +2971,7 @@ export default function Index() {
                     onClearReminder={handleClearReminder}
                     onSetReminder={handleSetReminder}
                     onToggleFavorite={handleToggleFavorite}
+                    onSetBotStatus={handleSetBotStatus}
                     onPinMessage={handlePinMessage}
                     onUnpinMessage={handleUnpinMessage}
                     hasOlderMessages={Boolean(conv.messagesHasMore)}

@@ -417,6 +417,15 @@ export const api = {
         unpinMessageId: string;
       }>
     ) => request<Record<string, unknown>>("PATCH", `/conversations/${id}`, patch),
+    // Toggle the Conversation AI bot Active/Paused for this conversation's
+    // contact. Fires the GHL bot-status workflow + writes the durable tag
+    // mirror on the backend.
+    setBotStatus: (id: string, status: "active" | "paused") =>
+      request<{ botStatus: "active" | "paused" }>(
+        "POST",
+        `/conversations/${id}/bot-status`,
+        { status }
+      ),
     // Schedule a message into the future. `text` is optional when a
     // `templateId` is supplied (the backend resolves the body from GHL
     // at dispatch time so any template edit between now and scheduledFor

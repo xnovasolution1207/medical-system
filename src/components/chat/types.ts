@@ -265,6 +265,10 @@ export type Conversation = {
   }>;
   messagesHasMore?: boolean;
   messagesOldestId?: string;
+  // AI bot (Conversation AI) state for the contact. "paused" hides the
+  // bot's auto-replies; toggled via the Activo/Pausado control in the
+  // composer, which fires the GHL bot-status workflow.
+  botStatus?: "active" | "paused";
 };
 
 export type Pipeline = {

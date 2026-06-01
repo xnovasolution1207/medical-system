@@ -24,7 +24,7 @@ import {
 } from "./scheduleOptions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Sparkles, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
@@ -72,6 +72,7 @@ interface ChatMessageAreaProps {
   onClearReminder?: (id: string) => void;
   onSetReminder?: (id: string, reminder: string) => void;
   onToggleFavorite?: (id: string) => void;
+  onSetBotStatus?: (id: string, status: "active" | "paused") => void;
   stages: { id: string; label: string; color: string; }[];
   setStages: (stages: { id: string; label: string; color: string; }[]) => void;
   isContactSidebarOpen?: boolean;
@@ -553,6 +554,7 @@ export function ChatMessageArea({
   onClearReminder,
   onSetReminder,
   onToggleFavorite,
+  onSetBotStatus,
   stages,
   setStages,
   isContactSidebarOpen,
@@ -786,6 +788,7 @@ export function ChatMessageArea({
   // text-message scheduling + button to open the rich dialog) and the
   // rich WhatsApp template dialog itself.
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [isBotOpen, setIsBotOpen] = useState(false);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
   const [quickScheduleOptionId, setQuickScheduleOptionId] = useState<ScheduleOptionId>("manana_9am");
   const [quickCustomDatetime, setQuickCustomDatetime] = useState(defaultLocalDatetime);
@@ -3262,6 +3265,63 @@ export function ChatMessageArea({
               </div>
               
               <div className="flex items-center gap-2">
+                {/* AI bot Activo/Pausado control. Mirrors GHL's native
+                    "Bot de IA de chats" panel: pick a status and the backend
+                    fires the GHL workflow that flips the Conversation AI bot
+                    plus writes the durable tag mirror. */}
+                <Popover open={isBotOpen} onOpenChange={setIsBotOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 w-9 p-0 rounded-full text-violet-600 bg-violet-50 hover:bg-violet-100 dark:bg-slate-800 dark:text-violet-300 dark:hover:bg-slate-700 transition-colors"
+                      title="Bot de IA de chats"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <Sparkles className="h-4 w-4 text-violet-500" />
+                      Bot de IA de chats
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Bot asignado:{" "}
+                      <span className="font-medium text-slate-700 dark:text-slate-200">
+                        AI Dental
+                      </span>
+                    </div>
+                    <Select
+                      value={conversation.botStatus ?? "active"}
+                      onValueChange={(v) =>
+                        onSetBotStatus?.(conversation.id, v as "active" | "paused")
+                      }
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Activo</SelectItem>
+                        <SelectItem value="paused">Pausado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2">
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          (conversation.botStatus ?? "active") === "active"
+                            ? "bg-emerald-500"
+                            : "bg-amber-500"
+                        }`}
+                      />
+                      <span className="text-xs text-slate-600 dark:text-slate-300">
+                        {(conversation.botStatus ?? "active") === "active"
+                          ? "El bot está activo y responderá automáticamente."
+                          : "El bot está en pausa y no responderá."}
+                      </span>
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 {/* "Programar" entry. Two-step flow per spec section 1.5:
                     the popover surfaces a "plantilla de WhatsApp" path
                     (opens the rich template dialog) AND a quick
