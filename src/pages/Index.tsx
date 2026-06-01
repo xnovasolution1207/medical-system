@@ -1911,18 +1911,22 @@ export default function Index() {
     (id: string) => {
       let nextValue = false;
       let participantName = "";
+      let contactId = "";
       updateBootstrap((prev) => ({
         ...prev,
         conversations: prev.conversations.map((c) => {
           if (c.id !== id) return c;
           nextValue = !c.isArchived;
           participantName = c.participant?.name ?? "";
+          contactId = c.contactId ?? c.participant?.id ?? "";
           return { ...c, isArchived: nextValue };
         }),
       }));
       if (!isStubConvId(id)) {
+        // Send contactId so the backend can persist the archive durably and
+        // re-load it for the archive view on refresh.
         api.conversations
-          .patch(id, { isArchived: nextValue })
+          .patch(id, { isArchived: nextValue, contactId })
           .catch((err) => console.error("toggle archive failed", err));
       }
       // Drop focus when the active conversation just disappeared from

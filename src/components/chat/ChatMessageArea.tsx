@@ -462,9 +462,55 @@ function formatDateLabel(iso?: string): string {
 // `mentions` and wrap each `@Name` token in a styled pill. Names are
 // matched longest-first so "@Ana Martínez" beats a bare "@Ana" when both
 // are in the roster.
+// Turn bare http(s) URLs in a plain string into clickable links —
+// underlined, open in a new tab — like WhatsApp/Messenger. Trailing
+// punctuation (".", ")", etc.) is kept out of the link target. The link
+// color adapts to the bubble: on the colored (outbound) bubble a dark-blue
+// link is invisible, so use a light blue; on light bubbles use dark blue.
+function linkifyText(
+  text: string,
+  onColoredBubble = false
+): React.ReactNode {
+  if (!text) return text;
+  const linkClass = onColoredBubble
+    ? "text-blue-200 underline underline-offset-2 break-all hover:text-white"
+    : "text-blue-600 underline underline-offset-2 break-all hover:text-blue-700 dark:text-blue-400";
+  const re = /https?:\/\/[^\s]+/g;
+  const out: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let i = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) out.push(text.slice(lastIndex, match.index));
+    let url = match[0];
+    let trailing = "";
+    const t = url.match(/[.,;:!?)\]}>"']+$/);
+    if (t) {
+      trailing = t[0];
+      url = url.slice(0, url.length - trailing.length);
+    }
+    out.push(
+      <a
+        key={`url-${i++}`}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className={linkClass}
+      >
+        {url}
+      </a>
+    );
+    if (trailing) out.push(trailing);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) out.push(text.slice(lastIndex));
+  return out.length ? out : text;
+}
+
 function renderTextWithMentions(text: string, mentions: string[]): React.ReactNode {
   const names = mentions.filter(Boolean);
-  if (names.length === 0) return text;
+  if (names.length === 0) return linkifyText(text);
   const sorted = [...new Set(names)].sort((a, b) => b.length - a.length);
   const escaped = sorted.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const pattern = new RegExp(`@(${escaped.join("|")})`, "g");
@@ -472,7 +518,12 @@ function renderTextWithMentions(text: string, mentions: string[]): React.ReactNo
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) out.push(text.slice(lastIndex, match.index));
+    if (match.index > lastIndex)
+      out.push(
+        <React.Fragment key={`seg-${lastIndex}`}>
+          {linkifyText(text.slice(lastIndex, match.index))}
+        </React.Fragment>
+      );
     out.push(
       <span
         key={`mention-${match.index}`}
@@ -483,7 +534,12 @@ function renderTextWithMentions(text: string, mentions: string[]): React.ReactNo
     );
     lastIndex = match.index + match[0].length;
   }
-  if (lastIndex < text.length) out.push(text.slice(lastIndex));
+  if (lastIndex < text.length)
+    out.push(
+      <React.Fragment key={`seg-${lastIndex}`}>
+        {linkifyText(text.slice(lastIndex))}
+      </React.Fragment>
+    );
   return out;
 }
 
@@ -2641,7 +2697,13 @@ export function ChatMessageArea({
                       <span className="whitespace-pre-wrap leading-relaxed">
                         {message.channel === "internal" && message.mentions && message.mentions.length > 0
                           ? renderTextWithMentions(message.text, message.mentions)
-                          : substituteTemplateVars(message.text, conversation.participant?.name)}
+                          : linkifyText(
+                              substituteTemplateVars(
+                                message.text,
+                                conversation.participant?.name
+                              ),
+                              isMe
+                            )}
                       </span>
                     )}
 

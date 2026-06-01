@@ -399,6 +399,9 @@ export const api = {
       patch: Partial<{
         isFavorite: boolean;
         isArchived: boolean;
+        // Sent alongside isArchived so the backend can persist the archive
+        // durably keyed by contact (used to re-fetch it for the archive view).
+        contactId: string;
         activeReminder: string | null;
         stage: string;
         // Add a snapshot to the conversation's pinned-message stack
