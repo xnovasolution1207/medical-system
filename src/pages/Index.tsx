@@ -665,6 +665,9 @@ export default function Index() {
   const [isSearching, setIsSearching] = useState(false);
 
   const hydratedConversations = useRef<Set<string>>(new Set());
+  // Conversation whose full history is currently being fetched on select —
+  // drives the loading spinner in the message area.
+  const [hydratingId, setHydratingId] = useState<string | null>(null);
   const currentUserIdRef = useRef<string>(FALLBACK_USER.id);
   const isLoadingMoreConversationsRef = useRef(false);
   const loadingOlderForRef = useRef<string | null>(null);
@@ -948,6 +951,7 @@ export default function Index() {
     if (isStubConvId(activeId)) return;
     if (hydratedConversations.current.has(activeId)) return;
     hydratedConversations.current.add(activeId);
+    setHydratingId(activeId);
     api.conversations
       .get(activeId)
       .then((full) => {
@@ -968,7 +972,14 @@ export default function Index() {
           return { ...prev, conversations: next };
         });
       })
-      .catch((err) => console.error("conversation fetch failed", err));
+      .catch((err) => {
+        console.error("conversation fetch failed", err);
+        // Let a failed hydration retry on the next visit.
+        hydratedConversations.current.delete(activeId);
+      })
+      .finally(() => {
+        setHydratingId((cur) => (cur === activeId ? null : cur));
+      });
   }, [activeId, updateBootstrap]);
 
   // Translate the SPA's FilterCondition[] into the native GHL conversation-
@@ -2866,6 +2877,7 @@ export default function Index() {
               onDeleteLead={handleDeleteLead}
               onToggleFavorite={handleToggleFavorite}
               onSetBotStatus={handleSetBotStatus}
+              isLoadingHistory={hydratingId === activeId}
               onPinMessage={handlePinMessage}
               onUnpinMessage={handleUnpinMessage}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
@@ -3071,6 +3083,7 @@ export default function Index() {
                     onSetReminder={handleSetReminder}
                     onToggleFavorite={handleToggleFavorite}
                     onSetBotStatus={handleSetBotStatus}
+              isLoadingHistory={hydratingId === activeId}
                     onPinMessage={handlePinMessage}
                     onUnpinMessage={handleUnpinMessage}
                     hasOlderMessages={Boolean(conv.messagesHasMore)}

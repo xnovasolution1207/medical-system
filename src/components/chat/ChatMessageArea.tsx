@@ -25,7 +25,7 @@ import {
 } from "./scheduleOptions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Sparkles, Mail, Trash2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Sparkles, Mail, Trash2, Loader2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
@@ -82,6 +82,9 @@ interface ChatMessageAreaProps {
   onSetReminder?: (id: string, reminder: string) => void;
   onToggleFavorite?: (id: string) => void;
   onSetBotStatus?: (id: string, status: "active" | "paused") => void;
+  // True while the conversation's full history is being fetched on select —
+  // shows a loading spinner in the message area.
+  isLoadingHistory?: boolean;
   stages: { id: string; label: string; color: string; }[];
   setStages: (stages: { id: string; label: string; color: string; }[]) => void;
   isContactSidebarOpen?: boolean;
@@ -632,6 +635,7 @@ export function ChatMessageArea({
   onSetReminder,
   onToggleFavorite,
   onSetBotStatus,
+  isLoadingHistory = false,
   stages,
   setStages,
   isContactSidebarOpen,
@@ -2345,6 +2349,14 @@ export function ChatMessageArea({
           }
         }}
       >
+        {isLoadingHistory && (
+          <div className="sticky top-0 z-10 flex justify-center py-2">
+            <span className="flex items-center gap-2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Cargando historial…
+            </span>
+          </div>
+        )}
         {isLoadingOlderMessages && (
           <div className="flex justify-center py-3 text-xs text-muted-foreground">
             Cargando mensajes anteriores…
@@ -2566,7 +2578,8 @@ export function ChatMessageArea({
                   className={cn(
                     "flex w-full items-end gap-2 group scroll-mt-24",
                     isMe ? "justify-end" : "justify-start",
-                    isConsecutive ? "mt-1" : "mt-4"
+                    // Tighter vertical spacing between messages.
+                    isConsecutive ? "mt-0.5" : "mt-2"
                   )}
                 >
                 {!isMe && (
