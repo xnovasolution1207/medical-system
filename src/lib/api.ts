@@ -403,6 +403,8 @@ export const api = {
         // Sent alongside isArchived so the backend can persist the archive
         // durably keyed by contact (used to re-fetch it for the archive view).
         contactId: string;
+        // "Marcar como leído" — clears the unread badge until a newer message.
+        markRead: boolean;
         activeReminder: string | null;
         stage: string;
         // Add a snapshot to the conversation's pinned-message stack

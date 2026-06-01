@@ -1932,6 +1932,24 @@ export default function Index() {
     [updateBootstrap]
   );
 
+  // "Marcar como leído" — clear the unread badge for a conversation.
+  // Optimistic; the backend stamps a read time so it persists on refresh.
+  const handleMarkAsRead = useCallback(
+    (id: string) => {
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === id && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c
+        ),
+      }));
+      if (isStubConvId(id)) return;
+      api.conversations
+        .patch(id, { markRead: true })
+        .catch((err) => console.error("mark as read failed", err));
+    },
+    [updateBootstrap]
+  );
+
   // Set the AI bot Active/Paused for a conversation. Optimistically flips
   // the local state, then fires the backend (which writes the GHL tag mirror
   // and triggers the bot-status workflow). Reverts on failure.
@@ -2672,6 +2690,7 @@ export default function Index() {
               onSelectConversation={handleSelectConversationMobile}
               onToggleFavorite={handleToggleFavorite}
               onArchiveConversation={handleToggleArchive}
+              onMarkAsRead={handleMarkAsRead}
               activeViewId={activeViewId}
               savedViews={savedViews}
               onSaveView={handleSaveView}
@@ -2744,6 +2763,7 @@ export default function Index() {
               onSelectConversation={setActiveId}
               onToggleFavorite={handleToggleFavorite}
               onArchiveConversation={handleToggleArchive}
+              onMarkAsRead={handleMarkAsRead}
               activeViewId={activeViewId}
               savedViews={savedViews}
               onSaveView={handleSaveView}

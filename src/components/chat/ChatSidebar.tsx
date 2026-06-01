@@ -60,6 +60,8 @@ interface ChatSidebarProps {
   // archived rows from every inbox view and surfaces an Undo toast,
   // so the row vanishes the instant this callback fires.
   onArchiveConversation?: (id: string) => void;
+  // "Marcar como leído" — clears the conversation's unread badge.
+  onMarkAsRead?: (id: string) => void;
   savedViews?: SavedView[];
   activeViewId?: string | null;
   onSaveView?: (view: SavedView) => void;
@@ -145,6 +147,7 @@ export function ChatSidebar({
   onSelectConversation,
   onToggleFavorite,
   onArchiveConversation,
+  onMarkAsRead,
   savedViews = [],
   activeViewId = null,
   onSaveView,
@@ -1075,7 +1078,14 @@ export function ChatSidebar({
                               <Archive className="h-4 w-4" />
                               <span>{conv.isArchived ? "Desarchivar" : "Archivar"}</span>
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="gap-2 cursor-pointer">
+                            <DropdownMenuItem
+                              className="gap-2 cursor-pointer"
+                              disabled={!conv.unreadCount}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMarkAsRead?.(conv.id);
+                              }}
+                            >
                               <CheckCheck className="h-4 w-4" />
                               <span>Marcar como leído</span>
                             </DropdownMenuItem>
