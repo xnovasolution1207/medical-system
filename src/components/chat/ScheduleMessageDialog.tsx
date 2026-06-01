@@ -301,7 +301,7 @@ export function ScheduleMessageDialog({
       onSaved={() => invalidateTemplates(templateChannel)}
     />
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>Subir Plantilla WhatsApp</DialogTitle>
           <DialogDescription className="sr-only">
@@ -570,8 +570,8 @@ export function ScheduleMessageDialog({
           </div>
         </div>
 
-        <DialogFooter className="!justify-between gap-3 mt-2 flex-col sm:flex-row">
-          <div className="flex items-center gap-2">
+        <DialogFooter className="!justify-between gap-3 mt-2 flex-col sm:flex-row sm:flex-wrap">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <Label htmlFor="wa-when" className="text-sm font-medium shrink-0">
               Programar para:
             </Label>
@@ -579,7 +579,7 @@ export function ScheduleMessageDialog({
               value={scheduleOptionId}
               onValueChange={(v) => setScheduleOptionId(v as ScheduleOptionId)}
             >
-              <SelectTrigger id="wa-when" className="h-9 min-w-[200px]">
+              <SelectTrigger id="wa-when" className="h-9 w-[180px] min-w-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -596,11 +596,11 @@ export function ScheduleMessageDialog({
                 value={customDatetime}
                 onChange={(e) => setCustomDatetime(e.target.value)}
                 min={nowLocalDatetime()}
-                className="h-9 text-sm w-[200px]"
+                className="h-9 text-sm w-[190px] max-w-full"
               />
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
             <Button
               variant="ghost"
               onClick={() => onOpenChange(false)}
