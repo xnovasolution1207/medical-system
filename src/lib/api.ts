@@ -508,11 +508,12 @@ export const api = {
       }>("PUT", "/location-config/green-api", creds),
     // Per-sub-account Conversation AI bot status workflow webhook.
     setBotStatusWebhookUrl: (url: string | null) =>
-      request<{ locationId: string; botStatusWebhookUrl: string | null }>(
-        "PUT",
-        "/location-config/bot-webhook",
-        { url }
-      ),
+      request<{
+        locationId: string;
+        botStatusWebhookUrl: string | null;
+        // Auto-probe result when a non-empty URL was saved.
+        probe?: { ok: boolean; status: number; message?: string } | null;
+      }>("PUT", "/location-config/bot-webhook", { url }),
     // Send a sample { contactId, status } POST to the bot webhook. Pass a
     // `url` to test before saving; otherwise the saved one is used. Also
     // makes GHL capture the `status` field for the workflow's If/Else.

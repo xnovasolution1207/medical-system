@@ -123,10 +123,19 @@ export default function Configuracion() {
   const saveBotWebhook = async () => {
     setBotSaving(true);
     try {
-      await api.locationConfig.setBotStatusWebhookUrl(botUrl.trim() || null);
+      const r = await api.locationConfig.setBotStatusWebhookUrl(
+        botUrl.trim() || null
+      );
+      // The backend auto-fires a sample POST on save — surface its outcome.
+      const probeNote = r.probe
+        ? r.probe.ok
+          ? " — prueba ✓"
+          : ` — prueba falló (${r.probe.status})`
+        : "";
       toast({
         title: "Webhook guardado",
-        description: "El webhook del bot de IA se actualizó.",
+        description: `El webhook del bot de IA se actualizó${probeNote}.`,
+        variant: r.probe && !r.probe.ok ? "destructive" : undefined,
       });
     } catch (e) {
       toast({
