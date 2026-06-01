@@ -845,6 +845,11 @@ export function ChatMessageArea({
   // a free-form message that WhatsApp would reject.
   const isWhatsApp24hWindowExpired = useMemo(() => {
     if (conversation.source !== "whatsapp") return false;
+    // While the message history is still loading, `conversation.messages`
+    // is empty — so the inbound scan below would find nothing and wrongly
+    // report the 24h window as expired (showing the banner + locking the
+    // composer). Hold off until the history has hydrated.
+    if (isLoadingHistory) return false;
     // Walk backward to find the most recent INBOUND message (sender
     // is the contact, not "agent" / "system"). System events and
     // outbound messages don't reset Meta's 24h window.
@@ -863,7 +868,7 @@ export function ChatMessageArea({
     const lastInboundMs = new Date(lastInboundIso).getTime();
     if (!Number.isFinite(lastInboundMs)) return true;
     return Date.now() - lastInboundMs > 24 * 60 * 60 * 1000;
-  }, [conversation.source, conversation.messages]);
+  }, [conversation.source, conversation.messages, isLoadingHistory]);
 
   // Two surfaces drive scheduling now: a small entry Popover (quick
   // text-message scheduling + button to open the rich dialog) and the
