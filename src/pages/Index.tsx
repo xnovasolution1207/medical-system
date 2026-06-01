@@ -1853,6 +1853,17 @@ export default function Index() {
         // tab-only pagination by stale filter values.
         ...(isSearchActive ? filterParams : {}),
       });
+      // Anti-flap guard: cursor pagination keys off `lastMessageDate`, and
+      // the tail of the list can have several conversations sharing the
+      // same timestamp. GHL then hands back the *same* boundary page, so
+      // `nextCursor` equals the cursor we just queried. If we kept that
+      // cursor, `hasMore` would stay true, the list wouldn't grow, and the
+      // scroll handler would re-fire forever (the "Cargando más…" flap).
+      // When the cursor doesn't advance, treat it as the end.
+      const safeNextCursor =
+        result.nextCursor !== null && result.nextCursor === cursor
+          ? null
+          : result.nextCursor;
       if (isSearchActive) {
         setSearchResults((prev) => {
           const base = prev ?? [];
@@ -1860,7 +1871,7 @@ export default function Index() {
           const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
           return fresh.length ? [...base, ...fresh] : base;
         });
-        setSearchNextCursor(result.nextCursor);
+        setSearchNextCursor(safeNextCursor);
       } else if (unreadFilterActive) {
         setUnreadResults((prev) => {
           const base = prev ?? [];
@@ -1868,7 +1879,7 @@ export default function Index() {
           const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
           return fresh.length ? [...base, ...fresh] : base;
         });
-        setUnreadNextCursor(result.nextCursor);
+        setUnreadNextCursor(safeNextCursor);
       } else if (assignedFilterActive) {
         setAssignedResults((prev) => {
           const base = prev ?? [];
@@ -1876,7 +1887,7 @@ export default function Index() {
           const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
           return fresh.length ? [...base, ...fresh] : base;
         });
-        setAssignedNextCursor(result.nextCursor);
+        setAssignedNextCursor(safeNextCursor);
       } else if (followedFilterActive) {
         setFollowedResults((prev) => {
           const base = prev ?? [];
@@ -1884,7 +1895,7 @@ export default function Index() {
           const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
           return fresh.length ? [...base, ...fresh] : base;
         });
-        setFollowedNextCursor(result.nextCursor);
+        setFollowedNextCursor(safeNextCursor);
       } else {
         updateBootstrap((prev) => {
           const existingIds = new Set(prev.conversations.map((c) => c.id));
@@ -1892,7 +1903,11 @@ export default function Index() {
           return {
             ...prev,
             conversations: fresh.length ? [...prev.conversations, ...fresh] : prev.conversations,
-            conversationsNextCursor: result.nextCursor,
+            // Stop paginating when the page added nothing new (all
+            // duplicates) — otherwise the list never grows but hasMore
+            // stays true and the loader flaps. Also honours the
+            // cursor-stall guard above.
+            conversationsNextCursor: fresh.length ? safeNextCursor : null,
           };
         });
       }
