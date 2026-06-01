@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut, MessageSquare, MessageCircle, Archive } from "lucide-react";
+import { Inbox, User, Eye, Bookmark, ChevronRight, ChevronLeft, ChevronDown, Plus, Hash, CheckSquare, Calendar, AlertCircle, Clock, CalendarDays, Users, Bell, Search, Moon, Sun, Check, Pencil, Trash2, Kanban, UserCog, LogOut, MessageSquare, MessageCircle, Archive, Settings } from "lucide-react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/authContext";
@@ -668,6 +668,25 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
           </TooltipTrigger>
           {!isExpanded && (
             <TooltipContent side="right">Registrar WABA ID</TooltipContent>
+          )}
+        </Tooltip>
+
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn(
+                "justify-start h-10 w-full transition-all relative rounded-xl",
+                isExpanded ? "px-3" : "px-0 justify-center"
+              )}
+              onClick={() => navigate("/configuracion")}
+            >
+              <Settings className={cn("h-5 w-5 shrink-0 text-muted-foreground", isExpanded && "mr-3")} />
+              {isExpanded && <span className="truncate flex-1 text-left">Configuración</span>}
+            </Button>
+          </TooltipTrigger>
+          {!isExpanded && (
+            <TooltipContent side="right">Configuración</TooltipContent>
           )}
         </Tooltip>
 

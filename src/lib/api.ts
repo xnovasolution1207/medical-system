@@ -477,16 +477,85 @@ export const api = {
   // WhatsApp templates from the Meta Graph API.
   locationConfig: {
     get: () =>
-      request<{ locationId: string; wabaId: string | null }>(
-        "GET",
-        "/location-config"
-      ),
+      request<{
+        locationId: string;
+        wabaId: string | null;
+        whatsappProviderId?: string | null;
+        greenApiInstanceId: string | null;
+        greenApiBaseUrl: string | null;
+        greenApiConfigured: boolean;
+        botStatusWebhookUrl: string | null;
+      }>("GET", "/location-config"),
     setWabaId: (wabaId: string | null) =>
       request<{ locationId: string; wabaId: string | null }>(
         "PUT",
         "/location-config/waba",
         { wabaId }
       ),
+    // Per-sub-account Green API credentials. Send all three; baseUrl is
+    // optional (derived from the instance id when blank). The apiToken is
+    // never returned by GET — only `greenApiConfigured`.
+    setGreenApi: (creds: {
+      instanceId: string;
+      apiToken: string;
+      baseUrl?: string;
+    }) =>
+      request<{
+        locationId: string;
+        greenApiInstanceId: string | null;
+        greenApiBaseUrl: string | null;
+        greenApiConfigured: boolean;
+      }>("PUT", "/location-config/green-api", creds),
+    // Per-sub-account Conversation AI bot status workflow webhook.
+    setBotStatusWebhookUrl: (url: string | null) =>
+      request<{ locationId: string; botStatusWebhookUrl: string | null }>(
+        "PUT",
+        "/location-config/bot-webhook",
+        { url }
+      ),
+  },
+
+  // Per-template GHL Workflow Inbound Webhook URLs used to send WhatsApp
+  // templates by name (one workflow per template variant). Stored per
+  // (locationId, templateName, language).
+  whatsappTemplateWebhooks: {
+    list: () =>
+      request<
+        Array<{
+          templateName: string;
+          templateLanguage: string;
+          webhookUrl: string;
+          updatedAt?: string;
+        }>
+      >("GET", "/whatsapp-template-webhooks"),
+    // Empty webhookUrl removes the row.
+    upsert: (templateName: string, webhookUrl: string, language?: string) => {
+      const qs = language ? `?language=${encodeURIComponent(language)}` : "";
+      return request<{
+        templateName: string;
+        templateLanguage: string;
+        webhookUrl: string;
+        probe?: { ok: boolean; status: number; message?: string };
+      }>(
+        "PUT",
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}${qs}`,
+        { webhookUrl }
+      );
+    },
+    remove: (templateName: string, language?: string) => {
+      const qs = language ? `?language=${encodeURIComponent(language)}` : "";
+      return request<void>(
+        "DELETE",
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}${qs}`
+      );
+    },
+    probe: (templateName: string, language?: string) => {
+      const qs = language ? `?language=${encodeURIComponent(language)}` : "";
+      return request<{ ok: boolean; status: number; message?: string }>(
+        "POST",
+        `/whatsapp-template-webhooks/${encodeURIComponent(templateName)}/probe${qs}`
+      );
+    },
   },
 
   // "Plantillas rápidas" — agent's local canned messages. Backed by
