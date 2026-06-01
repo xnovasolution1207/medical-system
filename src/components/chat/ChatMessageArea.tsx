@@ -3265,63 +3265,6 @@ export function ChatMessageArea({
               </div>
               
               <div className="flex items-center gap-2">
-                {/* AI bot Activo/Pausado control. Mirrors GHL's native
-                    "Bot de IA de chats" panel: pick a status and the backend
-                    fires the GHL workflow that flips the Conversation AI bot
-                    plus writes the durable tag mirror. */}
-                <Popover open={isBotOpen} onOpenChange={setIsBotOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-9 w-9 p-0 rounded-full text-violet-600 bg-violet-50 hover:bg-violet-100 dark:bg-slate-800 dark:text-violet-300 dark:hover:bg-slate-700 transition-colors"
-                      title="Bot de IA de chats"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 p-4 space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-semibold">
-                      <Sparkles className="h-4 w-4 text-violet-500" />
-                      Bot de IA de chats
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      Bot asignado:{" "}
-                      <span className="font-medium text-slate-700 dark:text-slate-200">
-                        AI Dental
-                      </span>
-                    </div>
-                    <Select
-                      value={conversation.botStatus ?? "active"}
-                      onValueChange={(v) =>
-                        onSetBotStatus?.(conversation.id, v as "active" | "paused")
-                      }
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Activo</SelectItem>
-                        <SelectItem value="paused">Pausado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <div className="flex items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2">
-                      <span
-                        className={`h-2 w-2 rounded-full ${
-                          (conversation.botStatus ?? "active") === "active"
-                            ? "bg-emerald-500"
-                            : "bg-amber-500"
-                        }`}
-                      />
-                      <span className="text-xs text-slate-600 dark:text-slate-300">
-                        {(conversation.botStatus ?? "active") === "active"
-                          ? "El bot está activo y responderá automáticamente."
-                          : "El bot está en pausa y no responderá."}
-                      </span>
-                    </div>
-                  </PopoverContent>
-                </Popover>
                 {/* "Programar" entry. Two-step flow per spec section 1.5:
                     the popover surfaces a "plantilla de WhatsApp" path
                     (opens the rich template dialog) AND a quick
@@ -3331,9 +3274,9 @@ export function ChatMessageArea({
                   <PopoverTrigger asChild>
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-9 px-4 gap-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full font-medium dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 rounded-full border-slate-200 dark:border-slate-800 text-muted-foreground hover:text-foreground bg-background"
                       disabled={activeChannel === "internal"}
                       title={
                         activeChannel === "internal"
@@ -3342,7 +3285,6 @@ export function ChatMessageArea({
                       }
                     >
                       <Clock className="h-4 w-4" />
-                      Programar
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-72 p-3 space-y-3">
@@ -3424,6 +3366,70 @@ export function ChatMessageArea({
                       >
                         Programar mensaje de texto
                       </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {/* AI bot Activo/Pausado control. Mirrors GHL's native
+                    "Bot de IA de chats" panel: pick a status and the backend
+                    fires the GHL workflow that flips the Conversation AI bot
+                    plus writes the durable tag mirror. */}
+                <Popover open={isBotOpen} onOpenChange={setIsBotOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="relative h-10 w-10 rounded-full border-slate-200 dark:border-slate-800 text-muted-foreground hover:text-foreground bg-background"
+                      title="Bot de IA de chats"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      <span
+                        className={`absolute top-2 right-2 h-2 w-2 rounded-full border-[1.5px] border-background ${
+                          (conversation.botStatus ?? "active") === "paused"
+                            ? "bg-amber-500"
+                            : "bg-green-400"
+                        }`}
+                      />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <Sparkles className="h-4 w-4 text-violet-500" />
+                      Bot de IA de chats
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Bot asignado:{" "}
+                      <span className="font-medium text-slate-700 dark:text-slate-200">
+                        AI Dental
+                      </span>
+                    </div>
+                    <Select
+                      value={conversation.botStatus ?? "active"}
+                      onValueChange={(v) =>
+                        onSetBotStatus?.(conversation.id, v as "active" | "paused")
+                      }
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Activo</SelectItem>
+                        <SelectItem value="paused">Pausado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2">
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          (conversation.botStatus ?? "active") === "active"
+                            ? "bg-emerald-500"
+                            : "bg-amber-500"
+                        }`}
+                      />
+                      <span className="text-xs text-slate-600 dark:text-slate-300">
+                        {(conversation.botStatus ?? "active") === "active"
+                          ? "El bot está activo y responderá automáticamente."
+                          : "El bot está en pausa y no responderá."}
+                      </span>
                     </div>
                   </PopoverContent>
                 </Popover>
