@@ -1942,6 +1942,16 @@ export default function Index() {
           c.id === id && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c
         ),
       }));
+      // When a saved view / search is active, the visible list is
+      // searchResults (not the bootstrap conversations), so clear the badge
+      // there too — otherwise it stays until the view is reloaded.
+      setSearchResults((prev) =>
+        prev
+          ? prev.map((c) =>
+              c.id === id && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c
+            )
+          : prev
+      );
       if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { markRead: true })
