@@ -315,6 +315,17 @@ export function OpportunitiesView({
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [searchQuery, setSearchQuery] = useState("");
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
+  // Manual within-column ordering. GHL exposes no arbitrary opportunity-
+  // order API, so card reordering is a local override: stageId → ordered
+  // opp ids. Applied on top of the active sort (cards present here win;
+  // the rest fall through in sorted order). Resets on reload.
+  const [manualOrder, setManualOrder] = useState<Record<string, string[]>>({});
+  // Drop-indicator state while dragging over a card: which card and which
+  // edge (insert before / after) the dragged card would land at.
+  const [dragOverCard, setDragOverCard] = useState<{
+    id: string;
+    pos: "before" | "after";
+  } | null>(null);
   // Bulk-select scaffold. The toolbar at the top of the board shows when
   // any card is checked; "Eliminar seleccionadas" calls the parent.
   const [selectedOppIds, setSelectedOppIds] = useState<Set<string>>(new Set());
@@ -691,6 +702,72 @@ export function OpportunitiesView({
       onMoveOpportunity?.(draggedOppId, targetStageId);
       setDraggedOppId(null);
     }
+    setDragOverCard(null);
+  };
+
+  // Reorder a column's cards by the local manual-order override. Cards
+  // listed in `manualOrder[stageId]` sort to the front in that order;
+  // anything not listed (e.g. just-arrived cards) keeps its incoming
+  // sorted position after them. Sort is stable in modern JS engines.
+  const orderStageOpps = (opps: Opportunity[], stageId: string) => {
+    const order = manualOrder[stageId];
+    if (!order || order.length === 0) return opps;
+    const rank = new Map(order.map((id, i) => [id, i]));
+    return [...opps].sort((a, b) => {
+      const ra = rank.has(a.id) ? (rank.get(a.id) as number) : Infinity;
+      const rb = rank.has(b.id) ? (rank.get(b.id) as number) : Infinity;
+      return ra - rb;
+    });
+  };
+
+  // While dragging over a card, mark which edge (above/below the card's
+  // vertical midpoint) the dragged card would drop at — drives the
+  // insertion indicator line.
+  const handleCardDragOver = (e: React.DragEvent, targetId: string) => {
+    if (!draggedOppId || draggedOppId === targetId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pos = e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    setDragOverCard((prev) =>
+      prev && prev.id === targetId && prev.pos === pos
+        ? prev
+        : { id: targetId, pos }
+    );
+  };
+
+  // Drop directly onto a card: insert the dragged card just before/after
+  // the target within that card's column. `displayedIds` is the column's
+  // current on-screen order, so the new order is computed from exactly
+  // what the operator sees. Cross-column drops also move the stage.
+  const handleCardDrop = (
+    e: React.DragEvent,
+    targetOpp: Opportunity,
+    displayedIds: string[]
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = draggedOppId;
+    const drop = dragOverCard;
+    setDragOverCard(null);
+    setDraggedOppId(null);
+    if (!draggedId || draggedId === targetOpp.id) return;
+
+    const targetStageId = targetOpp.stageId;
+    const dragged = opportunities.find((o) => o.id === draggedId);
+    // Moving in from another column — persist the stage change too.
+    if (dragged && dragged.stageId !== targetStageId) {
+      onMoveOpportunity?.(draggedId, targetStageId);
+    }
+
+    const pos = drop && drop.id === targetOpp.id ? drop.pos : "before";
+    const base = displayedIds.filter((id) => id !== draggedId);
+    const targetIdx = base.indexOf(targetOpp.id);
+    if (targetIdx === -1) return;
+    const insertIdx = pos === "before" ? targetIdx : targetIdx + 1;
+    base.splice(insertIdx, 0, draggedId);
+    setManualOrder((prev) => ({ ...prev, [targetStageId]: base }));
   };
 
   const clearFilters = () => {
@@ -983,7 +1060,14 @@ export function OpportunitiesView({
           <>
             <div className="flex gap-4 h-full pb-4 w-max">
               {stages.map((stage) => {
-                const stageOpps = filteredOpps.filter((o) => o.stageId === stage.id);
+                const stageOpps = orderStageOpps(
+                  filteredOpps.filter((o) => o.stageId === stage.id),
+                  stage.id
+                );
+                // The column's current on-screen order — passed to each
+                // card's drop handler so reordering is computed from what
+                // the operator actually sees.
+                const stageOppIds = stageOpps.map((o) => o.id);
                 const stageTotal = stageOpps.reduce(
                   (sum, opp) => sum + (opp.monetaryValue ?? 0),
                   0
@@ -1114,13 +1198,32 @@ export function OpportunitiesView({
                             key={opp.id}
                             draggable
                             onDragStart={(e) => handleDragStart(e, opp.id)}
+                            onDragEnd={() => {
+                              setDraggedOppId(null);
+                              setDragOverCard(null);
+                            }}
+                            onDragOver={(e) => handleCardDragOver(e, opp.id)}
+                            onDragLeave={() =>
+                              setDragOverCard((prev) =>
+                                prev?.id === opp.id ? null : prev
+                              )
+                            }
+                            onDrop={(e) => handleCardDrop(e, opp, stageOppIds)}
                             onClick={() => {
                               if (canOpenChat) onOpenChat?.(opp.contactId);
                             }}
                             className={cn(
                               "group bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-all active:cursor-grabbing relative",
                               canOpenChat ? "cursor-pointer" : "cursor-grab",
-                              isSelected && "ring-2 ring-primary ring-offset-1"
+                              isSelected && "ring-2 ring-primary ring-offset-1",
+                              // Insertion indicator: a primary line on the
+                              // edge the dragged card would drop at.
+                              dragOverCard?.id === opp.id &&
+                                draggedOppId !== opp.id &&
+                                (dragOverCard.pos === "before"
+                                  ? "before:absolute before:-top-1 before:left-0 before:right-0 before:h-0.5 before:rounded-full before:bg-primary"
+                                  : "after:absolute after:-bottom-1 after:left-0 after:right-0 after:h-0.5 after:rounded-full after:bg-primary"),
+                              draggedOppId === opp.id && "opacity-50"
                             )}
                           >
                             <div className="flex items-start justify-between mb-1.5">
