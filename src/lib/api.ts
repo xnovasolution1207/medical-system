@@ -476,6 +476,17 @@ export const api = {
     },
   },
 
+  // Open Graph link preview for a URL in a message. Returns null when the
+  // page has no usable preview metadata.
+  linkPreview: (url: string) =>
+    request<{
+      url: string;
+      title?: string;
+      description?: string;
+      image?: string;
+      siteName?: string;
+    } | null>("GET", `/link-preview?url=${encodeURIComponent(url)}`),
+
   // Per-location app config. Today: just the WABA id used to fetch
   // WhatsApp templates from the Meta Graph API.
   locationConfig: {

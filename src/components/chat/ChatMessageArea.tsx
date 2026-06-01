@@ -4,6 +4,7 @@ import { ChannelAvatar } from "./ChannelAvatar";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { AudioPlayer } from "./AudioPlayer";
+import { LinkPreview } from "./LinkPreview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -506,6 +507,18 @@ function linkifyText(
   }
   if (lastIndex < text.length) out.push(text.slice(lastIndex));
   return out.length ? out : text;
+}
+
+// First bare http(s) URL in a string, with trailing punctuation trimmed —
+// used to pick which link to render an Open Graph preview card for.
+function firstHttpUrl(text: string): string | null {
+  if (!text) return null;
+  const m = text.match(/https?:\/\/[^\s]+/);
+  if (!m) return null;
+  let url = m[0];
+  const t = url.match(/[.,;:!?)\]}>"']+$/);
+  if (t) url = url.slice(0, url.length - t[0].length);
+  return url;
 }
 
 function renderTextWithMentions(text: string, mentions: string[]): React.ReactNode {
@@ -2705,6 +2718,11 @@ export function ChatMessageArea({
                               isMe
                             )}
                       </span>
+                    )}
+
+                    {/* Open Graph preview card for the first URL in the text. */}
+                    {message.text && firstHttpUrl(message.text) && (
+                      <LinkPreview url={firstHttpUrl(message.text)!} />
                     )}
 
                     {bubbleHasNoVisibleContent(message) && (
