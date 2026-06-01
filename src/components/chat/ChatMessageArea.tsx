@@ -2757,6 +2757,72 @@ export function ChatMessageArea({
                         )}
                       </div>
                     ) : null}
+
+                    {/* Time + options inside the bubble (WhatsApp-style),
+                        bottom-right — for both inbound and outbound. */}
+                    <div
+                      className={cn(
+                        "flex items-center justify-end gap-1 mt-1 select-none",
+                        isMe ? "text-primary-foreground/70" : "text-muted-foreground"
+                      )}
+                    >
+                      <span className="text-[11px] leading-none">{message.timestamp}</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="-mr-1 leading-none opacity-80 transition-opacity hover:opacity-100"
+                            title="Opciones del mensaje"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setReplyingToMessage(message)}>
+                            <Reply className="h-4 w-4 mr-2" />
+                            Responder
+                          </DropdownMenuItem>
+                          {(conversation.pinnedMessages ?? []).some((p) => p.id === message.id) ? (
+                            <DropdownMenuItem
+                              onClick={() => onUnpinMessage?.(conversation.id, message.id)}
+                            >
+                              <PinOff className="h-4 w-4 mr-2" />
+                              Desfijar
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                onPinMessage?.(conversation.id, {
+                                  id: message.id,
+                                  text: message.text,
+                                  date: message.date,
+                                  senderName:
+                                    message.senderName ??
+                                    (message.senderId === currentUser.id
+                                      ? currentUser.name
+                                      : conversation.participant.name),
+                                  channel: message.channel,
+                                })
+                              }
+                            >
+                              <Pin className="h-4 w-4 mr-2" />
+                              Fijar
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={() =>
+                              toast({
+                                title: "Detalles del mensaje",
+                                description: `${isMe ? "Enviado" : "Recibido"} a las ${message.timestamp}`,
+                              })
+                            }
+                          >
+                            <Info className="h-4 w-4 mr-2" />
+                            Ver detalles
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
 
                   {(() => {
@@ -2813,63 +2879,7 @@ export function ChatMessageArea({
                     );
                   })()}
 
-                  <div className={cn(
-                    "flex items-center gap-1.5 mt-1",
-                    isMe ? "justify-end" : "justify-start"
-                  )}>
-                    <span className="text-[12px] text-muted-foreground flex items-center gap-1 font-medium">
-                      <Clock className="h-3.5 w-3.5 opacity-70" />
-                      {message.timestamp}
-                    </span>
-                  </div>
                 </div>
-
-                {!isMe && (
-                  <div className="mb-5 shrink-0">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-muted-foreground hover:bg-muted">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem onClick={() => setReplyingToMessage(message)}>
-                          <Reply className="h-4 w-4 mr-2" />
-                          Responder
-                        </DropdownMenuItem>
-                        {(conversation.pinnedMessages ?? []).some((p) => p.id === message.id) ? (
-                          <DropdownMenuItem
-                            onClick={() => onUnpinMessage?.(conversation.id, message.id)}
-                          >
-                            <PinOff className="h-4 w-4 mr-2" />
-                            Desfijar
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              onPinMessage?.(conversation.id, {
-                                id: message.id,
-                                text: message.text,
-                                date: message.date,
-                                senderName:
-                                  message.senderName ??
-                                  (message.senderId === currentUser.id ? currentUser.name : conversation.participant.name),
-                                channel: message.channel,
-                              })
-                            }
-                          >
-                            <Pin className="h-4 w-4 mr-2" />
-                            Fijar
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem onClick={() => toast({ title: "Detalles del mensaje", description: `Recibido a las ${message.timestamp}` })}>
-                          <Info className="h-4 w-4 mr-2" />
-                          Ver detalles
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )}
 
                 {isMe && (
                   <div className={cn(isConsecutive ? "invisible" : "visible", "shrink-0")}>
