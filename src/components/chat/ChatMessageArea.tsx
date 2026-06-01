@@ -3358,25 +3358,26 @@ export function ChatMessageArea({
                 >
                   <Zap className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "h-8 w-8 text-muted-foreground",
-                    isTemplateDialogOpen && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
-                  )}
-                  title="Plantillas WhatsApp"
-                  onClick={() => {
-                    // Force WhatsApp channel before opening so the
-                    // dialog fetches the right template type, even if
-                    // the agent had switched to Internal/SMS/Email.
-                    if (activeChannel === "internal") setActiveChannel("whatsapp");
-                    setIsTemplateDialogOpen(true);
-                  }}
-                >
-                  <MessageCircle className="h-4 w-4" />
-                </Button>
+                {/* WhatsApp templates are Meta-approved templates — they only
+                    exist on WhatsApp, so this button is shown ONLY on the
+                    WhatsApp channel. On other channels (SMS/Email/IG/TikTok/
+                    Internal) it must not appear, otherwise WhatsApp templates
+                    leak into channels that can't send them. */}
+                {activeChannel === "whatsapp" && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "h-8 w-8 text-muted-foreground",
+                      isTemplateDialogOpen && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                    )}
+                    title="Plantillas WhatsApp"
+                    onClick={() => setIsTemplateDialogOpen(true)}
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
               
               <div className="flex items-center gap-2">
@@ -3404,20 +3405,23 @@ export function ChatMessageArea({
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-72 p-3 space-y-3">
                     <div className="text-sm font-semibold">Programar envío</div>
-                    {/* Path 1 — rich WhatsApp template dialog */}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="w-full h-9 justify-start gap-2 text-slate-700 dark:text-slate-200"
-                      onClick={() => {
-                        setIsScheduleOpen(false);
-                        setIsTemplateDialogOpen(true);
-                      }}
-                    >
-                      <MessageCircle className="h-4 w-4 text-emerald-500" />
-                      Programar plantilla de WhatsApp
-                    </Button>
+                    {/* Path 1 — rich WhatsApp template dialog. Only on the
+                        WhatsApp channel, since these are Meta templates. */}
+                    {activeChannel === "whatsapp" && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full h-9 justify-start gap-2 text-slate-700 dark:text-slate-200"
+                        onClick={() => {
+                          setIsScheduleOpen(false);
+                          setIsTemplateDialogOpen(true);
+                        }}
+                      >
+                        <MessageCircle className="h-4 w-4 text-emerald-500" />
+                        Programar plantilla de WhatsApp
+                      </Button>
+                    )}
                     {/* Path 2 — quick text-message scheduling */}
                     <div className="space-y-2 pt-1">
                       <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
