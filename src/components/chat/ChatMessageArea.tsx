@@ -2771,7 +2771,12 @@ export function ChatMessageArea({
                         <DropdownMenuTrigger asChild>
                           <button
                             type="button"
-                            className="-mr-1 leading-none opacity-80 transition-opacity hover:opacity-100"
+                            className={cn(
+                              "-mr-1 flex items-center justify-center rounded-md p-0.5 leading-none opacity-80 transition-colors hover:opacity-100 data-[state=open]:opacity-100",
+                              isMe
+                                ? "hover:bg-white/25 data-[state=open]:bg-white/25"
+                                : "hover:bg-foreground/10 data-[state=open]:bg-foreground/10"
+                            )}
                             title="Opciones del mensaje"
                           >
                             <MoreHorizontal className="h-4 w-4" />
