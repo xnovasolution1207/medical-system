@@ -1027,9 +1027,20 @@ export function ChatMessageArea({
         return;
       }
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/ogg" });
-      const ext = (recorder.mimeType || "").includes("webm") ? "webm" : "ogg";
+      // WhatsApp voice notes and Green API both accept Ogg/Opus (and M4A/AAC),
+      // but Green API picks the outgoing file type from the fileName EXTENSION,
+      // and `.webm` — what Chrome falls back to when it can't record an Ogg
+      // container — is NOT in Green API's supported list. The recorded
+      // opus/aac audio itself is fine; only the container label needs fixing.
+      // So map the recorded mime to an extension both sides accept: .ogg for
+      // opus (Chrome's webm + Firefox's ogg), .m4a for Safari's mp4/aac.
+      const recMime = (recorder.mimeType || "").toLowerCase();
+      const isMp4 =
+        recMime.includes("mp4") || recMime.includes("aac") || recMime.includes("m4a");
+      const ext = isMp4 ? "m4a" : "ogg";
+      const outType = isMp4 ? "audio/mp4" : "audio/ogg";
       const file = new File([blob], `voice-note-${Date.now()}.${ext}`, {
-        type: blob.type,
+        type: outType,
       });
       audioChunksRef.current = [];
       stopRecordingCleanup();
