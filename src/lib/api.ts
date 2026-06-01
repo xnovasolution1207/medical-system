@@ -513,6 +513,15 @@ export const api = {
         "/location-config/bot-webhook",
         { url }
       ),
+    // Send a sample { contactId, status } POST to the bot webhook. Pass a
+    // `url` to test before saving; otherwise the saved one is used. Also
+    // makes GHL capture the `status` field for the workflow's If/Else.
+    probeBotStatusWebhook: (url?: string, status?: "active" | "paused") =>
+      request<{ ok: boolean; status: number; bodySnippet: string }>(
+        "POST",
+        "/location-config/bot-webhook/probe",
+        { url, status }
+      ),
   },
 
   // Per-template GHL Workflow Inbound Webhook URLs used to send WhatsApp

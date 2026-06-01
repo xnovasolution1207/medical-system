@@ -53,6 +53,7 @@ export default function Configuracion() {
   // --- Bot status webhook ---
   const [botUrl, setBotUrl] = useState("");
   const [botSaving, setBotSaving] = useState(false);
+  const [botProbing, setBotProbing] = useState(false);
 
   // --- Template webhooks ---
   const [tpls, setTpls] = useState<TemplateWebhook[]>([]);
@@ -135,6 +136,39 @@ export default function Configuracion() {
       });
     } finally {
       setBotSaving(false);
+    }
+  };
+
+  const probeBotWebhook = async () => {
+    if (!botUrl.trim()) {
+      toast({
+        title: "Falta la URL",
+        description: "Escribe la URL del webhook antes de probar.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setBotProbing(true);
+    try {
+      const r = await api.locationConfig.probeBotStatusWebhook(
+        botUrl.trim(),
+        "paused"
+      );
+      toast({
+        title: r.ok ? "Prueba enviada ✓" : "La prueba falló",
+        description: `Estado ${r.status}${
+          r.bodySnippet ? ` — ${r.bodySnippet}` : ""
+        }`,
+        variant: r.ok ? undefined : "destructive",
+      });
+    } catch (e) {
+      toast({
+        title: "Error en la prueba",
+        description: (e as Error)?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setBotProbing(false);
     }
   };
 
@@ -337,14 +371,38 @@ export default function Configuracion() {
                 placeholder="https://services.leadconnectorhq.com/hooks/.../webhook-trigger/..."
               />
             </div>
-            <Button onClick={saveBotWebhook} disabled={botSaving} className="gap-2">
-              {botSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Guardar webhook del bot
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={saveBotWebhook} disabled={botSaving} className="gap-2">
+                {botSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Guardar webhook del bot
+              </Button>
+              <Button
+                onClick={probeBotWebhook}
+                disabled={botProbing}
+                variant="outline"
+                className="gap-2"
+              >
+                {botProbing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wifi className="h-4 w-4" />
+                )}
+                Enviar prueba
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              “Enviar prueba” hace un POST{" "}
+              <code className="rounded bg-muted px-1">
+                {"{ contactId, status: \"paused\" }"}
+              </code>{" "}
+              al webhook — útil para confirmar que responde y para que GHL
+              capture el campo <code className="rounded bg-muted px-1">status</code>{" "}
+              en el workflow.
+            </p>
           </CardContent>
         </Card>
 
