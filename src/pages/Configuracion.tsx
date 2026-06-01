@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { MessageTemplate } from "@/components/chat/types";
 import {
   ArrowLeft,
   Loader2,
@@ -57,11 +58,23 @@ export default function Configuracion() {
   const [botProbing, setBotProbing] = useState(false);
 
   // --- Template webhooks ---
+  // Every WhatsApp template (from Meta) is listed; the agent just enters the
+  // inbound webhook URL per template. `tpls` = the URLs already registered.
   const [tpls, setTpls] = useState<TemplateWebhook[]>([]);
-  const [tplName, setTplName] = useState("");
-  const [tplLang, setTplLang] = useState("");
-  const [tplUrl, setTplUrl] = useState("");
-  const [tplSaving, setTplSaving] = useState(false);
+  const [waTemplates, setWaTemplates] = useState<MessageTemplate[]>([]);
+  const [waTemplatesError, setWaTemplatesError] = useState<string | null>(null);
+  const [tplUrlEdits, setTplUrlEdits] = useState<Record<string, string>>({});
+  const [savingTplKey, setSavingTplKey] = useState<string | null>(null);
+
+  const keyOf = (name: string, language?: string) => `${name}::${language || ""}`;
+  // name+language → already-registered webhook URL.
+  const registeredMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of tpls) {
+      m.set(`${w.templateName}::${w.templateLanguage || ""}`, w.webhookUrl);
+    }
+    return m;
+  }, [tpls]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -81,6 +94,21 @@ export default function Configuracion() {
       setError((e as Error)?.message ?? "No se pudo cargar la configuración.");
     } finally {
       setLoading(false);
+    }
+    // WhatsApp templates (from Meta). Loaded separately so a 409
+    // WABA_MISSING doesn't break the rest of the page.
+    try {
+      const res = await api.templates.list({ type: "whatsapp" });
+      setWaTemplates(res.templates ?? []);
+      setWaTemplatesError(null);
+    } catch (e) {
+      const code = (e as { code?: string })?.code;
+      setWaTemplatesError(
+        code === "WABA_MISSING"
+          ? "Registra primero el WABA ID (botón “Registrar WABA ID” en la barra lateral) para ver las plantillas de WhatsApp."
+          : (e as Error)?.message ?? "No se pudieron cargar las plantillas de WhatsApp."
+      );
+      setWaTemplates([]);
     }
   }, []);
 
@@ -217,43 +245,51 @@ export default function Configuracion() {
     }
   };
 
-  const addTemplateWebhook = async () => {
-    if (!tplName.trim() || !tplUrl.trim()) {
-      toast({
-        title: "Faltan datos",
-        description: "Nombre de la plantilla y URL son obligatorios.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setTplSaving(true);
+  // Register (or clear, with an empty URL) the webhook for one template. The
+  // template name + language come from the listed template — the agent only
+  // enters the URL. Backend auto-probes (sends a sample POST) on save.
+  const saveTemplateWebhook = async (
+    name: string,
+    language: string | undefined,
+    url: string
+  ) => {
+    const key = keyOf(name, language);
+    setSavingTplKey(key);
     try {
-      const r = await api.whatsappTemplateWebhooks.upsert(
-        tplName.trim(),
-        tplUrl.trim(),
-        tplLang.trim() || undefined
-      );
-      const probeNote = r.probe
-        ? r.probe.ok
-          ? " — prueba ✓"
-          : ` — prueba falló (${r.probe.status})`
-        : "";
-      toast({
-        title: "Plantilla registrada",
-        description: `${r.templateName}${probeNote}`,
+      const trimmed = url.trim();
+      if (trimmed) {
+        const r = await api.whatsappTemplateWebhooks.upsert(
+          name,
+          trimmed,
+          language || undefined
+        );
+        const probeNote = r.probe
+          ? r.probe.ok
+            ? " — prueba ✓"
+            : ` — prueba falló (${r.probe.status})`
+          : "";
+        toast({ title: "Webhook guardado", description: `${name}${probeNote}` });
+      } else {
+        await api.whatsappTemplateWebhooks.remove(name, language || undefined);
+        toast({ title: "Webhook eliminado", description: name });
+      }
+      const webhooks = await api.whatsappTemplateWebhooks
+        .list()
+        .catch(() => tpls);
+      setTpls(webhooks);
+      setTplUrlEdits((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
       });
-      setTplName("");
-      setTplLang("");
-      setTplUrl("");
-      await loadAll();
     } catch (e) {
       toast({
-        title: "Error al registrar la plantilla",
+        title: "Error al guardar el webhook",
         description: (e as Error)?.message,
         variant: "destructive",
       });
     } finally {
-      setTplSaving(false);
+      setSavingTplKey(null);
     }
   };
 
@@ -476,103 +512,69 @@ export default function Configuracion() {
               Plantillas de WhatsApp — Webhooks
             </CardTitle>
             <CardDescription>
-              Un workflow (Inbound Webhook) por plantilla. Registra el nombre de
-              la plantilla, su idioma y la URL del webhook.
+              Todas tus plantillas de WhatsApp. Para habilitar el envío, pega la
+              URL del Inbound Webhook (un workflow por plantilla) y guarda.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
-            {tpls.length === 0 ? (
+          <CardContent className="space-y-4">
+            {waTemplatesError ? (
+              <p className="text-sm text-muted-foreground">{waTemplatesError}</p>
+            ) : waTemplates.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No hay plantillas registradas todavía.
+                No hay plantillas de WhatsApp.
               </p>
             ) : (
-              <div className="space-y-2">
-                {tpls.map((t) => (
-                  <div
-                    key={`${t.templateName}:${t.templateLanguage}`}
-                    className="flex items-center gap-2 rounded-lg border p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium">
-                        {t.templateName}{" "}
-                        <span className="text-xs text-muted-foreground">
-                          {t.templateLanguage || "—"}
-                        </span>
+              <div className="space-y-3">
+                {waTemplates.map((t) => {
+                  const key = keyOf(t.name, t.language);
+                  const registered = registeredMap.has(key);
+                  const value =
+                    tplUrlEdits[key] ?? registeredMap.get(key) ?? "";
+                  return (
+                    <div key={t.id} className="space-y-2 rounded-lg border p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{t.name}</span>
+                        {t.language && (
+                          <span className="text-xs text-muted-foreground">
+                            {t.language}
+                          </span>
+                        )}
+                        {registered && (
+                          <span className="text-xs font-medium text-emerald-600">
+                            registrado ✓
+                          </span>
+                        )}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {t.webhookUrl}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          value={value}
+                          onChange={(e) =>
+                            setTplUrlEdits((p) => ({ ...p, [key]: e.target.value }))
+                          }
+                          placeholder="https://services.leadconnectorhq.com/hooks/.../webhook-trigger/..."
+                          className="min-w-[220px] flex-1"
+                        />
+                        <Button
+                          size="sm"
+                          className="gap-2"
+                          disabled={savingTplKey === key}
+                          onClick={() =>
+                            saveTemplateWebhook(t.name, t.language, value)
+                          }
+                        >
+                          {savingTplKey === key ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4" />
+                          )}
+                          Guardar
+                        </Button>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="gap-1"
-                      onClick={() =>
-                        probeTemplateWebhook(t.templateName, t.templateLanguage)
-                      }
-                      title="Probar webhook"
-                    >
-                      <Wifi className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() =>
-                        removeTemplateWebhook(t.templateName, t.templateLanguage)
-                      }
-                      title="Eliminar"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
-
-            <Separator />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="tpl-name">Nombre de la plantilla</Label>
-                <Input
-                  id="tpl-name"
-                  value={tplName}
-                  onChange={(e) => setTplName(e.target.value)}
-                  placeholder="recordatorio_cita"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="tpl-lang">Idioma (opcional)</Label>
-                <Input
-                  id="tpl-lang"
-                  value={tplLang}
-                  onChange={(e) => setTplLang(e.target.value)}
-                  placeholder="es / en"
-                />
-              </div>
-              <div className="grid gap-2 sm:col-span-2">
-                <Label htmlFor="tpl-url">Inbound Webhook URL</Label>
-                <Input
-                  id="tpl-url"
-                  value={tplUrl}
-                  onChange={(e) => setTplUrl(e.target.value)}
-                  placeholder="https://services.leadconnectorhq.com/hooks/.../webhook-trigger/..."
-                />
-              </div>
-            </div>
-            <Button
-              onClick={addTemplateWebhook}
-              disabled={tplSaving}
-              className="gap-2"
-            >
-              {tplSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Registrar plantilla
-            </Button>
           </CardContent>
         </Card>
       </div>
