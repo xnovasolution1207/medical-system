@@ -1432,137 +1432,23 @@ export function ChatMessageArea({
             </PopoverTrigger>
             <PopoverContent className="w-64 p-2 rounded-xl" align="start">
               <div className="space-y-1">
-                {stages.map((stage, idx) => (
-                  <div key={stage.id} className="flex items-center gap-1 group">
-                    {editingStageId === stage.id ? (
-                      <div className="flex flex-1 items-center gap-1">
-                        <Input
-                          value={editingStageName}
-                          onChange={(e) => setEditingStageName(e.target.value)}
-                          className="h-8 text-sm"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              if (editingStageName.trim() && editingStageName.trim() !== stage.label) {
-                                setStages(stages.map(s => s.id === stage.id ? { ...s, label: editingStageName.trim() } : s));
-                                toast({ title: "Estado actualizado" });
-                              }
-                              setEditingStageId(null);
-                            } else if (e.key === 'Escape') {
-                              setEditingStageId(null);
-                            }
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 shrink-0"
-                          onClick={() => {
-                            if (editingStageName.trim() && editingStageName.trim() !== stage.label) {
-                              setStages(stages.map(s => s.id === stage.id ? { ...s, label: editingStageName.trim() } : s));
-                              toast({ title: "Estado actualizado" });
-                            }
-                            setEditingStageId(null);
-                          }}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground shrink-0"
-                          onClick={() => setEditingStageId(null)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                {stages.map((stage) => (
+                  <div key={stage.id} className="flex items-center gap-1">
+                    <div
+                      className="flex flex-1 items-center px-2 py-1.5 text-sm rounded-md hover:bg-accent cursor-pointer"
+                      onClick={() => {
+                        onUpdateStage?.(conversation.id, stage.id);
+                        setIsStagesOpen(false);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        {conversation.stage === stage.id && <Check className="h-4 w-4 shrink-0" />}
+                        <div className={cn("h-2 w-2 shrink-0 rounded-full", stage.color, conversation.stage !== stage.id && "ml-6")} />
+                        <span className="truncate">{stage.label}</span>
                       </div>
-                    ) : (
-                      <div 
-                        className="flex flex-1 items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent cursor-pointer"
-                        onClick={() => {
-                          onUpdateStage?.(conversation.id, stage.id);
-                          setIsStagesOpen(false);
-                        }}
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          {conversation.stage === stage.id && <Check className="h-4 w-4 shrink-0" />}
-                          <div className={cn("h-2 w-2 shrink-0 rounded-full", stage.color, conversation.stage !== stage.id && "ml-6")} />
-                          <span className="truncate">{stage.label}</span>
-                        </div>
-                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (idx > 0) {
-                                const newStages = [...stages];
-                                [newStages[idx - 1], newStages[idx]] = [newStages[idx], newStages[idx - 1]];
-                                setStages(newStages);
-                              }
-                            }}
-                            disabled={idx === 0}
-                          >
-                            <ChevronDown className="h-3 w-3 rotate-180" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (idx < stages.length - 1) {
-                                const newStages = [...stages];
-                                [newStages[idx + 1], newStages[idx]] = [newStages[idx], newStages[idx + 1]];
-                                setStages(newStages);
-                              }
-                            }}
-                            disabled={idx === stages.length - 1}
-                          >
-                            <ChevronDown className="h-3 w-3" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingStageId(stage.id);
-                              setEditingStageName(stage.label);
-                            }}
-                          >
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setStages(stages.filter(s => s.id !== stage.id));
-                            }}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 ))}
-                <Button 
-                  variant="ghost" 
-                  className="w-full justify-start text-xs text-muted-foreground mt-2 h-8"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const newId = `stage_${Date.now()}`;
-                    setStages([...stages, { id: newId, label: "Nuevo Estado", color: "bg-slate-500" }]);
-                    setEditingStageId(newId);
-                    setEditingStageName("Nuevo Estado");
-                  }}
-                >
-                  + Añadir estado
-                </Button>
               </div>
             </PopoverContent>
           </Popover>
