@@ -320,6 +320,22 @@ export default function Index() {
   // Local UI state — not part of the bootstrap payload because it's purely
   // client-side: which conversation/tab is open, search input, etc.
   const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL_SAVED_VIEWS);
+  // Load the persisted, per-location saved views (the backend seeds defaults
+  // on first read). Falls back to INITIAL_SAVED_VIEWS while loading / on error.
+  useEffect(() => {
+    let cancelled = false;
+    api.views
+      .list()
+      .then((views) => {
+        if (!cancelled && Array.isArray(views) && views.length > 0) {
+          setSavedViews(views);
+        }
+      })
+      .catch((err) => console.error("load saved views failed", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [activeId, setActiveId] = useState<string | null>(null);
   // activeMainTab / activeViewId are derived from the /chatting/* URL.
   // Sidebar clicks call the setter shims below, which navigate to the
@@ -2301,6 +2317,10 @@ export default function Index() {
         return exists ? prev.map((v) => (v.id === view.id ? view : v)) : [...prev, view];
       });
       setActiveViewId(view.id);
+      // Persist durably (per-location). Optimistic local update above.
+      api.views
+        .upsert(view)
+        .catch((err) => console.error("save view failed", err));
     },
     [setActiveViewId]
   );
@@ -2309,6 +2329,9 @@ export default function Index() {
     (id: string) => {
       setSavedViews((prev) => prev.filter((v) => v.id !== id));
       if (activeViewId === id) setActiveViewId(null);
+      api.views
+        .remove(id)
+        .catch((err) => console.error("delete view failed", err));
     },
     [activeViewId, setActiveViewId]
   );

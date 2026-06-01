@@ -12,6 +12,7 @@ import type {
   MessageTemplate,
   Opportunity,
   Pipeline,
+  SavedView,
   TagSummary,
   Task,
   User,
@@ -474,6 +475,20 @@ export const api = {
         templates: MessageTemplate[];
       }>("GET", `/templates${q ? `?${q}` : ""}`);
     },
+  },
+
+  // Saved filter views ("Vistas") — per-location, durable. The backend seeds
+  // sensible defaults on first read.
+  views: {
+    list: () => request<SavedView[]>("GET", "/views"),
+    upsert: (view: SavedView) =>
+      request<SavedView>("PUT", `/views/${encodeURIComponent(view.id)}`, {
+        name: view.name,
+        filters: view.filters,
+        logic: view.logic,
+      }),
+    remove: (id: string) =>
+      request<{ ok: boolean }>("DELETE", `/views/${encodeURIComponent(id)}`),
   },
 
   // Open Graph link preview for a URL in a message. Returns null when the
