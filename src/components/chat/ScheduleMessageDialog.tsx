@@ -36,8 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Clock, CornerUpLeft, Loader2, Send } from "lucide-react";
-import { ApiError } from "@/lib/api";
+import { Clock, CornerUpLeft, Loader2, Send, FileText, Image as ImageIcon } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
 import { useTemplates, useInvalidateTemplates, templateButtonsFor } from "@/lib/templatesQuery";
 import { useToast } from "@/hooks/use-toast";
 import { WabaRegistrationDialog } from "./WabaRegistrationDialog";
@@ -86,6 +86,11 @@ interface WhatsAppTemplateDialogProps {
     templateName?: string;
     templateLanguage?: string;
     buttons?: MessageButton[];
+    // Replacement media for a template with a media header. When present the
+    // parent sends the file + the template text (free-form, via Green API)
+    // instead of the official template — Meta won't let you swap a template's
+    // baked-in media, so a custom image goes out as a normal media message.
+    attachment?: Message["attachment"];
   }) => Promise<void> | void;
 }
 
@@ -115,6 +120,15 @@ export function ScheduleMessageDialog({
   const [submitting, setSubmitting] = useState(false);
   const [sendingNow, setSendingNow] = useState(false);
   const [wabaModalOpen, setWabaModalOpen] = useState(false);
+  // Replacement image for a template whose header is a media image. The
+  // template's own image is fixed by Meta, so a swapped image is sent as a
+  // free-form media message (Green API) carrying the template's text.
+  const [customImage, setCustomImage] = useState<{ url: string; name: string } | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  // Drop any replacement image when the selected template changes.
+  useEffect(() => {
+    setCustomImage(null);
+  }, [selectedId]);
 
   // Narrow `channel` to the three the templates endpoint actually
   // serves — anything else (`internal`, future channels) skips the
@@ -160,8 +174,35 @@ export function ScheduleMessageDialog({
   );
   const split = useMemo(() => splitTemplateBody(selected?.body ?? ""), [selected]);
 
+  // Does the selected template carry a media IMAGE header? Only then do we
+  // offer "Cambiar imagen".
+  const imageHeader = selected?.whatsappDetail?.components?.find(
+    (c) => c.type === "HEADER" && (c.format || "").toUpperCase() === "IMAGE"
+  );
+  const hasImageHeader = !!imageHeader;
+  const templateImageUrl = imageHeader?.example?.headerHandle?.[0];
+  // What the preview shows: the agent's replacement, else the template's own.
+  const previewImageUrl = customImage?.url || templateImageUrl;
+
   const canSubmit = !!selectedId && !submitting && !sendingNow;
   const canSendNow = !!selectedId && !!onSendNow && !submitting && !sendingNow;
+
+  const handlePickImage = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const uploaded = await api.uploads.create(file, conversation.id);
+      setCustomImage({ url: uploaded.url, name: uploaded.name });
+    } catch (err) {
+      toast({
+        title: "No se pudo subir la imagen",
+        description: (err as Error)?.message ?? String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const handleSendNow = async () => {
     if (!canSendNow || !selected || !onSendNow) return;
@@ -174,6 +215,9 @@ export function ScheduleMessageDialog({
         templateName: selected.name,
         templateLanguage: selected.language,
         buttons: templateButtonsFor(templates, selected.name, selected.language),
+        attachment: customImage
+          ? { type: "image", url: customImage.url, name: customImage.name }
+          : undefined,
       });
       onOpenChange(false);
     } catch (err) {
@@ -347,6 +391,49 @@ export function ScheduleMessageDialog({
               />
             </div>
 
+            {hasImageHeader && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Imagen del encabezado</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm hover:bg-muted">
+                    {uploadingImage ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="h-4 w-4" />
+                    )}
+                    Cambiar imagen
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        handlePickImage(e.target.files?.[0]);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  {customImage && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 text-muted-foreground"
+                      onClick={() => setCustomImage(null)}
+                    >
+                      Restablecer
+                    </Button>
+                  )}
+                </div>
+                {customImage && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    Con imagen personalizada usa “Enviar ahora”: se envía la imagen
+                    + el texto (no la plantilla oficial de Meta). La programación
+                    no admite imagen personalizada.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor="wa-body" className="text-sm font-medium">
                 Cuerpo
@@ -371,6 +458,65 @@ export function ScheduleMessageDialog({
               {selected ? (
                 <>
                   <div className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 shadow-sm">
+                    {/* Media header (image / video / document) baked into the
+                        template — shown so the agent sees the included file
+                        before selecting and sending. */}
+                    {(() => {
+                      const header = selected.whatsappDetail?.components?.find(
+                        (c) => c.type === "HEADER"
+                      );
+                      const fmt = (header?.format || "").toUpperCase();
+                      // Show the agent's replacement image when present.
+                      const mediaUrl =
+                        (fmt === "IMAGE" && customImage?.url) ||
+                        header?.example?.headerHandle?.[0];
+                      if (!header || fmt === "TEXT" || !fmt) return null;
+                      if (fmt === "IMAGE") {
+                        return mediaUrl ? (
+                          <img
+                            src={mediaUrl}
+                            alt="Encabezado de la plantilla"
+                            className="mb-2 max-h-[160px] w-full rounded-lg object-cover"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div className="mb-2 flex items-center gap-2 rounded-lg border border-dashed px-2 py-3 text-[12px] text-slate-500">
+                            <ImageIcon className="h-4 w-4 shrink-0" />
+                            Imagen de la plantilla
+                          </div>
+                        );
+                      }
+                      if (fmt === "VIDEO") {
+                        return mediaUrl ? (
+                          <video
+                            src={mediaUrl}
+                            controls
+                            className="mb-2 max-h-[160px] w-full rounded-lg bg-black"
+                          />
+                        ) : (
+                          <div className="mb-2 flex items-center gap-2 rounded-lg border border-dashed px-2 py-3 text-[12px] text-slate-500">
+                            <FileText className="h-4 w-4 shrink-0" />
+                            Video de la plantilla
+                          </div>
+                        );
+                      }
+                      // DOCUMENT (and any other media format)
+                      return (
+                        <a
+                          href={mediaUrl || undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mb-2 flex items-center gap-2 rounded-lg border bg-slate-50 px-2 py-1.5 text-[12px] text-slate-700 no-underline dark:bg-slate-700/40 dark:text-slate-200"
+                        >
+                          <FileText className="h-4 w-4 shrink-0 text-emerald-500" />
+                          <span className="truncate">
+                            {mediaUrl ? "Documento adjunto" : "Documento de la plantilla"}
+                          </span>
+                        </a>
+                      );
+                    })()}
                     {split.header && (
                       <div className="text-[13px] font-bold text-slate-900 dark:text-slate-100 mb-1">
                         {split.header}
@@ -465,7 +611,16 @@ export function ScheduleMessageDialog({
                 Enviar ahora
               </Button>
             )}
-            <Button onClick={handleSubmit} disabled={!canSubmit} className="gap-2">
+            <Button
+              onClick={handleSubmit}
+              disabled={!canSubmit || !!customImage}
+              title={
+                customImage
+                  ? "La programación no admite imagen personalizada; usa Enviar ahora."
+                  : undefined
+              }
+              className="gap-2"
+            >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

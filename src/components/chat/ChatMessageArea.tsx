@@ -66,7 +66,15 @@ interface ChatMessageAreaProps {
     conversationId: string,
     text: string,
     channel: NonNullable<Message["channel"]>,
-    template: { id: string; name?: string; language?: string; buttons?: MessageButton[] }
+    template: {
+      id: string;
+      name?: string;
+      language?: string;
+      buttons?: MessageButton[];
+      // Replacement media: when set, send the file + text (free-form, Green
+      // API) instead of the official Meta template.
+      attachment?: Message["attachment"];
+    }
   ) => Promise<void> | void;
   onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
   onUpdateStage?: (id: string, stage: Conversation["stage"]) => void;
@@ -2275,6 +2283,7 @@ export function ChatMessageArea({
                     name: payload.templateName,
                     language: payload.templateLanguage,
                     buttons: payload.buttons,
+                    attachment: payload.attachment,
                   }
                 );
               }

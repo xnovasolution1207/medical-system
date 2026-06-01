@@ -1500,7 +1500,13 @@ export default function Index() {
       conversationId: string,
       text: string,
       channel: NonNullable<Message["channel"]>,
-      template: { id: string; name?: string; language?: string; buttons?: Message["buttons"] }
+      template: {
+        id: string;
+        name?: string;
+        language?: string;
+        buttons?: Message["buttons"];
+        attachment?: Message["attachment"];
+      }
     ) => {
       if (isStubConvId(conversationId)) {
         toast({
@@ -1528,13 +1534,17 @@ export default function Index() {
         isRead: true,
         channel,
         status: "sent",
-        templateName: template.name,
+        // When a replacement image is attached, this goes out as a free-form
+        // media message (not the official template), so don't tag it as a
+        // template / carry template buttons.
+        templateName: template.attachment ? undefined : template.name,
         // Carry the template's action buttons forward so the bubble
         // renders them under the message. GHL strips template
         // structure off the echoed message that comes back via HTTP /
         // WS, so mergeIncomingMessage preserves these once they're
         // attached here.
-        buttons: template.buttons,
+        buttons: template.attachment ? undefined : template.buttons,
+        attachment: template.attachment,
       };
       updateBootstrap((prev) => {
         const idx = prev.conversations.findIndex((c) => c.id === conversationId);
@@ -1555,9 +1565,16 @@ export default function Index() {
           text,
           channel,
           clientId: optimisticId,
-          templateId: template.id,
-          templateName: template.name,
-          templateLanguage: template.language,
+          // A replacement image is sent as a normal media message (routes
+          // through the Green API file path); otherwise send the official
+          // template via the GHL workflow.
+          ...(template.attachment
+            ? { attachment: template.attachment }
+            : {
+                templateId: template.id,
+                templateName: template.name,
+                templateLanguage: template.language,
+              }),
         });
         updateBootstrap((prev) => ({
           ...prev,
