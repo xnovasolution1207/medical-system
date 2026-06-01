@@ -659,6 +659,10 @@ export const api = {
         name?: string;
         email?: string;
         phone?: string;
+        // Street address → GHL `address1`. Empty string clears it.
+        address?: string;
+        // Identity document → GHL custom field. Empty string clears it.
+        documentNumber?: string;
         tags?: string[];
         // GHL user id that owns the contact. Pass null/empty string to clear.
         assignedTo?: string | null;

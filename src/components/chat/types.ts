@@ -17,6 +17,10 @@ export type User = {
   status: "online" | "offline" | "busy" | "away";
   email?: string;
   phone?: string;
+  // Street address — GHL-native (address1).
+  address?: string;
+  // Identity document, e.g. "CC 12345678". Backed by a GHL custom field.
+  documentNumber?: string;
   tags?: string[];
   assignedTo?: string;
   // GHL user ids that watch this contact. Local-only on the backend (see

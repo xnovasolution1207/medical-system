@@ -971,6 +971,37 @@ export default function Index() {
           };
           return { ...prev, conversations: next };
         });
+        // The conversation detail endpoint builds the participant from the
+        // conversation record, which lacks the contact's address1 and
+        // custom fields. Fetch the full contact so "Dirección" and "Num de
+        // documento" populate the right rail (and survive a refresh).
+        const contactId = full.participant?.id;
+        if (contactId) {
+          api.contacts
+            .get(contactId)
+            .then((c) => {
+              updateBootstrap((prev) => ({
+                ...prev,
+                conversations: prev.conversations.map((conv) =>
+                  conv.id === activeId
+                    ? {
+                        ...conv,
+                        participant: {
+                          ...conv.participant,
+                          email: c.email ?? conv.participant.email,
+                          phone: c.phone ?? conv.participant.phone,
+                          address: c.address,
+                          documentNumber: c.documentNumber,
+                        },
+                      }
+                    : conv
+                ),
+              }));
+            })
+            .catch((err) => {
+              console.warn("[contact] detail enrich failed", err);
+            });
+        }
       })
       .catch((err) => {
         console.error("conversation fetch failed", err);
@@ -2126,6 +2157,43 @@ export default function Index() {
     [toast, updateBootstrap]
   );
 
+  // "Información de Contacto" fields (Teléfono / Email / Dirección / Num de
+  // documento). Optimistically patch the participant on every conversation
+  // that points at this contact (header + sidebar stay in sync), patch the
+  // active search-result list too (it shadows the bootstrap cache when a
+  // view/search is active), then PATCH GHL. Phone/email/address are native
+  // fields; documentNumber rides a GHL custom field on the backend.
+  const handleUpdateContactFields = useCallback(
+    (
+      contactId: string,
+      patch: {
+        phone?: string;
+        email?: string;
+        address?: string;
+        documentNumber?: string;
+      }
+    ) => {
+      const applyPatch = (c: Conversation) =>
+        c.participant.id === contactId
+          ? { ...c, participant: { ...c.participant, ...patch } }
+          : c;
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map(applyPatch),
+      }));
+      setSearchResults((prev) => (prev ? prev.map(applyPatch) : prev));
+      api.contacts.update(contactId, patch).catch((err) => {
+        console.error("contact fields update failed", err);
+        toast({
+          title: "No se pudo guardar la información",
+          description: (err as Error)?.message || "Inténtalo de nuevo.",
+          variant: "destructive",
+        });
+      });
+    },
+    [toast, updateBootstrap]
+  );
+
   // Tag patch for the right-rail "Etiquetas" picker. Optimistically writes
   // the new tags array to every conversation whose participant is this
   // contact (so the header chip set + the sidebar stay in sync), then
@@ -2927,6 +2995,12 @@ export default function Index() {
               onUpdateTags={(tags) =>
                 handleUpdateContactTags(activeConversation.participant.id, tags)
               }
+              onUpdateContactFields={(patch) =>
+                handleUpdateContactFields(
+                  activeConversation.participant.id,
+                  patch
+                )
+              }
               opportunity={opportunities.find(
                 (o) => o.contactId === activeConversation.participant.id
               )}
@@ -2967,6 +3041,12 @@ export default function Index() {
               availableTags={availableTags}
               onUpdateTags={(tags) =>
                 handleUpdateContactTags(activeConversation.participant.id, tags)
+              }
+              onUpdateContactFields={(patch) =>
+                handleUpdateContactFields(
+                  activeConversation.participant.id,
+                  patch
+                )
               }
               opportunity={opportunities.find(
                 (o) => o.contactId === activeConversation.participant.id
@@ -3116,6 +3196,9 @@ export default function Index() {
                       availableTags={availableTags}
                       onUpdateTags={(tags) =>
                         handleUpdateContactTags(conv.participant.id, tags)
+                      }
+                      onUpdateContactFields={(patch) =>
+                        handleUpdateContactFields(conv.participant.id, patch)
                       }
                       opportunity={opportunities.find(
                         (o) => o.contactId === conv.participant.id

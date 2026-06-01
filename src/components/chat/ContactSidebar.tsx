@@ -61,6 +61,17 @@ interface ContactSidebarProps {
   // optimistic update + the `PATCH /contacts/:id { tags }` round-trip;
   // GHL auto-creates any tag names it hasn't seen before.
   onUpdateTags?: (tags: string[]) => void;
+  // Persist the "Información de Contacto" fields (Teléfono / Email /
+  // Dirección / Num de documento). Parent owns the optimistic cache
+  // update + the `PATCH /contacts/:id` round-trip. Only the touched
+  // fields are sent; documentNumber carries the composed "CC 12345678"
+  // string (doc-type prefix + number).
+  onUpdateContactFields?: (patch: {
+    phone?: string;
+    email?: string;
+    address?: string;
+    documentNumber?: string;
+  }) => void;
 }
 
 // Spanish labels for GHL's four opportunity statuses. "Abandonar" matches the
@@ -116,6 +127,68 @@ function formatMonetary(value: number | undefined): string {
   })}`;
 }
 
+// One editable row in the "Información de Contacto" section.
+type ContactField = {
+  id: string;
+  label: string;
+  value: string;
+  type: string;
+  docType?: string;
+};
+
+// Split a stored documentNumber ("CC 12345678") back into its type + value
+// parts for the editor. Falls back to type "CC" when no known prefix is
+// present (e.g. a value typed straight into GHL).
+function parseDocument(raw?: string): { docType: string; value: string } {
+  const s = (raw ?? "").trim();
+  const m = s.match(/^(CC|CE|NIT|Pasaporte)\s+([\s\S]+)$/);
+  return m ? { docType: m[1], value: m[2].trim() } : { docType: "CC", value: s };
+}
+
+// Recompose the editor's type + number into the stored string. Empty number
+// → empty string (clears the field on GHL).
+function composeDocument(docType: string, value: string): string {
+  const v = (value ?? "").trim();
+  return v ? `${docType || "CC"} ${v}` : "";
+}
+
+// Build the editable field rows from the contact. Address comes from the
+// GHL-native address1; the document number is parsed out of the custom-
+// field string.
+function buildContactFields(contact: User): ContactField[] {
+  const doc = parseDocument(contact.documentNumber);
+  return [
+    { id: "phone", label: "Teléfono", value: contact.phone || "", type: "phone" },
+    { id: "email", label: "Email", value: contact.email || "", type: "email" },
+    { id: "address", label: "Dirección", value: contact.address || "", type: "address" },
+    {
+      id: "document",
+      label: "Num de documento",
+      value: doc.value,
+      type: "document",
+      docType: doc.docType,
+    },
+  ];
+}
+
+// Map the field rows to the PATCH payload the parent persists.
+function fieldsToContactPatch(list: ContactField[]): {
+  phone?: string;
+  email?: string;
+  address?: string;
+  documentNumber?: string;
+} {
+  const byId: Record<string, ContactField> = {};
+  for (const f of list) byId[f.id] = f;
+  const docField = byId.document;
+  return {
+    phone: (byId.phone?.value ?? "").trim(),
+    email: (byId.email?.value ?? "").trim(),
+    address: (byId.address?.value ?? "").trim(),
+    documentNumber: composeDocument(docField?.docType, docField?.value ?? ""),
+  };
+}
+
 export function ContactSidebar({
   contact,
   conversation,
@@ -128,6 +201,7 @@ export function ContactSidebar({
   onCreateOpportunity,
   availableTags = [],
   onUpdateTags,
+  onUpdateContactFields,
 }: ContactSidebarProps) {
   // Local draft of the monetary value while the input is focused. We commit
   // (and round-trip to GHL) on blur or Enter — keystroke-level PATCHes would
@@ -303,12 +377,7 @@ export function ContactSidebar({
   // backed by the FamilyRelation Prisma table (see "Agregar familiar"
   // modal). Keeping the field here would render two parallel UIs for
   // the same concept and confuse the agent.
-  const [fields, setFields] = useState<any[]>([
-    { id: 'phone', label: 'Teléfono', value: contact.phone || '', type: 'phone' },
-    { id: 'email', label: 'Email', value: contact.email || '', type: 'email' },
-    { id: 'address', label: 'Dirección', value: '', type: 'address' },
-    { id: 'document', label: 'Num de documento', value: '', type: 'document', docType: 'CC' },
-  ]);
+  const [fields, setFields] = useState<ContactField[]>(() => buildContactFields(contact));
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(contact.name);
@@ -317,7 +386,7 @@ export function ContactSidebar({
   const [editedFieldValue, setEditedFieldValue] = useState("");
   const [editedDocType, setEditedDocType] = useState("CC");
 
-  const handleEditFieldStart = (field: any) => {
+  const handleEditFieldStart = (field: ContactField) => {
     setEditingFieldId(field.id);
     setEditedFieldValue(field.value);
     if (field.type === 'document') {
@@ -327,12 +396,15 @@ export function ContactSidebar({
 
   const handleEditFieldSave = () => {
     if (editingFieldId) {
-      setFields(fields.map(f => {
+      const next = fields.map(f => {
         if (f.id === editingFieldId) {
           return { ...f, value: editedFieldValue, ...(f.type === 'document' ? { docType: editedDocType } : {}) };
         }
         return f;
-      }));
+      });
+      setFields(next);
+      // Persist to GHL via the parent (optimistic cache update + PATCH).
+      onUpdateContactFields?.(fieldsToContactPatch(next));
     }
     setEditingFieldId(null);
   };
@@ -347,13 +419,11 @@ export function ContactSidebar({
 
   useEffect(() => {
     setTags(contact.tags || []);
-    setFields([
-      { id: 'phone', label: 'Teléfono', value: contact.phone || '', type: 'phone' },
-      { id: 'email', label: 'Email', value: contact.email || '', type: 'email' },
-      { id: 'address', label: 'Dirección', value: '', type: 'address' },
-      { id: 'document', label: 'Num de documento', value: '', type: 'document', docType: 'CC' },
-    ]);
-  }, [contact.tags, contact.phone, contact.email]);
+    setFields(buildContactFields(contact));
+    // Re-sync when any displayed contact field changes — including the
+    // address / documentNumber that the parent lazily enriches via
+    // api.contacts.get after a conversation is opened or refreshed.
+  }, [contact.tags, contact.phone, contact.email, contact.address, contact.documentNumber]);
 
   useEffect(() => {
     setEditedName(contact.name);
@@ -903,7 +973,17 @@ export function ContactSidebar({
                     as GHL custom fields by an admin, not added ad-hoc
                     per-contact in the SPA. */}
                 <div className="pt-2">
-                  <Button size="sm" className="w-full h-8 text-xs" onClick={() => setIsEditingFields(false)}>Guardar cambios</Button>
+                  <Button
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={() => {
+                      // Persist every field to GHL, then close the editor.
+                      onUpdateContactFields?.(fieldsToContactPatch(fields));
+                      setIsEditingFields(false);
+                    }}
+                  >
+                    Guardar cambios
+                  </Button>
                 </div>
               </div>
             ) : (
