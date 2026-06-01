@@ -307,6 +307,30 @@ export function ContactSidebar({
     };
   }, [contact.id]);
 
+  // Keep the Documentos tabs live: when a new attachment-bearing message
+  // arrives in the open conversation (e.g. the agent just sent a voice
+  // note or image), merge it into `allAttachments` immediately instead of
+  // waiting for the next contact switch to re-fetch. Deduped by message
+  // id and kept newest-first to match the backend ordering.
+  useEffect(() => {
+    const convAttachments = (conversation?.messages ?? []).filter((m) =>
+      Boolean(m.attachment)
+    );
+    if (convAttachments.length === 0) return;
+    setAllAttachments((prev) => {
+      const ids = new Set(prev.map((m) => m.id));
+      const fresh = convAttachments.filter((m) => !ids.has(m.id));
+      if (fresh.length === 0) return prev;
+      const merged = [...fresh, ...prev];
+      merged.sort((a, b) => {
+        const ta = a.date ? new Date(a.date).getTime() : 0;
+        const tb = b.date ? new Date(b.date).getTime() : 0;
+        return tb - ta;
+      });
+      return merged;
+    });
+  }, [conversation?.messages]);
+
   const resetFamilyDialog = () => {
     setFamilyName("");
     setFamilyPhone("");
