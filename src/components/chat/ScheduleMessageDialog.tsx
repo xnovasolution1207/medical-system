@@ -235,7 +235,7 @@ export function ScheduleMessageDialog({
     if (!canSubmit || !selected) return;
     setSubmitting(true);
     try {
-      const date =
+      let date =
         scheduleOptionId === "custom"
           ? new Date(customDatetime)
           : resolveScheduleOption(scheduleOptionId);
@@ -247,6 +247,18 @@ export function ScheduleMessageDialog({
       // the preset slid into the past — we still treat that as valid.
       if (date.getTime() < Date.now() - 30_000) {
         throw new Error("No puedes programar una plantilla en el pasado.");
+      }
+      // GHL's workflow Wait step requires at least 5 minutes, so snap any
+      // earlier time up to now + 5 min — that becomes the real send time and
+      // is what the scheduled indicator shows.
+      const minMs = Date.now() + 5 * 60 * 1000;
+      if (date.getTime() < minMs) {
+        date = new Date(minMs);
+        toast({
+          title: "Programado al mínimo de 5 minutos",
+          description:
+            "El envío programado no puede ser en menos de 5 minutos; se ajustó a 5 minutos.",
+        });
       }
       await onSubmit({
         text: selected.body,

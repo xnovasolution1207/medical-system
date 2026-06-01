@@ -336,6 +336,31 @@ export default function Index() {
       cancelled = true;
     };
   }, []);
+  // Auto-remove scheduled-message indicators once their time has elapsed.
+  // Templates scheduled via the GHL workflow Wait step have no in-process
+  // timer to clear the banner, and the real sent message arrives via the
+  // webhook — so we just drop the banner (locally) when scheduledFor passes.
+  // A small grace avoids yanking it a beat before a backend-dispatched send.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const cutoff = Date.now() - 15_000;
+      updateBootstrap((prev) => {
+        let changed = false;
+        const conversations = prev.conversations.map((c) => {
+          if (!c.scheduledMessages?.length) return c;
+          const remaining = c.scheduledMessages.filter((m) => {
+            const t = new Date(m.scheduledFor).getTime();
+            return isNaN(t) || t > cutoff;
+          });
+          if (remaining.length === c.scheduledMessages.length) return c;
+          changed = true;
+          return { ...c, scheduledMessages: remaining };
+        });
+        return changed ? { ...prev, conversations } : prev;
+      });
+    }, 20_000);
+    return () => window.clearInterval(interval);
+  }, [updateBootstrap]);
   const [activeId, setActiveId] = useState<string | null>(null);
   // activeMainTab / activeViewId are derived from the /chatting/* URL.
   // Sidebar clicks call the setter shims below, which navigate to the
