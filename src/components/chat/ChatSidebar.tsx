@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerUpLeft } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1120,7 +1120,7 @@ export function ChatSidebar({
                         {conv.lastMessageDirection === "outbound" ? (
                           <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-500" />
                         ) : conv.lastMessageDirection === "inbound" ? (
-                          <CornerUpLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         ) : null}
                         <span
                           className={cn(
