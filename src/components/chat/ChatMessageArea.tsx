@@ -3420,7 +3420,7 @@ export function ChatMessageArea({
                   type="submit"
                   size="sm"
                   disabled={!inputText.trim() && !selectedFile}
-                  className="h-9 px-5 gap-2 rounded-full bg-indigo-400 hover:bg-indigo-500 text-white font-medium shadow-none"
+                  className="h-9 px-5 gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-none disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
                   Enviar
