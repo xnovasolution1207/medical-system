@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerUpLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1113,19 +1113,29 @@ export function ChatSidebar({
                   
                   {viewMode !== "small" && (
                     <div className="flex items-start justify-between gap-2 mt-0.5">
-                      <span
-                        className={cn(
-                          // min-w-0 lets the span shrink inside the flex row;
-                          // without it the unbroken text overflows and pushes
-                          // the trailing unread badge off the right edge.
-                          "line-clamp-1 min-w-0 flex-1 text-xs leading-tight pr-2",
-                          conv.unreadCount > 0
-                            ? "font-semibold text-foreground"
-                            : "text-muted-foreground"
-                        )}
-                        title={conv.lastMessage}
-                      >
-                        {conv.lastMessage}
+                      <span className="flex min-w-0 flex-1 items-center gap-1 pr-2">
+                        {/* Read/direction indicator (WhatsApp-style): the
+                            last message was outbound (blue ✓✓ = enviado/
+                            leído) or inbound (↵ = recibido). */}
+                        {conv.lastMessageDirection === "outbound" ? (
+                          <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-500" />
+                        ) : conv.lastMessageDirection === "inbound" ? (
+                          <CornerUpLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        ) : null}
+                        <span
+                          className={cn(
+                            // min-w-0 lets the span shrink inside the flex row;
+                            // without it the unbroken text overflows and pushes
+                            // the trailing unread badge off the right edge.
+                            "line-clamp-1 min-w-0 text-xs leading-tight",
+                            conv.unreadCount > 0
+                              ? "font-semibold text-foreground"
+                              : "text-muted-foreground"
+                          )}
+                          title={conv.lastMessage}
+                        >
+                          {conv.lastMessage}
+                        </span>
                       </span>
                       {conv.unreadCount > 0 && (
                         <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
@@ -1137,8 +1147,15 @@ export function ChatSidebar({
 
                   {viewMode === "normal" && (
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      {conv.stage && (() => {
-                        const currentStage = stages.find(s => s.id === conv.stage) || { label: conv.stage, color: "bg-slate-500" };
+                      {(() => {
+                        // Always show a funnel ("embudo") badge. When the
+                        // conversation has no resolved stage yet (e.g. a lead
+                        // without an opportunity, common in the unread tab),
+                        // fall back to the first pipeline stage so the badge
+                        // is never missing — matches the design reference.
+                        const stageId = conv.stage || stages[0]?.id;
+                        if (!stageId) return null;
+                        const currentStage = stages.find(s => s.id === stageId) || { label: stageId, color: "bg-slate-500" };
 
                         let colorClasses = "bg-slate-500/15 text-slate-700 dark:text-slate-400 hover:bg-slate-500/25";
                         if (currentStage.color.includes("rose")) colorClasses = "bg-rose-500/15 text-rose-700 dark:text-rose-400 hover:bg-rose-500/25";

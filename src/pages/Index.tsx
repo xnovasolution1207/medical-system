@@ -1345,16 +1345,36 @@ export default function Index() {
   // this tab; the operator is here specifically to find or restore
   // archived leads.
   const archivedFilterActive = activeMainTab === "archivados";
+  // The filtered tabs (búsqueda / no-leídos / asignados / seguidos) fetch
+  // their own conversation objects from the backend, which can arrive
+  // without the funnel `stage` ("embudo") — the backend's blanket
+  // opportunity page doesn't cover every contact. Re-inject the stage we
+  // already know for that conversation from the bootstrap cache so the
+  // stage badge stays visible across tabs.
+  const stageByConvId = useMemo(() => {
+    const m = new Map<string, NonNullable<Conversation["stage"]>>();
+    for (const c of conversations) if (c.stage) m.set(c.id, c.stage);
+    return m;
+  }, [conversations]);
+  const withCachedStage = useCallback(
+    (list: Conversation[]) =>
+      list.map((c) =>
+        c.stage || !stageByConvId.has(c.id)
+          ? c
+          : { ...c, stage: stageByConvId.get(c.id) }
+      ),
+    [stageByConvId]
+  );
   const displayConversationsBase = archivedFilterActive
     ? conversations.filter((c) => c.isArchived)
     : isSearchActive
-      ? searchResults ?? []
+      ? withCachedStage(searchResults ?? [])
       : unreadFilterActive
-        ? unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0)
+        ? withCachedStage(unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0))
         : assignedFilterActive
-          ? assignedResults ?? []
+          ? withCachedStage(assignedResults ?? [])
           : followedFilterActive
-            ? followedResults ?? []
+            ? withCachedStage(followedResults ?? [])
             : conversations;
   // Everywhere except the Archivados tab, archived rows are hidden so
   // they don't pollute the working inbox. The flag is patched
