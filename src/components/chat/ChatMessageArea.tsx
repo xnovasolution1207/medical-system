@@ -2620,7 +2620,14 @@ export function ChatMessageArea({
                     <div
                       className={cn(
                         "flex items-center justify-end gap-1 mt-1 select-none",
-                        isMe ? "text-primary-foreground/70" : "text-muted-foreground"
+                        // Internal notes sit on a yellow bubble, so the
+                        // white "isMe" time would be invisible — use the
+                        // bubble's dark amber instead.
+                        message.channel === "internal"
+                          ? "text-amber-800/70 dark:text-amber-200/70"
+                          : isMe
+                            ? "text-primary-foreground/70"
+                            : "text-muted-foreground"
                       )}
                     >
                       <span className="text-[11px] leading-none">{message.timestamp}</span>
@@ -2630,9 +2637,11 @@ export function ChatMessageArea({
                             type="button"
                             className={cn(
                               "-mr-1 flex items-center justify-center rounded-md p-0.5 leading-none opacity-80 transition-colors hover:opacity-100 data-[state=open]:opacity-100",
-                              isMe
-                                ? "hover:bg-white/25 data-[state=open]:bg-white/25"
-                                : "hover:bg-foreground/10 data-[state=open]:bg-foreground/10"
+                              message.channel === "internal"
+                                ? "hover:bg-amber-900/10 data-[state=open]:bg-amber-900/10"
+                                : isMe
+                                  ? "hover:bg-white/25 data-[state=open]:bg-white/25"
+                                  : "hover:bg-foreground/10 data-[state=open]:bg-foreground/10"
                             )}
                             title="Opciones del mensaje"
                           >
