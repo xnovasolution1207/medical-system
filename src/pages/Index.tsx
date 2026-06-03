@@ -2029,6 +2029,24 @@ export default function Index() {
             )
           : prev
       );
+      // "No leídos" tab: a read conversation no longer belongs in the unread
+      // list, so drop the row entirely (not just clear its badge).
+      setUnreadResults((prev) => (prev ? prev.filter((c) => c.id !== id) : prev));
+      // Assigned / followed tabs aren't unread-scoped — just clear the badge.
+      setAssignedResults((prev) =>
+        prev
+          ? prev.map((c) =>
+              c.id === id && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c
+            )
+          : prev
+      );
+      setFollowedResults((prev) =>
+        prev
+          ? prev.map((c) =>
+              c.id === id && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c
+            )
+          : prev
+      );
       if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { markRead: true })
