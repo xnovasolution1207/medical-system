@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentUser, Conversation } from "./types";
 import { cn } from "@/lib/utils";
+import { stageBadgeClasses } from "@/lib/stageColors";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1157,11 +1158,10 @@ export function ChatSidebar({
                         if (!stageId) return null;
                         const currentStage = stages.find(s => s.id === stageId) || { label: stageId, color: "bg-slate-500" };
 
-                        let colorClasses = "bg-slate-500/15 text-slate-700 dark:text-slate-400 hover:bg-slate-500/25";
-                        if (currentStage.color.includes("rose")) colorClasses = "bg-rose-500/15 text-rose-700 dark:text-rose-400 hover:bg-rose-500/25";
-                        else if (currentStage.color.includes("amber")) colorClasses = "bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/25";
-                        else if (currentStage.color.includes("emerald")) colorClasses = "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25";
-                        else if (currentStage.color.includes("sky")) colorClasses = "bg-sky-500/15 text-sky-700 dark:text-sky-400 hover:bg-sky-500/25";
+                        // Match the badge to the stage's own colour family
+                        // (Kiwi → lime, Consulta → pink, Web → cyan, …)
+                        // instead of defaulting most stages to grey.
+                        const colorClasses = stageBadgeClasses(currentStage.color);
 
                         return (
                           <Badge

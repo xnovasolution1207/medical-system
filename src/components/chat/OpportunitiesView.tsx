@@ -260,6 +260,7 @@ const STAGE_PILL_BY_FAMILY: Record<string, string> = {
   amber: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
   orange: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
   yellow: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  lime: "bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300",
   green: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
   emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
   teal: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
