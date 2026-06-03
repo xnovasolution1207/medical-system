@@ -2316,38 +2316,29 @@ export function ChatMessageArea({
               return (
                 <React.Fragment key={message.id}>
                   {dateSeparator}
-                  <div className="flex w-full items-center gap-3 my-2">
-                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
-                    <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 shadow-sm">
-                      <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
-                      <span className="font-semibold text-slate-700 dark:text-slate-200">{ev.opportunityName}</span>
-                      <span>movido</span>
-                      {isFunnelMove ? (
+                  <div className="flex items-center justify-center gap-3 my-8">
+                    <div className="flex-1 h-px bg-border/40" />
+                    <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-muted/60 border border-border/30 select-none whitespace-nowrap">
+                      <ArrowRight className="h-[11px] w-[11px] text-muted-foreground/60 shrink-0" />
+                      <span className="text-[11px] text-muted-foreground/70 font-medium">{ev.opportunityName}</span>
+                      <span className="text-[11px] text-muted-foreground/50">movido</span>
+                      <span className="text-[11px] text-muted-foreground/60 font-medium line-through decoration-muted-foreground/30">
+                        {isFunnelMove ? `${ev.previousPipeline} / ${ev.oldStage}` : ev.oldStage}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground/50">→</span>
+                      <span className="text-[11px] text-foreground/70 font-semibold">
+                        {isFunnelMove ? `${ev.pipeline} / ${ev.newStage}` : ev.newStage}
+                      </span>
+                      {ev.user && (
                         <>
-                          <span className="line-through opacity-70">
-                            {ev.previousPipeline} / {ev.oldStage}
-                          </span>
-                          <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
-                          <span className="font-semibold text-slate-700 dark:text-slate-200">
-                            {ev.pipeline} / {ev.newStage}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="line-through opacity-70">{ev.oldStage}</span>
-                          <ArrowRight className="h-3 w-3 text-slate-400 dark:text-slate-500" />
-                          <span className="font-semibold text-slate-700 dark:text-slate-200">{ev.newStage}</span>
-                          {ev.pipeline && (
-                            <span className="opacity-60">en {ev.pipeline}</span>
-                          )}
+                          <span className="text-[11px] text-muted-foreground/40 mx-0.5">·</span>
+                          <span className="text-[11px] text-muted-foreground/50">{ev.user}</span>
                         </>
                       )}
-                      <span className="opacity-40">·</span>
-                      <span>{ev.user}</span>
-                      <span className="opacity-40">·</span>
-                      <span>{message.timestamp}</span>
+                      <span className="text-[11px] text-muted-foreground/40 mx-0.5">·</span>
+                      <span className="text-[11px] text-muted-foreground/50">{message.timestamp}</span>
                     </div>
-                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+                    <div className="flex-1 h-px bg-border/40" />
                   </div>
                 </React.Fragment>
               );
@@ -2413,30 +2404,41 @@ export function ChatMessageArea({
                   : ev.action === "deleted"
                     ? "eliminada"
                     : "actualizada";
+              // Render GHL's historical opportunity activity (incl. the
+              // opportunities transferred/imported from GHL) in the same
+              // rich move-event style: arrow + bold name + funnel stage.
+              // Fall back to the conversation's current stage when the
+              // event itself didn't carry one, so the funnel always shows.
+              const activityStageId = ev.stageId || conversation.stage;
+              const stageLabel = activityStageId
+                ? stages.find((s) => s.id === activityStageId)?.label ?? activityStageId
+                : null;
+              const name = ev.opportunityName || conversation.participant.name;
               return (
                 <React.Fragment key={message.id}>
                   {dateSeparator}
-                  <div className="flex w-full items-center gap-3 my-2">
-                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
-                    <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 shadow-sm">
-                      <Waypoints className="h-3 w-3 text-slate-400 dark:text-slate-500" />
-                      <span>Oportunidad</span>
-                      {ev.opportunityName && (
-                        <span className="font-semibold text-slate-700 dark:text-slate-200">
-                          {ev.opportunityName}
-                        </span>
-                      )}
-                      <span>{actionLabel}</span>
-                      {ev.user && (
+                  <div className="flex items-center justify-center gap-3 my-8">
+                    <div className="flex-1 h-px bg-border/40" />
+                    <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-muted/60 border border-border/30 select-none whitespace-nowrap">
+                      <ArrowRight className="h-[11px] w-[11px] text-muted-foreground/60 shrink-0" />
+                      <span className="text-[11px] text-muted-foreground/70 font-medium">{name}</span>
+                      <span className="text-[11px] text-muted-foreground/50">{actionLabel}</span>
+                      {stageLabel && ev.action !== "deleted" && (
                         <>
-                          <span className="opacity-40">·</span>
-                          <span>{ev.user}</span>
+                          <span className="text-[11px] text-muted-foreground/50">en</span>
+                          <span className="text-[11px] text-foreground/70 font-semibold">{stageLabel}</span>
                         </>
                       )}
-                      <span className="opacity-40">·</span>
-                      <span>{message.timestamp}</span>
+                      {ev.user && (
+                        <>
+                          <span className="text-[11px] text-muted-foreground/40 mx-0.5">·</span>
+                          <span className="text-[11px] text-muted-foreground/50">{ev.user}</span>
+                        </>
+                      )}
+                      <span className="text-[11px] text-muted-foreground/40 mx-0.5">·</span>
+                      <span className="text-[11px] text-muted-foreground/50">{message.timestamp}</span>
                     </div>
-                    <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+                    <div className="flex-1 h-px bg-border/40" />
                   </div>
                 </React.Fragment>
               );

@@ -141,6 +141,9 @@ export type Message = {
         type: "opportunity_activity";
         action: "created" | "updated" | "deleted";
         opportunityName?: string;
+        // Current pipeline stage id — the SPA maps it to a label so the
+        // activity pill reflects the funnel stage.
+        stageId?: string;
         user: string;
       };
 };
