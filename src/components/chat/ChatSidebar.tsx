@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AgentUser, Conversation } from "./types";
+import { AgentUser, Conversation, TagSummary } from "./types";
 import { cn } from "@/lib/utils";
 import { stageBadgeClasses } from "@/lib/stageColors";
 import {
@@ -115,6 +115,9 @@ interface ChatSidebarProps {
   // Agent roster from the bootstrap payload — drives the FilterBuilder's
   // user pickers (Asignado / Seguidor / Mención).
   users?: AgentUser[];
+  // Location tag library — drives the FilterBuilder's "Etiqueta" value
+  // dropdown (same list as the contact panel's "Etiquetas" picker).
+  availableTags?: TagSummary[];
   // Advanced filter state (lifted to Index.tsx so the search/fetch
   // pipeline can forward translatable conditions to GHL). Pass-through
   // for FilterBuilder.
@@ -168,6 +171,7 @@ export function ChatSidebar({
   onCreateOpportunity,
   pipelineId,
   users = [],
+  availableTags = [],
   advancedFilters,
   advancedLogic,
   onAdvancedFiltersChange,
@@ -810,6 +814,7 @@ export function ChatSidebar({
                 activeViewId={activeViewId}
                 initialViewName={activeView?.name}
                 users={users}
+                availableTags={availableTags}
               />
             </PopoverContent>
           </Popover>

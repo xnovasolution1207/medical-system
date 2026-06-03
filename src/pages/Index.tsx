@@ -2864,6 +2864,7 @@ export default function Index() {
               onCreateOpportunity={handleCreateOpportunity}
               pipelineId={opportunitiesPipeline?.id}
               users={users}
+              availableTags={availableTags}
               advancedFilters={advancedFilters}
               advancedLogic={advancedLogic}
               onAdvancedFiltersChange={setAdvancedFilters}
@@ -2934,6 +2935,7 @@ export default function Index() {
               onCreateOpportunity={handleCreateOpportunity}
               pipelineId={opportunitiesPipeline?.id}
               users={users}
+              availableTags={availableTags}
               advancedFilters={advancedFilters}
               advancedLogic={advancedLogic}
               onAdvancedFiltersChange={setAdvancedFilters}

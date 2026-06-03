@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AgentUser, FilterCondition } from "./types";
+import { AgentUser, FilterCondition, TagSummary } from "./types";
 import { X, Save } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -70,6 +70,9 @@ interface FilterBuilderProps {
   // Agent roster — drives the user pickers for asignado / seguidor / mención.
   // Empty when GHL hasn't returned a roster yet.
   users?: AgentUser[];
+  // Location tag library — drives the "Etiqueta" value dropdown, same as the
+  // contact panel's "Etiquetas" picker. Empty when GHL hasn't returned tags.
+  availableTags?: TagSummary[];
 }
 
 export function FilterBuilder({
@@ -84,6 +87,7 @@ export function FilterBuilder({
   activeViewId,
   initialViewName,
   users = [],
+  availableTags = [],
 }: FilterBuilderProps) {
   const [viewName, setViewName] = useState(initialViewName || "");
   const [isSaving, setIsSaving] = useState(false);
@@ -208,7 +212,25 @@ export function FilterBuilder({
       );
     }
 
-    // Default: free-text (etiqueta, ans, anything new the menu adds).
+    // Etiqueta — pick from the location's tag library (matched by name),
+    // the same list the contact panel's "Etiquetas" picker uses. Falls back
+    // to free text when the tag library hasn't loaded (or is empty).
+    if (condition.field === "etiqueta" && availableTags.length > 0) {
+      return (
+        <Select value={condition.value} onValueChange={(val) => updateCondition(condition.id, { value: val })}>
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="Seleccionar etiqueta" />
+          </SelectTrigger>
+          <SelectContent>
+            {availableTags.map((t) => (
+              <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+
+    // Default: free-text (etiqueta with no library, ans, anything new).
     return (
       <Input
         placeholder="Valor"
