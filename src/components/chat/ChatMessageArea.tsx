@@ -884,11 +884,10 @@ export function ChatMessageArea({
   const [quickScheduleOptionId, setQuickScheduleOptionId] = useState<ScheduleOptionId>("manana_9am");
   const [quickCustomDatetime, setQuickCustomDatetime] = useState(defaultLocalDatetime);
 
-  // "Plantillas rápidas" — agent's local canned messages. Now backed
-  // by Prisma/SQLite per-location on the backend so they survive
-  // reloads + restarts. State here is a hydrated cache; every CRUD
-  // op hits `/api/quick-templates/…` and reconciles the cache from
-  // the response.
+  // "Plantillas rápidas" — sourced from the GHL templates/snippets store
+  // (read-only). The list is the single source of truth in GHL; the SPA
+  // doesn't create/edit/delete here. `category` maps to the snippet
+  // folder so the category sidebar still works.
   const [messageTemplates, setMessageTemplates] = useState<
     { id: string; title: string; text: string; category: string }[]
   >([]);
@@ -912,22 +911,22 @@ export function ChatMessageArea({
   // appear once the backend recovers and the user reopens the popover.
   useEffect(() => {
     let cancelled = false;
-    api.quickTemplates
-      .list()
+    api.templates
+      .list({ type: "sms" })
       .then((res) => {
         if (cancelled) return;
         setMessageTemplates(
           res.templates.map((t) => ({
             id: t.id,
-            title: t.title,
+            title: t.name,
             text: t.body,
-            category: t.category,
+            category: t.category ?? "",
           }))
         );
       })
       .catch((err) => {
         if (cancelled) return;
-        console.warn("[quick-templates] load failed", err);
+        console.warn("[templates] load failed", err);
       });
     return () => {
       cancelled = true;
@@ -2954,14 +2953,11 @@ export function ChatMessageArea({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-muted-foreground"
-                      onClick={() => {
-                        setIsManageTemplatesOpen(true);
-                        setIsTemplateMenuOpen(false);
-                      }}
-                      title="Gestionar plantillas"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => setIsTemplateMenuOpen(false)}
+                      title="Cerrar"
                     >
-                      <Edit2 className="h-3.5 w-3.5" />
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
                   <div className="px-3 pb-2">

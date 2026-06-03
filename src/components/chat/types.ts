@@ -171,6 +171,8 @@ export type MessageTemplate = {
   name: string;
   type: "sms" | "whatsapp" | "email" | string;
   body: string;
+  // GHL snippet category/folder — drives the "Plantillas rápidas" sidebar.
+  category?: string;
   // BCP-47 tag ("es", "es_MX", "en_US"). Only set for Meta WhatsApp
   // templates — GHL snippets omit it. Forwarded to the schedule call
   // so the dispatcher knows which language to invoke on Meta.
