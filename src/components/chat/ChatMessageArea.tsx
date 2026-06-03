@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
 import { proxyMediaUrl, api } from "@/lib/api";
+import { peruYmd, formatPeruDateTime } from "@/lib/datetime";
 import {
   useTemplates,
   compileTemplateMatchers,
@@ -461,13 +462,17 @@ function formatDateLabel(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const that = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diffDays = Math.round((today.getTime() - that.getTime()) / (24 * 3600 * 1000));
-  if (diffDays === 0) return "Hoy";
-  if (diffDays === 1) return "Ayer";
-  return `${d.getDate()} ${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`;
+  // Compare calendar days in Peru time (America/Lima) so the "Hoy / Ayer"
+  // boundary is Peru's midnight, not the viewer's machine timezone.
+  const thatYmd = peruYmd(d); // "YYYY-MM-DD"
+  const todayYmd = peruYmd(new Date());
+  if (thatYmd === todayYmd) return "Hoy";
+  const [ty, tm, td] = todayYmd.split("-").map(Number);
+  const yest = new Date(Date.UTC(ty, tm - 1, td) - 24 * 3600 * 1000);
+  const yestYmd = `${yest.getUTCFullYear()}-${String(yest.getUTCMonth() + 1).padStart(2, "0")}-${String(yest.getUTCDate()).padStart(2, "0")}`;
+  if (thatYmd === yestYmd) return "Ayer";
+  const [y, m, day] = thatYmd.split("-").map(Number);
+  return `${day} ${MONTHS_ES[m - 1]} ${y}`;
 }
 
 // Split an internal-note body around the staff names captured in
@@ -3338,7 +3343,7 @@ export function ChatMessageArea({
                           setIsScheduleOpen(false);
                           toast({
                             title: "Mensaje programado",
-                            description: `Se enviará el ${date.toLocaleString("es-ES")}`,
+                            description: `Se enviará el ${formatPeruDateTime(date)}`,
                           });
                         }}
                       >

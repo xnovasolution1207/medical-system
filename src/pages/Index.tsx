@@ -26,6 +26,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { api, BootstrapPayload } from "@/lib/api";
+import { formatPeruTime } from "@/lib/datetime";
 import { useTemplates } from "@/lib/templatesQuery";
 import { subscribe } from "@/lib/socket";
 import { useToast } from "@/hooks/use-toast";
@@ -1422,7 +1423,7 @@ export default function Index() {
         clientId: optimisticId,
         senderId: currentUser.id,
         text,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        timestamp: formatPeruTime(new Date()),
         isRead: true,
         attachment,
         channel,
@@ -1617,7 +1618,7 @@ export default function Index() {
         // "Hoy" — producing two visually separated bubbles even when
         // dedup later resolves them.
         date: new Date().toISOString(),
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        timestamp: formatPeruTime(new Date()),
         isRead: true,
         channel,
         status: "sent",
