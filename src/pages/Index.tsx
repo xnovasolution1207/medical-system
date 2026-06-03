@@ -767,7 +767,21 @@ export default function Index() {
             return { ...prev, opportunities: [event.opportunity, ...prev.opportunities] };
           }
           const next = prev.opportunities.slice();
-          next[idx] = event.opportunity;
+          const existing = next[idx];
+          const incoming = event.opportunity;
+          // A stage-move echo is mapped from GHL's minimal PUT response,
+          // which lacks `attributions` — so `source` collapses to the
+          // "Directo" default and `date` may be blank. Keep the richer
+          // existing values so the card's channel label / date don't
+          // flicker every time it's dragged.
+          next[idx] = {
+            ...incoming,
+            source:
+              incoming.source && incoming.source !== "Directo"
+                ? incoming.source
+                : existing.source || incoming.source,
+            date: incoming.date || existing.date,
+          };
           return { ...prev, opportunities: next };
         });
       } else if (event.type === "task.created") {
@@ -1751,10 +1765,11 @@ export default function Index() {
       }
 
       if (opp) {
-        // Existing opportunity → move it to the new stage.
+        // Existing opportunity → move it to the new stage. Pass the
+        // pipelineId — GHL rejects a stage move without it.
         if (opp.stageId !== stage) {
           api.opportunities
-            .move(opp.id, stage)
+            .move(opp.id, stage, opp.pipelineId)
             .catch((err) => {
               console.error("opportunity move failed", err);
               toast({
@@ -2541,15 +2556,18 @@ export default function Index() {
 
   const handleMoveOpportunity = useCallback(
     (id: string, stageId: string) => {
+      // GHL requires the pipelineId when moving the stage — resolve it from
+      // the opportunity so the move actually persists (not just optimistic).
+      const pipelineId = opportunities.find((o) => o.id === id)?.pipelineId;
       updateBootstrap((prev) => ({
         ...prev,
         opportunities: prev.opportunities.map((o) => (o.id === id ? { ...o, stageId } : o)),
       }));
       api.opportunities
-        .move(id, stageId)
+        .move(id, stageId, pipelineId)
         .catch((err) => console.error("opportunity move failed", err));
     },
-    [updateBootstrap]
+    [updateBootstrap, opportunities]
   );
 
   // Status (open/won/lost/abandoned) + monetaryValue patches for the

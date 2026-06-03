@@ -278,6 +278,20 @@ const STAGE_PILL_BY_FAMILY: Record<string, string> = {
   zinc: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
+// Proper display labels for the messaging channel (the conversation's
+// `source`). Used on the kanban card so we show the real channel
+// (WhatsApp / Instagram / …) instead of GHL's opportunity attribution
+// string ("Directo", "Whatsapp_coex"), which is inconsistent and gets
+// rewritten by GHL on every stage move.
+const CHANNEL_LABELS: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  messenger: "Messenger",
+  tiktok: "TikTok",
+  sms: "SMS",
+  email: "Email",
+};
+
 function stagePillClasses(color: string | undefined): string {
   if (!color) return "bg-muted text-muted-foreground";
   const m = color.match(/bg-([a-z]+)-/);
@@ -1294,12 +1308,22 @@ export function OpportunitiesView({
                                   <span className="truncate">{phone}</span>
                                 </div>
                               )}
-                              {opp.source && (
-                                <div className="flex items-center text-xs text-muted-foreground">
-                                  <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
-                                  <span className="truncate">{opp.source}</span>
-                                </div>
-                              )}
+                              {(() => {
+                                // Prefer the linked conversation's channel —
+                                // it's the real messaging source and stays
+                                // stable across stage moves. Fall back to the
+                                // opportunity's attribution source otherwise.
+                                const channelLabel = conv?.source
+                                  ? CHANNEL_LABELS[conv.source] ?? conv.source
+                                  : opp.source;
+                                if (!channelLabel) return null;
+                                return (
+                                  <div className="flex items-center text-xs text-muted-foreground">
+                                    <Globe className="h-3.5 w-3.5 mr-2 shrink-0" />
+                                    <span className="truncate">{channelLabel}</span>
+                                  </div>
+                                );
+                              })()}
                               <div className="flex items-center justify-between mt-3 pt-3 border-t">
                                 <div className="flex items-center text-xs text-muted-foreground">
                                   <CalendarIcon className="h-3.5 w-3.5 mr-1.5 shrink-0" />

@@ -664,8 +664,11 @@ export const api = {
   opportunities: {
     list: () => request<Opportunity[]>("GET", "/opportunities"),
     pipelines: () => request<Pipeline[]>("GET", "/opportunities/pipelines"),
-    move: (id: string, stageId: string) =>
-      request<Opportunity>("PATCH", `/opportunities/${id}`, { stageId }),
+    // GHL's update-opportunity API requires the pipelineId alongside the
+    // new stage id — without it the stage move is silently rejected and the
+    // card snaps back on reload. Always pass the opportunity's pipeline.
+    move: (id: string, stageId: string, pipelineId?: string) =>
+      request<Opportunity>("PATCH", `/opportunities/${id}`, { stageId, pipelineId }),
     // Patch fields other than the pipeline stage. Used by the right-rail
     // status badge (Abierto / Perdido / Ganado / Abandonado) and the
     // adjacent monetary-value field. Backend broadcasts an
