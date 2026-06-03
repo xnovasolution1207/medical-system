@@ -599,34 +599,6 @@ export const api = {
     },
   },
 
-  // "Plantillas rápidas" — agent's local canned messages. Backed by
-  // Prisma/SQLite per-location so they survive reloads + restarts.
-  // The Zap toolbar popover and the Gestionar Plantillas dialog both
-  // talk through these methods.
-  quickTemplates: {
-    list: () =>
-      request<{
-        templates: { id: string; title: string; body: string; category: string }[];
-      }>("GET", "/quick-templates"),
-    create: (payload: { title: string; body: string; category?: string }) =>
-      request<{ id: string; title: string; body: string; category: string }>(
-        "POST",
-        "/quick-templates",
-        payload
-      ),
-    update: (
-      id: string,
-      patch: { title?: string; body?: string; category?: string }
-    ) =>
-      request<{ id: string; title: string; body: string; category: string }>(
-        "PATCH",
-        `/quick-templates/${id}`,
-        patch
-      ),
-    remove: (id: string) =>
-      request<{ ok: boolean }>("DELETE", `/quick-templates/${id}`),
-  },
-
   contacts: {
     // Fetch a single contact by id. Used by the opportunity chat
     // modal when the local conversations cache doesn't contain a
