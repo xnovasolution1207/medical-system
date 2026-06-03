@@ -297,6 +297,10 @@ export type Opportunity = {
   source: string;
   date: string;
   assignedTo?: string;
+  // Linked contact's phone + tags from GHL's opportunity search — lets the
+  // kanban card show them even when the conversation isn't loaded.
+  phone?: string;
+  tags?: string[];
 };
 
 export type FilterCondition = {

@@ -2469,8 +2469,8 @@ export function ChatMessageArea({
                   className={cn(
                     "flex w-full items-end gap-2 group scroll-mt-24",
                     isMe ? "justify-end" : "justify-start",
-                    // Tighter vertical spacing between messages.
-                    isConsecutive ? "mt-0.5" : "mt-2"
+                    // Tight vertical spacing between messages.
+                    isConsecutive ? "mt-px" : "mt-1"
                   )}
                 >
                 {!isMe && (

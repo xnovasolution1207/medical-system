@@ -1189,8 +1189,11 @@ export function OpportunitiesView({
                         // already maintains.
                         const conv = convByContactId.get(opp.contactId);
                         const participant = conv?.participant;
-                        const tags = participant?.tags ?? [];
-                        const phone = participant?.phone;
+                        // Fall back to the opportunity's own contact data so
+                        // phone/tags show even when the conversation isn't in
+                        // the loaded window.
+                        const tags = participant?.tags ?? opp.tags ?? [];
+                        const phone = participant?.phone ?? opp.phone;
                         const avatar = participant?.avatar;
                         const reminderCount = conv?.activeReminder ? 1 : 0;
                         const scheduledCount = conv?.scheduledMessages?.length ?? 0;
@@ -1420,8 +1423,8 @@ export function OpportunitiesView({
                   const isSelected = selectedOppIds.has(opp.id);
                   const conv = convByContactId.get(opp.contactId);
                   const participant = conv?.participant;
-                  const tags = participant?.tags ?? [];
-                  const phone = participant?.phone;
+                  const tags = participant?.tags ?? opp.tags ?? [];
+                  const phone = participant?.phone ?? opp.phone;
                   const avatar = participant?.avatar;
                   const stage = stages.find((s) => s.id === opp.stageId);
                   const stageLabel = stage?.label ?? opp.stageId;
