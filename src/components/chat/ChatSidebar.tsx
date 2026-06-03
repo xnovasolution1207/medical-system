@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1007,8 +1007,13 @@ export function ChatSidebar({
           ) : (
             filteredConversations.map((conv) => {
               const hasMentions = conv.messages?.some(m => m.mentions && m.mentions.length > 0);
-              const hasInternalComments = conv.messages?.some(m => m.channel === "internal");
+              // Real internal notes only — system events (opportunity
+              // created/moved, assignment changes) also use the "internal"
+              // channel, so a brand-new lead would otherwise show the note
+              // icon with no actual comment. Exclude them.
+              const hasInternalComments = conv.messages?.some(m => m.channel === "internal" && !m.systemEvent);
               const hasPendingTasks = tasks.some(t => t.conversationId === conv.id && t.status === "pending");
+              const hasScheduled = (conv.scheduledMessages?.length ?? 0) > 0;
               
               return (
               // role=button + keyboard handling instead of a real <button>
@@ -1198,6 +1203,11 @@ export function ChatSidebar({
                       {hasPendingTasks && (
                         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400" title="Tiene tareas pendientes">
                           <CheckSquare className="h-3 w-3" />
+                        </div>
+                      )}
+                      {hasScheduled && (
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400" title="Tiene mensajes programados">
+                          <Clock className="h-3 w-3" />
                         </div>
                       )}
                     </div>

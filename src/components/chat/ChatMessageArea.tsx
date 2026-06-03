@@ -2494,10 +2494,10 @@ export function ChatMessageArea({
                     className={cn(
                       "shadow-sm transition-all animate-in fade-in slide-in-from-bottom-2",
                       message.channel === "internal"
-                        ? "bg-[#FFF4CC] text-[#78350F] dark:bg-amber-900/40 dark:text-amber-200 rounded-[24px] px-5 py-2.5 text-[15px] font-medium inline-block"
+                        ? "bg-[#FFF4CC] text-[#78350F] dark:bg-amber-900/40 dark:text-amber-200 rounded-[20px] px-4 py-2 text-[15px] font-medium inline-block"
                         : isMe
-                        ? "bg-primary text-primary-foreground rounded-[24px] px-5 py-3 text-[15px]"
-                        : "bg-muted text-foreground rounded-[24px] px-5 py-3 text-[15px]",
+                        ? "bg-primary text-primary-foreground rounded-[20px] px-4 py-2 text-[15px]"
+                        : "bg-muted text-foreground rounded-[20px] px-4 py-2 text-[15px]",
                       !message.text && message.attachment && (message.attachment.type === "image" || message.attachment.type === "video") ? "bg-transparent p-0 shadow-none" : ""
                     )}
                   >
@@ -2619,7 +2619,7 @@ export function ChatMessageArea({
                         bottom-right — for both inbound and outbound. */}
                     <div
                       className={cn(
-                        "flex items-center justify-end gap-1 mt-1 select-none",
+                        "flex items-center justify-end gap-1 -mt-0.5 select-none",
                         // Internal notes sit on a yellow bubble, so the
                         // white "isMe" time would be invisible — use the
                         // bubble's dark amber instead.
