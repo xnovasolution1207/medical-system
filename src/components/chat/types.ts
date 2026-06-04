@@ -322,6 +322,9 @@ export type Task = {
   title: string;
   dueDate: string;
   assignee: {
+    // GHL user id of the assignee — sent to GHL as `assignedTo`. Optional
+    // for backwards-compat / unassigned tasks; the name drives the label.
+    id?: string;
     name: string;
     avatar?: string;
   };

@@ -721,7 +721,11 @@ export function ChatMessageArea({
         setCustomDueDateTime("");
       }
     }
-    setNewTaskAssignee(task.assignee.name || currentUser.name);
+    setNewTaskAssignee(
+      task.assignee.id ||
+        users.find((u) => u.name === task.assignee.name)?.id ||
+        currentUser.id
+    );
     setIsTaskDialogOpen(true);
   }, [currentUser.name]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -730,7 +734,8 @@ export function ChatMessageArea({
   // preset. Shape is "YYYY-MM-DDTHH:mm" — `new Date(value)` parses it as
   // local time, then we hand the ISO string to the backend.
   const [customDueDateTime, setCustomDueDateTime] = useState("");
-  const [newTaskAssignee, setNewTaskAssignee] = useState(currentUser.name);
+  // Holds the GHL user id of the selected assignee (default: current user).
+  const [newTaskAssignee, setNewTaskAssignee] = useState(currentUser.id);
   const [taskPresets, setTaskPresets] = useState<string[]>(["Llamar para seguimiento", "Enviar cotización", "Agendar reunión"]);
   const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
   const [editingPresetValue, setEditingPresetValue] = useState("");
@@ -1614,7 +1619,7 @@ export function ChatMessageArea({
                 setNewTaskTitle("");
                 setNewTaskDueDate("Hoy");
                 setCustomDueDateTime("");
-                setNewTaskAssignee(currentUser.name);
+                setNewTaskAssignee(currentUser.id);
               }
             }}
           >
@@ -1810,18 +1815,23 @@ export function ChatMessageArea({
 
                 <div className="grid gap-2">
                   <Label className="text-sm font-semibold">Asignado a</Label>
-                  {/* Single-option select. Without `users.readonly` scope on
-                      the GHL token we don't have a real user roster, so we
-                      can't offer assignment to specific GHL users — the
-                      backend would receive a name, not a user id, and GHL
-                      would silently drop it. Defaulting to "Yo" mirrors how
-                      the agent's own session would assign the task. */}
+                  {/* Full agent roster from the bootstrap payload. The value
+                      is the GHL user id so the task is actually assigned to
+                      that user (sent as `assignedTo`); "Yo" is the current
+                      session user, the rest are the location's other agents. */}
                   <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Selecciona un usuario" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={currentUser.name}>Yo ({currentUser.name})</SelectItem>
+                      <SelectItem value={currentUser.id}>Yo ({currentUser.name})</SelectItem>
+                      {users
+                        .filter((u) => u.id && u.id !== currentUser.id)
+                        .map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1874,10 +1884,21 @@ export function ChatMessageArea({
 
                     setIsTaskDialogOpen(false);
 
+                    // newTaskAssignee is a GHL user id — resolve the agent so
+                    // the task carries the right id (for GHL assignment) and
+                    // name/avatar (for the UI label).
+                    const assigneeUser =
+                      newTaskAssignee === currentUser.id
+                        ? { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar }
+                        : users.find((u) => u.id === newTaskAssignee);
                     onAddTask({
                       title: newTaskTitle,
                       dueDate: dueDateOut,
-                      assignee: { name: newTaskAssignee },
+                      assignee: {
+                        id: assigneeUser?.id,
+                        name: assigneeUser?.name ?? currentUser.name,
+                        avatar: assigneeUser?.avatar,
+                      },
                       contact: { name: conversation.participant.name, avatar: conversation.participant.avatar },
                       status: "pending",
                       conversationId: conversation.id,

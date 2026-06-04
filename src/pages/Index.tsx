@@ -2428,10 +2428,9 @@ export default function Index() {
           conversationId: task.conversationId,
           title: task.title,
           dueDate: task.dueDate,
-          // GHL's `assignedTo` expects a user id, not a display name. Until
-          // the GHL token is granted `users.readonly` (and we can pick from
-          // a real roster), leave the GHL task unassigned. The local Task's
-          // `assignee.name` still drives the UI label.
+          // GHL user id picked in the "Asignado a" dropdown. GHL assigns the
+          // task to this user; omitted (unassigned) when no id resolved.
+          assignedTo: task.assignee.id || undefined,
         })
         .then((saved) => {
           updateBootstrap((prev) => ({
