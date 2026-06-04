@@ -2558,16 +2558,47 @@ export default function Index() {
     (id: string, stageId: string) => {
       // GHL requires the pipelineId when moving the stage — resolve it from
       // the opportunity so the move actually persists (not just optimistic).
-      const pipelineId = opportunities.find((o) => o.id === id)?.pipelineId;
+      const opp = opportunities.find((o) => o.id === id);
+      const pipelineId = opp?.pipelineId;
+      const contactId = opp?.contactId;
+      // Optimistically move the card AND live-sync the linked lead's funnel
+      // badge: patch `stage` on every conversation for this opportunity's
+      // contact, so the chat-list embudo badge updates without a refresh.
       updateBootstrap((prev) => ({
         ...prev,
         opportunities: prev.opportunities.map((o) => (o.id === id ? { ...o, stageId } : o)),
+        conversations: contactId
+          ? prev.conversations.map((c) =>
+              c.participant.id === contactId ? { ...c, stage: stageId } : c
+            )
+          : prev.conversations,
       }));
+      // Mirror into the active filtered result lists (No leídos / Asignados /
+      // Seguidos / búsqueda) so the badge updates there too if one is shown.
+      const patchStage = (c: Conversation) =>
+        c.participant.id === contactId ? { ...c, stage: stageId } : c;
+      if (contactId) {
+        setSearchResults((prev) => (prev ? prev.map(patchStage) : prev));
+        setUnreadResults((prev) => (prev ? prev.map(patchStage) : prev));
+        setAssignedResults((prev) => (prev ? prev.map(patchStage) : prev));
+        setFollowedResults((prev) => (prev ? prev.map(patchStage) : prev));
+      }
       api.opportunities
         .move(id, stageId, pipelineId)
         .catch((err) => console.error("opportunity move failed", err));
+      // Persist the lead's stage (flagsStore override) so it survives a
+      // refresh and isn't masked by a stale override — same as the chat
+      // sidebar's "Estado" dropdown does.
+      const convId = contactId
+        ? conversations.find((c) => c.participant.id === contactId)?.id
+        : undefined;
+      if (convId && !isStubConvId(convId)) {
+        api.conversations
+          .patch(convId, { stage: stageId })
+          .catch((err) => console.error("lead stage sync failed", err));
+      }
     },
-    [updateBootstrap, opportunities]
+    [updateBootstrap, opportunities, conversations]
   );
 
   // Status (open/won/lost/abandoned) + monetaryValue patches for the
