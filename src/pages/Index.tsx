@@ -1465,7 +1465,7 @@ export default function Index() {
       });
 
       api.conversations
-        .send(activeId, { text, channel, attachment, mentions, reminder, clientId: optimisticId })
+        .send(activeId, { text, channel, attachment, mentions, reminder, replyTo, clientId: optimisticId })
         .then((sent) => {
           updateBootstrap((prev) => ({
             ...prev,
@@ -1475,7 +1475,14 @@ export default function Index() {
                     ...conv,
                     messages: mergeIncomingMessage(
                       conv.messages,
-                      { ...sent, clientId: sent.clientId ?? optimisticId },
+                      {
+                        ...sent,
+                        // GHL doesn't store the reply/quote context, so the
+                        // echo drops it — keep the local replyTo so the
+                        // bubble's quoted message survives reconciliation.
+                        replyTo: replyTo ?? sent.replyTo,
+                        clientId: sent.clientId ?? optimisticId,
+                      },
                       currentUserIdRef.current
                     ),
                   }

@@ -383,6 +383,9 @@ export const api = {
         attachment?: Message["attachment"];
         mentions?: string[];
         reminder?: string;
+        // Reply/quote context ("Responder") — persisted server-side so the
+        // quoted bubble survives a refresh (GHL has no native reply field).
+        replyTo?: Message["replyTo"];
         clientId?: string;
         // WhatsApp template fields for instant template sends (the
         // "Enviar ahora" path in ScheduleMessageDialog). When set, the

@@ -1240,7 +1240,23 @@ export function ChatMessageArea({
       }
     }
 
-    onSendMessage(inputText, attachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined);
+    // Carry the quoted-message context ("Responder") into the send so the
+    // outgoing bubble shows what it's replying to.
+    const replyTo = replyingToMessage
+      ? {
+          id: replyingToMessage.id,
+          text:
+            replyingToMessage.text ||
+            (replyingToMessage.attachment
+              ? `Archivo ${replyingToMessage.attachment.type}`
+              : "Mensaje"),
+          sender:
+            replyingToMessage.senderId === currentUser.id
+              ? currentUser.name
+              : conversation.participant.name,
+        }
+      : undefined;
+    onSendMessage(inputText, attachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined, replyTo);
     setInputText("");
     handleRemoveFile();
     // Do not clear activeReminder here, let it stay until user closes it
@@ -2522,6 +2538,26 @@ export function ChatMessageArea({
                       !message.text && message.attachment && (message.attachment.type === "image" || message.attachment.type === "video") ? "bg-transparent p-0 shadow-none" : ""
                     )}
                   >
+                    {/* Quoted message ("Responder") — shown at the top of
+                        the bubble, WhatsApp-style. Colors adapt to the
+                        outbound (colored) vs inbound (muted) bubble. */}
+                    {message.replyTo && (
+                      <div
+                        className={cn(
+                          "mb-1.5 rounded-md border-l-2 px-2 py-1 text-[12px]",
+                          isMe
+                            ? "border-primary-foreground/60 bg-primary-foreground/10"
+                            : "border-primary/60 bg-foreground/5"
+                        )}
+                      >
+                        <div className={cn("font-semibold truncate", isMe ? "text-primary-foreground/90" : "text-foreground/80")}>
+                          {message.replyTo.sender}
+                        </div>
+                        <div className={cn("line-clamp-2", isMe ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                          {message.replyTo.text}
+                        </div>
+                      </div>
+                    )}
                     {message.attachment && (
                       <div className={cn("mb-1 overflow-hidden rounded-lg", message.text ? "mt-1" : "")}>
                         {message.attachment.type === "image" ? (
