@@ -138,6 +138,9 @@ function mergeIncomingMessage(
         // GHL's echo strips template structure (buttons/header), so
         // keep what the optimistic seeded from the picked template.
         buttons: messages[idx].buttons ?? incoming.buttons,
+        // Keep the optimistic's media (e.g. a template's baked-in header
+        // image / video / document) when GHL's echo arrives without it.
+        attachment: messages[idx].attachment ?? incoming.attachment,
       };
       return next;
     }
@@ -178,6 +181,9 @@ function mergeIncomingMessage(
         clientId: messages[idx].clientId,
         replyTo: messages[idx].replyTo ?? incoming.replyTo,
         buttons: messages[idx].buttons ?? incoming.buttons,
+        // Keep the optimistic's media (e.g. a template's baked-in header
+        // image / video / document) when GHL's echo arrives without it.
+        attachment: messages[idx].attachment ?? incoming.attachment,
       };
       return next;
     }
@@ -218,6 +224,9 @@ function mergeIncomingMessage(
         clientId: messages[idx].clientId ?? incoming.clientId,
         replyTo: messages[idx].replyTo ?? incoming.replyTo,
         buttons: messages[idx].buttons ?? incoming.buttons,
+        // Keep the optimistic's media (e.g. a template's baked-in header
+        // image / video / document) when GHL's echo arrives without it.
+        attachment: messages[idx].attachment ?? incoming.attachment,
       };
       return next;
     }
@@ -1615,6 +1624,8 @@ export default function Index() {
         language?: string;
         buttons?: Message["buttons"];
         attachment?: Message["attachment"];
+        // Template's baked-in header media — display-only on the bubble.
+        templateMedia?: Message["attachment"];
       }
     ) => {
       if (isStubConvId(conversationId)) {
@@ -1653,7 +1664,10 @@ export default function Index() {
         // WS, so mergeIncomingMessage preserves these once they're
         // attached here.
         buttons: template.attachment ? undefined : template.buttons,
-        attachment: template.attachment,
+        // Show the custom file if one was swapped in; otherwise show the
+        // template's own baked-in media so the official template's image /
+        // video / document appears on the sent bubble too.
+        attachment: template.attachment ?? template.templateMedia,
       };
       updateBootstrap((prev) => {
         const idx = prev.conversations.findIndex((c) => c.id === conversationId);

@@ -91,6 +91,10 @@ interface WhatsAppTemplateDialogProps {
     // instead of the official template — Meta won't let you swap a template's
     // baked-in media, so a custom image goes out as a normal media message.
     attachment?: Message["attachment"];
+    // The template's own baked-in header media (image / video / document).
+    // Display-only — used to render the file on the sent bubble when the
+    // official template is sent (no custom file). Does NOT change routing.
+    templateMedia?: Message["attachment"];
   }) => Promise<void> | void;
 }
 
@@ -188,6 +192,11 @@ export function ScheduleMessageDialog({
     mediaFormat === "VIDEO" ? "video" : mediaFormat === "DOCUMENT" ? "documento" : "imagen";
   const mediaAccept =
     mediaFormat === "VIDEO" ? "video/*" : mediaFormat === "IMAGE" ? "image/*" : "";
+  // The template's own (Meta-baked) header media URL + attachment type —
+  // shown in the sent bubble when no custom file is swapped in.
+  const templateMediaUrl = mediaHeader?.example?.headerHandle?.[0];
+  const mediaAttachType: "image" | "video" | "document" =
+    mediaFormat === "VIDEO" ? "video" : mediaFormat === "DOCUMENT" ? "document" : "image";
 
   const canSubmit = !!selectedId && !submitting && !sendingNow;
   const canSendNow = !!selectedId && !!onSendNow && !submitting && !sendingNow;
@@ -229,6 +238,16 @@ export function ScheduleMessageDialog({
         attachment: customMedia
           ? { type: customMedia.type, url: customMedia.url, name: customMedia.name }
           : undefined,
+        // No custom file → carry the template's baked media so it shows on
+        // the sent bubble (the official template still goes out unchanged).
+        templateMedia:
+          !customMedia && templateMediaUrl
+            ? {
+                type: mediaAttachType,
+                url: templateMediaUrl,
+                name: split.header || "Archivo",
+              }
+            : undefined,
       });
       onOpenChange(false);
     } catch (err) {

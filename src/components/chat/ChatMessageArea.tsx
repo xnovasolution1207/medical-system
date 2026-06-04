@@ -75,6 +75,9 @@ interface ChatMessageAreaProps {
       // Replacement media: when set, send the file + text (free-form, Green
       // API) instead of the official Meta template.
       attachment?: Message["attachment"];
+      // The template's own baked-in header media — display-only, rendered on
+      // the sent bubble when the official template is sent (no custom file).
+      templateMedia?: Message["attachment"];
     }
   ) => Promise<void> | void;
   onCancelScheduledMessage?: (conversationId: string, messageId: string) => void;
@@ -2214,6 +2217,7 @@ export function ChatMessageArea({
                     language: payload.templateLanguage,
                     buttons: payload.buttons,
                     attachment: payload.attachment,
+                    templateMedia: payload.templateMedia,
                   }
                 );
               }
