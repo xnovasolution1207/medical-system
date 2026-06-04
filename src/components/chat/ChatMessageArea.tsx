@@ -125,10 +125,10 @@ function VideoThumbnail({ src, name }: { src: string; name: string }) {
   // Bearer-auth requirements that block <video> / range requests in the browser.
   const proxied = proxyMediaUrl(src);
   return (
-    <VideoLightbox src={proxied} alt={name}>
-      <div className="relative">
+    <VideoLightbox src={proxied} alt={name} className="block w-full">
+      <div className="relative w-full">
         {posterFailed ? (
-          <div className="flex min-h-[130px] min-w-[220px] flex-col items-center justify-center gap-2 rounded-lg bg-slate-800 px-6 py-5">
+          <div className="flex min-h-[130px] w-full flex-col items-center justify-center gap-2 rounded-lg bg-slate-800 px-6 py-5">
             <Video className="h-8 w-8 text-slate-400" />
             <span className="max-w-[180px] truncate text-xs text-slate-400">{name}</span>
           </div>
@@ -139,7 +139,7 @@ function VideoThumbnail({ src, name }: { src: string; name: string }) {
             muted
             playsInline
             onError={() => setPosterFailed(true)}
-            className="max-h-[250px] max-w-full rounded-lg object-cover bg-black transition-transform group-hover:scale-[1.02]"
+            className="w-full max-h-[300px] rounded-lg object-cover bg-black transition-transform group-hover:scale-[1.02]"
           />
         )}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/25 opacity-90 transition-opacity group-hover:opacity-100">
@@ -2568,11 +2568,12 @@ export function ChatMessageArea({
                           <ImageLightbox
                             src={message.attachment.url}
                             alt={message.attachment.name}
+                            className="block w-full"
                           >
                             <img
                               src={message.attachment.url}
                               alt={message.attachment.name}
-                              className="max-h-[250px] max-w-full rounded-lg object-cover transition-transform group-hover:scale-[1.02]"
+                              className="w-full max-h-[300px] rounded-lg object-cover transition-transform group-hover:scale-[1.02]"
                             />
                           </ImageLightbox>
                         ) : (message.attachment.type === "video") ? (
