@@ -123,11 +123,11 @@ export function ScheduleMessageDialog({
   // Replacement image for a template whose header is a media image. The
   // template's own image is fixed by Meta, so a swapped image is sent as a
   // free-form media message (Green API) carrying the template's text.
-  const [customImage, setCustomImage] = useState<{ url: string; name: string } | null>(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [customMedia, setCustomMedia] = useState<{ url: string; name: string; type: "image" | "video" | "document" } | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   // Drop any replacement image when the selected template changes.
   useEffect(() => {
-    setCustomImage(null);
+    setCustomMedia(null);
   }, [selectedId]);
 
   // Narrow `channel` to the three the templates endpoint actually
@@ -174,33 +174,44 @@ export function ScheduleMessageDialog({
   );
   const split = useMemo(() => splitTemplateBody(selected?.body ?? ""), [selected]);
 
-  // Does the selected template carry a media IMAGE header? Only then do we
-  // offer "Cambiar imagen".
-  const imageHeader = selected?.whatsappDetail?.components?.find(
-    (c) => c.type === "HEADER" && (c.format || "").toUpperCase() === "IMAGE"
+  // Does the selected template carry a media header (image / video /
+  // document)? If so we offer to swap the file ("Cambiar …").
+  const mediaHeader = selected?.whatsappDetail?.components?.find(
+    (c) =>
+      c.type === "HEADER" &&
+      ["IMAGE", "VIDEO", "DOCUMENT"].includes((c.format || "").toUpperCase())
   );
-  const hasImageHeader = !!imageHeader;
-  const templateImageUrl = imageHeader?.example?.headerHandle?.[0];
-  // What the preview shows: the agent's replacement, else the template's own.
-  const previewImageUrl = customImage?.url || templateImageUrl;
+  const mediaFormat = (mediaHeader?.format || "").toUpperCase(); // IMAGE | VIDEO | DOCUMENT
+  const hasMediaHeader = !!mediaHeader;
+  // Spanish noun + file-input accept per media format.
+  const mediaNoun =
+    mediaFormat === "VIDEO" ? "video" : mediaFormat === "DOCUMENT" ? "documento" : "imagen";
+  const mediaAccept =
+    mediaFormat === "VIDEO" ? "video/*" : mediaFormat === "IMAGE" ? "image/*" : "";
 
   const canSubmit = !!selectedId && !submitting && !sendingNow;
   const canSendNow = !!selectedId && !!onSendNow && !submitting && !sendingNow;
 
-  const handlePickImage = async (file: File | undefined) => {
+  const handlePickMedia = async (file: File | undefined) => {
     if (!file) return;
-    setUploadingImage(true);
+    setUploadingMedia(true);
     try {
       const uploaded = await api.uploads.create(file, conversation.id);
-      setCustomImage({ url: uploaded.url, name: uploaded.name });
+      const mime = uploaded.mimeType || file.type || "";
+      const type = mime.startsWith("image/")
+        ? "image"
+        : mime.startsWith("video/")
+          ? "video"
+          : "document";
+      setCustomMedia({ url: uploaded.url, name: uploaded.name, type });
     } catch (err) {
       toast({
-        title: "No se pudo subir la imagen",
+        title: "No se pudo subir el archivo",
         description: (err as Error)?.message ?? String(err),
         variant: "destructive",
       });
     } finally {
-      setUploadingImage(false);
+      setUploadingMedia(false);
     }
   };
 
@@ -215,8 +226,8 @@ export function ScheduleMessageDialog({
         templateName: selected.name,
         templateLanguage: selected.language,
         buttons: templateButtonsFor(templates, selected.name, selected.language),
-        attachment: customImage
-          ? { type: "image", url: customImage.url, name: customImage.name }
+        attachment: customMedia
+          ? { type: customMedia.type, url: customMedia.url, name: customMedia.name }
           : undefined,
       });
       onOpenChange(false);
@@ -403,44 +414,47 @@ export function ScheduleMessageDialog({
               />
             </div>
 
-            {hasImageHeader && (
+            {hasMediaHeader && (
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Imagen del encabezado</Label>
+                <Label className="text-sm font-medium capitalize">{mediaNoun} del encabezado</Label>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm hover:bg-muted">
-                    {uploadingImage ? (
+                    {uploadingMedia ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
+                    ) : mediaFormat === "IMAGE" ? (
                       <ImageIcon className="h-4 w-4" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
                     )}
-                    Cambiar imagen
+                    Cambiar {mediaNoun}
                     <input
                       type="file"
-                      accept="image/*"
+                      // Empty accept (document headers) allows any file type.
+                      {...(mediaAccept ? { accept: mediaAccept } : {})}
                       className="hidden"
                       onChange={(e) => {
-                        handlePickImage(e.target.files?.[0]);
+                        handlePickMedia(e.target.files?.[0]);
                         e.currentTarget.value = "";
                       }}
                     />
                   </label>
-                  {customImage && (
+                  {customMedia && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       className="h-9 text-muted-foreground"
-                      onClick={() => setCustomImage(null)}
+                      onClick={() => setCustomMedia(null)}
                     >
                       Restablecer
                     </Button>
                   )}
                 </div>
-                {customImage && (
+                {customMedia && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                    Con imagen personalizada usa “Enviar ahora”: se envía la imagen
-                    + el texto (no la plantilla oficial de Meta). La programación
-                    no admite imagen personalizada.
+                    Con {mediaNoun} personalizado usa “Enviar ahora”: se envía el
+                    archivo + el texto (no la plantilla oficial de Meta). La
+                    programación no admite archivos personalizados.
                   </p>
                 )}
               </div>
@@ -478,10 +492,9 @@ export function ScheduleMessageDialog({
                         (c) => c.type === "HEADER"
                       );
                       const fmt = (header?.format || "").toUpperCase();
-                      // Show the agent's replacement image when present.
+                      // Show the agent's replacement media when present.
                       const mediaUrl =
-                        (fmt === "IMAGE" && customImage?.url) ||
-                        header?.example?.headerHandle?.[0];
+                        customMedia?.url || header?.example?.headerHandle?.[0];
                       if (!header || fmt === "TEXT" || !fmt) return null;
                       if (fmt === "IMAGE") {
                         return mediaUrl ? (
@@ -625,10 +638,10 @@ export function ScheduleMessageDialog({
             )}
             <Button
               onClick={handleSubmit}
-              disabled={!canSubmit || !!customImage}
+              disabled={!canSubmit || !!customMedia}
               title={
-                customImage
-                  ? "La programación no admite imagen personalizada; usa Enviar ahora."
+                customMedia
+                  ? "La programación no admite archivos personalizados; usa Enviar ahora."
                   : undefined
               }
               className="gap-2"
