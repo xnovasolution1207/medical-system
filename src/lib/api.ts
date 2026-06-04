@@ -396,6 +396,10 @@ export const api = {
         templateId?: string;
         templateName?: string;
         templateLanguage?: string;
+        // The template's baked-in header media — persisted server-side so it
+        // re-attaches to GHL's media-less echo of the official template on
+        // reload (display-only; doesn't change the send).
+        templateMedia?: Message["attachment"];
       }
     ) => request<Message>("POST", `/conversations/${id}/messages`, payload),
     patch: (

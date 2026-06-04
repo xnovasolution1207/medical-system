@@ -1697,6 +1697,9 @@ export default function Index() {
                 templateId: template.id,
                 templateName: template.name,
                 templateLanguage: template.language,
+                // Persist the template's baked-in media so it survives a
+                // refresh (re-attached to GHL's media-less echo).
+                templateMedia: template.templateMedia,
               }),
         });
         updateBootstrap((prev) => ({
