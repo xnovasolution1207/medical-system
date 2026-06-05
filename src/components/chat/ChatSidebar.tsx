@@ -360,6 +360,71 @@ export function ChatSidebar({
   const currentFilters = builderFilters;
   const currentLogic = builderLogic;
 
+  // ---- "Seguidor" / "Mención" filter support ----
+  // Conversation-list rows don't carry followers (and only carry hydrated
+  // mentions), so client-side evaluation of these two fields — needed for the
+  // `no es` / `contiene` operators that can't be expressed as a single GHL
+  // query param — would silently miss. We resolve them via GHL's native
+  // `followers` / `mentions` conversation search: for each distinct value in
+  // the active filter set, fetch the contactIds that match, then test
+  // membership in the evaluator. Covers the whole location, every operator.
+  const followerFilterValues = React.useMemo(() => {
+    const vals = new Set<string>();
+    for (const c of currentFilters) {
+      if (c.field === "seguidor" && c.value) vals.add(c.value);
+    }
+    return Array.from(vals);
+  }, [currentFilters]);
+  const mentionFilterValues = React.useMemo(() => {
+    const vals = new Set<string>();
+    for (const c of currentFilters) {
+      if (c.field === "mencion" && c.value) vals.add(c.value);
+    }
+    return Array.from(vals);
+  }, [currentFilters]);
+
+  const [followerContactsByValue, setFollowerContactsByValue] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
+  const [mentionContactsByValue, setMentionContactsByValue] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async (
+      values: string[],
+      param: "followers" | "mentions",
+      set: (m: Map<string, Set<string>>) => void
+    ) => {
+      if (values.length === 0) {
+        set(new Map());
+        return;
+      }
+      const entries = await Promise.all(
+        values.map(async (val) => {
+          try {
+            const res = await api.conversations.list({ [param]: val, limit: 100 });
+            const ids = new Set<string>();
+            for (const c of res.conversations) {
+              const cid = c.contactId ?? c.participant?.id;
+              if (cid) ids.add(cid);
+            }
+            return [val, ids] as const;
+          } catch {
+            return [val, new Set<string>()] as const;
+          }
+        })
+      );
+      if (!cancelled) set(new Map(entries));
+    };
+    run(followerFilterValues, "followers", setFollowerContactsByValue);
+    run(mentionFilterValues, "mentions", setMentionContactsByValue);
+    return () => {
+      cancelled = true;
+    };
+  }, [followerFilterValues, mentionFilterValues]);
+
   // Resolve the active date filter into a concrete [from, to] epoch-ms
   // window. The 6 preset labels map to fixed ranges (today / yesterday /
   // ISO-week / last ISO-week / month / last month). Anything else means the
@@ -511,6 +576,14 @@ export function ChatSidebar({
             break;
           }
           case "seguidor": {
+            // Authoritative: GHL's native followers search resolved this value
+            // to a contactId set (covers the whole location, all operators).
+            const set = followerContactsByValue.get(v);
+            if (set) {
+              match = set.has(conv.contactId ?? conv.participant.id);
+              break;
+            }
+            // Fallback while the lookup is in flight (rows rarely carry it).
             const candidates = resolveUserIds(v);
             const followers = conv.participant.followers ?? [];
             if (followers.length === 0) match = false;
@@ -524,9 +597,15 @@ export function ChatSidebar({
             break;
           }
           case "mencion": {
-            // Messages carry `mentions: string[]` of GHL user ids. We can
-            // only check messages that have been hydrated into the cache —
-            // unloaded conversations are treated as non-matching.
+            // Authoritative: GHL's native mentions search resolved this value
+            // to a contactId set (covers the whole location, all operators).
+            const set = mentionContactsByValue.get(v);
+            if (set) {
+              match = set.has(conv.contactId ?? conv.participant.id);
+              break;
+            }
+            // Fallback while the lookup is in flight: only hydrated messages
+            // carry `mentions`, so unloaded conversations are non-matching.
             const candidates = resolveUserIds(v);
             const mentioned = conv.messages.flatMap((m) => m.mentions ?? []);
             if (mentioned.length === 0) match = false;
