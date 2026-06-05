@@ -210,6 +210,27 @@ const RENDERABLE_ATTACHMENT_TYPES: ReadonlySet<NonNullable<Message["attachment"]
   "link",
 ]);
 
+// Build an outbound attachment object from a GHL template's file URL.
+// Template files arrive as already-hosted URLs (no File / upload), so we
+// infer the media type + display name from the URL itself. The type
+// drives bubble rendering (image / video inline, everything else a pill).
+function attachmentFromTemplateUrl(url: string): NonNullable<Message["attachment"]> {
+  // Strip query / hash before reading the extension and filename.
+  const clean = url.split(/[?#]/)[0];
+  const name = decodeURIComponent(clean.split("/").pop() || "archivo") || "archivo";
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  const type: NonNullable<Message["attachment"]>["type"] = [
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic",
+  ].includes(ext)
+    ? "image"
+    : ["mp4", "mov", "webm", "avi", "mkv", "m4v", "3gp"].includes(ext)
+      ? "video"
+      : ["mp3", "wav", "ogg", "m4a", "aac", "opus"].includes(ext)
+        ? "audio"
+        : "file";
+  return { type, url, name };
+}
+
 // Per-channel pre-flight validation for outbound file attachments. The
 // outbound /conversations/messages call goes to GHL, which forwards to
 // Twilio (SMS/MMS) or Meta (WhatsApp). Both providers return opaque
@@ -660,6 +681,12 @@ export function ChatMessageArea({
   const [inputText, setInputText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Files baked into a picked GHL template (snippet "attach files"). These
+  // are already-hosted URLs — no upload step — staged so they're sent
+  // alongside the template body. Cleared after send or manual removal.
+  const [templateAttachments, setTemplateAttachments] = useState<
+    NonNullable<Message["attachment"]>[]
+  >([]);
   // The composer opens on the lead's primary channel. The component is
   // remounted (key={conversation.id} in Index.tsx) when switching leads, so a
   // useState initializer is enough — we don't need to re-derive on prop change.
@@ -897,7 +924,7 @@ export function ChatMessageArea({
   // doesn't create/edit/delete here. `category` maps to the snippet
   // folder so the category sidebar still works.
   const [messageTemplates, setMessageTemplates] = useState<
-    { id: string; title: string; text: string; category: string }[]
+    { id: string; title: string; text: string; category: string; attachments: string[] }[]
   >([]);
   const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
   const [templateSearch, setTemplateSearch] = useState("");
@@ -929,6 +956,7 @@ export function ChatMessageArea({
             title: t.name,
             text: t.body,
             category: t.category ?? "",
+            attachments: t.attachments ?? [],
           }))
         );
       })
@@ -1166,7 +1194,7 @@ export function ChatMessageArea({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!(inputText.trim() || selectedFile)) return;
+    if (!(inputText.trim() || selectedFile || templateAttachments.length > 0)) return;
     if (isUploading) return;
 
     // Pre-flight against the channel's media matrix (Twilio MMS for SMS,
@@ -1259,9 +1287,23 @@ export function ChatMessageArea({
               : conversation.participant.name,
         }
       : undefined;
-    onSendMessage(inputText, attachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined, replyTo);
+    // A picked template may carry files (GHL snippet "attach files"). They
+    // ride along with the body: the first attachment goes out with the text;
+    // any remaining files are sent as their own messages so each renders in
+    // its own bubble (mirrors how multi-file sends arrive on the wire).
+    const extraAttachments = [...templateAttachments];
+    let primaryAttachment = attachment;
+    if (!primaryAttachment && extraAttachments.length > 0) {
+      primaryAttachment = extraAttachments.shift();
+    }
+
+    onSendMessage(inputText, primaryAttachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined, replyTo);
+    for (const extra of extraAttachments) {
+      onSendMessage("", extra, activeChannel, undefined, undefined, undefined);
+    }
     setInputText("");
     handleRemoveFile();
+    setTemplateAttachments([]);
     // Do not clear activeReminder here, let it stay until user closes it
   };
 
@@ -1371,7 +1413,19 @@ export function ChatMessageArea({
     return users.filter((u) => norm(u.name).includes(needle)).slice(0, 8);
   }, [isMentionMenuOpen, mentionSearch, users]);
 
-  const insertTemplate = (templateText: string) => {
+  const insertTemplate = (templateText: string, attachments?: string[]) => {
+    // Stage any files the template carries so they're sent with the body.
+    // Append rather than replace so picking a second template doesn't drop
+    // the first one's files (de-duped by URL).
+    if (attachments && attachments.length > 0) {
+      setTemplateAttachments((prev) => {
+        const seen = new Set(prev.map((a) => a.url));
+        const fresh = attachments
+          .filter((u) => !seen.has(u))
+          .map((u) => attachmentFromTemplateUrl(u));
+        return [...prev, ...fresh];
+      });
+    }
     const textarea = document.querySelector('textarea');
     const cursorPosition = textarea?.selectionStart || inputText.length;
     const textBeforeCursor = inputText.substring(0, cursorPosition);
@@ -2908,6 +2962,46 @@ export function ChatMessageArea({
             </div>
           )}
 
+          {templateAttachments.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {templateAttachments.map((att, idx) => (
+                <div
+                  key={`${att.url}-${idx}`}
+                  className="flex items-center gap-3 rounded-xl border bg-background p-2 pr-4 shadow-sm animate-in slide-in-from-bottom-2"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                    {att.type === "image" ? (
+                      <img src={proxyMediaUrl(att.url)} alt={att.name} className="h-full w-full object-cover" />
+                    ) : att.type === "video" ? (
+                      <Video className="h-6 w-6 text-muted-foreground" />
+                    ) : (
+                      <FileIcon className="h-6 w-6 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-col overflow-hidden">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {att.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Archivo de plantilla
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0"
+                    onClick={() =>
+                      setTemplateAttachments((prev) => prev.filter((_, i) => i !== idx))
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {isMentionMenuOpen && (
             <div
               className="absolute bottom-full left-4 mb-2 w-[280px] max-w-[calc(100vw-2rem)] rounded-xl border bg-card shadow-xl z-50 animate-in slide-in-from-bottom-2 fade-in overflow-hidden"
@@ -3063,7 +3157,7 @@ export function ChatMessageArea({
                               key={template.id}
                               type="button"
                               className="w-full text-left rounded-md px-3 py-2 hover:bg-accent transition-colors"
-                              onClick={() => insertTemplate(template.text)}
+                              onClick={() => insertTemplate(template.text, template.attachments)}
                             >
                               <div className="text-[14px] font-semibold text-foreground">
                                 {template.title}
@@ -3487,7 +3581,7 @@ export function ChatMessageArea({
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={!inputText.trim() && !selectedFile}
+                  disabled={!inputText.trim() && !selectedFile && templateAttachments.length === 0}
                   className="h-9 px-5 gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-none disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
