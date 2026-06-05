@@ -330,6 +330,14 @@ export default function Index() {
   // Local UI state — not part of the bootstrap payload because it's purely
   // client-side: which conversation/tab is open, search input, etc.
   const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL_SAVED_VIEWS);
+  // Enriched opportunity metadata (channel / last-message direction+time /
+  // followers) keyed by opportunity id. Fetched lazily when the kanban tab
+  // opens so its conversation-level filters cover every card — not just the
+  // ones whose conversation is in the loaded window. Overlaid onto the live
+  // `opportunities` (which keep their WS updates) via `opportunitiesForKanban`.
+  const [oppEnrichById, setOppEnrichById] = useState<Map<string, Partial<Opportunity>>>(
+    () => new Map()
+  );
   // Load the persisted, per-location saved views (the backend seeds defaults
   // on first read). Falls back to INITIAL_SAVED_VIEWS while loading / on error.
   useEffect(() => {
@@ -381,6 +389,52 @@ export default function Index() {
   const { tab: activeMainTab, viewId: activeViewId } = useMemo(
     () => pathToNav(location.pathname),
     [location.pathname]
+  );
+
+  // When the kanban (oportunidades) opens, fetch the enriched opportunity
+  // listing once so its conversation-level filters (canal / dirección /
+  // tipo / ANS / seguidor) have data for every card. We keep only the
+  // enriched fields, keyed by id, and overlay them onto the live
+  // `opportunities` below — so WS stage moves still apply while filters work.
+  useEffect(() => {
+    if (activeMainTab !== "oportunidades") return;
+    let cancelled = false;
+    api.opportunities
+      .list({ enrich: true })
+      .then((opps) => {
+        if (cancelled) return;
+        const map = new Map<string, Partial<Opportunity>>();
+        for (const o of opps) {
+          // Only the conversation-derived fields — assignedTo/tags already
+          // live on the base opportunity, and overlaying a possibly-undefined
+          // value here would clobber them.
+          map.set(o.id, {
+            channel: o.channel,
+            lastMessageDirection: o.lastMessageDirection,
+            lastMessageAt: o.lastMessageAt,
+            followers: o.followers,
+          });
+        }
+        setOppEnrichById(map);
+      })
+      .catch((err) => {
+        console.warn("[opportunities] enrich fetch failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMainTab]);
+
+  // Live opportunities with enriched metadata overlaid — passed to the kanban
+  // so filters see channel/direction/followers while WS updates still flow
+  // through `opportunities`.
+  const opportunitiesForKanban = useMemo(
+    () =>
+      opportunities.map((o) => {
+        const e = oppEnrichById.get(o.id);
+        return e ? { ...o, ...e } : o;
+      }),
+    [opportunities, oppEnrichById]
   );
   // setActiveMainTab("") is fired by MainSidebar as a paired call right
   // before onSelectView(viewId) — we let the view-id setter own the
@@ -3030,7 +3084,7 @@ export default function Index() {
       {activeMainTab === "oportunidades" ? (
         <div className="flex-1 h-full min-w-0 overflow-hidden">
           <OpportunitiesView
-            opportunities={opportunities}
+            opportunities={opportunitiesForKanban}
             pipeline={opportunitiesPipeline}
             conversations={conversations}
             tasks={tasks}

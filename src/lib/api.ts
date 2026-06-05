@@ -669,7 +669,15 @@ export const api = {
   },
 
   opportunities: {
-    list: () => request<Opportunity[]>("GET", "/opportunities"),
+    // `enrich` joins each opportunity to its linked conversation's
+    // channel / direction / last-message time + the contact's followers so
+    // the kanban's conversation-level filters work for every card. Costs a
+    // few extra conversation reads server-side, so only the kanban requests it.
+    list: (params?: { enrich?: boolean }) =>
+      request<Opportunity[]>(
+        "GET",
+        `/opportunities${params?.enrich ? "?enrich=1" : ""}`
+      ),
     pipelines: () => request<Pipeline[]>("GET", "/opportunities/pipelines"),
     // GHL's update-opportunity API requires the pipelineId alongside the
     // new stage id — without it the stage move is silently rejected and the

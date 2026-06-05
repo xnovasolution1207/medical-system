@@ -308,6 +308,14 @@ export type Opportunity = {
   // kanban card show them even when the conversation isn't loaded.
   phone?: string;
   tags?: string[];
+  // Linked conversation metadata, populated only by the enriched listing
+  // (api.opportunities.list({ enrich: true })). Drives the kanban's
+  // conversation-level filters (canal / dirección / tipo / ANS / seguidor)
+  // for every card regardless of which conversations are loaded.
+  channel?: string;
+  lastMessageDirection?: "inbound" | "outbound";
+  lastMessageAt?: string;
+  followers?: string[];
 };
 
 export type FilterCondition = {

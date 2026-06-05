@@ -545,7 +545,11 @@ export function OpportunitiesView({
     switch (cond.field) {
       case "asignado": {
         const candidates = resolveUserIds(v);
-        const a = conv?.participant.assignedTo;
+        // Prefer the opportunity's own assignee — it's authoritative and
+        // present even when the linked conversation isn't loaded (the
+        // conversation participant doesn't carry assignedTo). Fall back to
+        // the conversation only if the opp has none.
+        const a = opp.assignedTo ?? conv?.participant.assignedTo;
         if (!a) match = false;
         else if (isEquality) match = candidates.includes(a);
         else
@@ -556,7 +560,9 @@ export function OpportunitiesView({
       }
       case "seguidor": {
         const candidates = resolveUserIds(v);
-        const followers = conv?.participant.followers ?? [];
+        // Prefer the enriched opp-level followers (cover every card); fall
+        // back to the linked conversation participant.
+        const followers = opp.followers ?? conv?.participant.followers ?? [];
         if (followers.length === 0) match = false;
         else if (isEquality)
           match = candidates.some((c) => followers.includes(c));
@@ -580,18 +586,28 @@ export function OpportunitiesView({
           );
         break;
       }
-      case "direccion_ultimo_mensaje":
-        match = conv?.lastMessageDirection === valLower;
+      case "direccion_ultimo_mensaje": {
+        const dir = opp.lastMessageDirection ?? conv?.lastMessageDirection;
+        match = dir === valLower;
         break;
-      case "tipo_ultimo_mensaje_saliente":
-        match =
-          conv?.lastMessageDirection === "outbound" && conv?.source === valLower;
+      }
+      case "tipo_ultimo_mensaje_saliente": {
+        const dir = opp.lastMessageDirection ?? conv?.lastMessageDirection;
+        const channel = opp.channel ?? conv?.source;
+        match = dir === "outbound" && channel === valLower;
         break;
-      case "canal_ultimo_mensaje":
-        match = conv?.source === valLower;
+      }
+      case "canal_ultimo_mensaje": {
+        const channel = opp.channel ?? conv?.source;
+        match = channel === valLower;
         break;
+      }
       case "etiqueta": {
-        const tags = conv?.participant.tags ?? [];
+        // Opportunity search carries the contact's tags directly — use them
+        // so the filter works even when the conversation isn't loaded; fall
+        // back to the conversation participant otherwise.
+        const tags =
+          (opp.tags && opp.tags.length ? opp.tags : conv?.participant.tags) ?? [];
         if (isEquality)
           match = tags.some((t) => t.toLowerCase() === valLower);
         else match = tags.some((t) => t.toLowerCase().includes(valLower));
@@ -608,11 +624,12 @@ export function OpportunitiesView({
       }
       case "ans": {
         const hours = Number(v);
-        if (!Number.isFinite(hours) || !conv?.lastMessageAt) {
+        const lastAt = opp.lastMessageAt ?? conv?.lastMessageAt;
+        if (!Number.isFinite(hours) || !lastAt) {
           match = true;
           break;
         }
-        const ageMs = Date.now() - Date.parse(conv.lastMessageAt);
+        const ageMs = Date.now() - Date.parse(lastAt);
         match = ageMs >= hours * 60 * 60 * 1000;
         break;
       }
@@ -660,8 +677,9 @@ export function OpportunitiesView({
         const toTs = range.to.getTime();
         list = list.filter((opp) => {
           const conv = convByContactId.get(opp.contactId);
-          if (!conv?.lastMessageAt) return false;
-          const t = Date.parse(conv.lastMessageAt);
+          const lastAt = opp.lastMessageAt ?? conv?.lastMessageAt;
+          if (!lastAt) return false;
+          const t = Date.parse(lastAt);
           if (!Number.isFinite(t)) return false;
           return t >= fromTs && t < toTs;
         });
