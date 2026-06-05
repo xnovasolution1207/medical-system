@@ -67,6 +67,7 @@ import type {
   Opportunity,
   Pipeline,
   SavedView,
+  TagSummary,
   Task,
 } from "./types";
 import { FilterBuilder } from "./FilterBuilder";
@@ -89,6 +90,10 @@ interface OpportunitiesViewProps {
   // Seguidor / Mención). Empty when GHL hasn't returned a roster yet —
   // FilterBuilder degrades to free-text input in that case.
   users?: AgentUser[];
+  // Location tag library — drives the FilterBuilder's "Etiqueta" value
+  // dropdown so the kanban (etapas) filter offers the same tag options
+  // as the chat sidebar. Empty ⇒ the field degrades to free-text input.
+  availableTags?: TagSummary[];
   // Saved-view roster shared with the conversation-list sidebar. The
   // kanban's FilterBuilder reuses the same view shape (filters[] +
   // logic) so a view created here is readable there and vice versa.
@@ -317,6 +322,7 @@ export function OpportunitiesView({
   conversations,
   tasks,
   users = [],
+  availableTags = [],
   savedViews,
   onSaveView,
   onMoveOpportunity,
@@ -945,6 +951,7 @@ export function OpportunitiesView({
                 }}
                 stages={stages}
                 users={users}
+                availableTags={availableTags}
               />
             </PopoverContent>
           </Popover>

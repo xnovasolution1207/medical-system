@@ -3035,6 +3035,7 @@ export default function Index() {
             conversations={conversations}
             tasks={tasks}
             users={users}
+            availableTags={availableTags}
             savedViews={savedViews}
             onSaveView={handleSaveView}
             onMoveOpportunity={handleMoveOpportunity}
