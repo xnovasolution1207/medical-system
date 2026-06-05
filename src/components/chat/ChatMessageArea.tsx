@@ -2553,7 +2553,9 @@ export function ChatMessageArea({
             // GHL's userId on each outbound message). Fall back to the
             // logged-in currentUser when the backend hasn't resolved it yet
             // or the message was just sent from this session.
-            const outboundName = message.senderName ?? currentUser.name;
+            const outboundName = message.aiBot
+              ? "Asistente IA"
+              : message.senderName ?? currentUser.name;
             const outboundAvatar = message.senderAvatar ?? currentUser.avatar;
 
             return (
@@ -2873,10 +2875,20 @@ export function ChatMessageArea({
                     <Tooltip delayDuration={200}>
                       <TooltipTrigger asChild>
                         <Avatar className="h-8 w-8 cursor-default">
-                          <AvatarImage src={outboundAvatar} alt={outboundName} />
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                            {outboundName.charAt(0).toUpperCase()}
-                          </AvatarFallback>
+                          {message.aiBot ? (
+                            // Conversation AI bot — render a dedicated AI badge
+                            // instead of any human profile photo.
+                            <AvatarFallback className="bg-gradient-to-br from-violet-500 to-indigo-600 text-white">
+                              <Sparkles className="h-4 w-4" />
+                            </AvatarFallback>
+                          ) : (
+                            <>
+                              <AvatarImage src={outboundAvatar} alt={outboundName} />
+                              <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                                {outboundName.charAt(0).toUpperCase()}
+                              </AvatarFallback>
+                            </>
+                          )}
                         </Avatar>
                       </TooltipTrigger>
                       <TooltipContent side="left" className="text-xs font-medium">

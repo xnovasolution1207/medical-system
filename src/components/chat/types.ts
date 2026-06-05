@@ -78,6 +78,9 @@ export type Message = {
   // logged-in currentUser — so a shared inbox shows who actually sent what.
   senderName?: string;
   senderAvatar?: string;
+  // True when sent by GHL's Conversation AI bot (outbound with no human
+  // author). Renders a dedicated AI avatar/name instead of the agent's.
+  aiBot?: boolean;
   text: string;
   timestamp: string;
   // Raw ISO timestamp from GHL's `dateAdded`. The SPA uses this to group
