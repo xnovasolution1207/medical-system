@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Filter,
@@ -486,6 +486,53 @@ export function OpportunitiesView({
     return map;
   }, [conversations]);
 
+  // ---- "Mención" filter support ----
+  // Mentions live in message bodies, not on the opportunity, so we can't
+  // enrich them in bulk. Instead we use GHL's native `mentions` conversation
+  // search: for each distinct mention value in the active filter set, ask the
+  // backend which contacts have that user @mentioned, then match opportunities
+  // by contactId. This covers every card (not just loaded conversations).
+  const mentionFilterValues = useMemo(() => {
+    const vals = new Set<string>();
+    for (const c of builderFilters) {
+      if (c.field === "mencion" && c.value) vals.add(c.value);
+    }
+    return Array.from(vals);
+  }, [builderFilters]);
+
+  const [mentionContactsByValue, setMentionContactsByValue] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
+
+  useEffect(() => {
+    if (mentionFilterValues.length === 0) {
+      setMentionContactsByValue(new Map());
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      mentionFilterValues.map(async (val) => {
+        try {
+          const res = await api.conversations.list({ mentions: val, limit: 100 });
+          const ids = new Set<string>();
+          for (const c of res.conversations) {
+            const cid = c.contactId ?? c.participant?.id;
+            if (cid) ids.add(cid);
+          }
+          return [val, ids] as const;
+        } catch {
+          return [val, new Set<string>()] as const;
+        }
+      })
+    ).then((entries) => {
+      if (!cancelled) setMentionContactsByValue(new Map(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // mentionFilterValues is a memoised array — stable while values are unchanged.
+  }, [mentionFilterValues]);
+
   // Pending-task count per conversation. The card's CheckSquare badge
   // shows only when there's at least one outstanding task on the
   // linked conversation — completed ones don't deserve the visual
@@ -573,17 +620,26 @@ export function OpportunitiesView({
         break;
       }
       case "mencion": {
-        const candidates = resolveUserIds(v);
-        const mentioned = (conv?.messages ?? []).flatMap(
-          (m) => m.mentions ?? []
-        );
-        if (mentioned.length === 0) match = false;
-        else if (isEquality)
-          match = candidates.some((c) => mentioned.includes(c));
-        else
-          match = candidates.some((c) =>
-            mentioned.some((m) => m.toLowerCase().includes(c.toLowerCase()))
+        // Authoritative path: GHL's native mentions search resolved this
+        // value to a contactId set (covers every card). While that lookup is
+        // in flight, fall back to scanning the linked conversation's hydrated
+        // messages so the filter still does something for loaded cards.
+        const set = mentionContactsByValue.get(v);
+        if (set) {
+          match = set.has(opp.contactId);
+        } else {
+          const candidates = resolveUserIds(v);
+          const mentioned = (conv?.messages ?? []).flatMap(
+            (m) => m.mentions ?? []
           );
+          if (mentioned.length === 0) match = false;
+          else if (isEquality)
+            match = candidates.some((c) => mentioned.includes(c));
+          else
+            match = candidates.some((c) =>
+              mentioned.some((m) => m.toLowerCase().includes(c.toLowerCase()))
+            );
+        }
         break;
       }
       case "direccion_ultimo_mensaje": {
@@ -725,6 +781,7 @@ export function OpportunitiesView({
     sortKey,
     users,
     conversations,
+    mentionContactsByValue,
   ]);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
