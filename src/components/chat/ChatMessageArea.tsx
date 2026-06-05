@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
+import { AiBotAvatar } from "./AiBotAvatar";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { AudioPlayer } from "./AudioPlayer";
@@ -2874,22 +2875,18 @@ export function ChatMessageArea({
                   <div className={cn(isConsecutive ? "invisible" : "visible", "shrink-0")}>
                     <Tooltip delayDuration={200}>
                       <TooltipTrigger asChild>
-                        <Avatar className="h-8 w-8 cursor-default">
-                          {message.aiBot ? (
-                            // Conversation AI bot — render a dedicated AI badge
-                            // instead of any human profile photo.
-                            <AvatarFallback className="bg-gradient-to-br from-violet-500 to-indigo-600 text-white">
-                              <Sparkles className="h-4 w-4" />
+                        {message.aiBot ? (
+                          // Conversation AI bot — dedicated AI avatar instead
+                          // of any human profile photo.
+                          <AiBotAvatar className="h-8 w-8 cursor-default" />
+                        ) : (
+                          <Avatar className="h-8 w-8 cursor-default">
+                            <AvatarImage src={outboundAvatar} alt={outboundName} />
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                              {outboundName.charAt(0).toUpperCase()}
                             </AvatarFallback>
-                          ) : (
-                            <>
-                              <AvatarImage src={outboundAvatar} alt={outboundName} />
-                              <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                                {outboundName.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </>
-                          )}
-                        </Avatar>
+                          </Avatar>
+                        )}
                       </TooltipTrigger>
                       <TooltipContent side="left" className="text-xs font-medium">
                         {outboundName}
