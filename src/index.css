@@ -96,4 +96,32 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Themed scrollbars. The browser default renders a bright white bar that
+     stands out against the dark UI. Drive the thumb from --muted-foreground
+     (theme-aware: light-grey in dark mode, dark-grey in light mode) at low
+     opacity with a transparent track so it blends in everywhere. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.35);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.55);
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
