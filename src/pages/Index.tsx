@@ -2144,6 +2144,11 @@ export default function Index() {
       if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { markRead: true })
+        .then(() => {
+          // The backend has now zeroed GHL's unread count for this lead, so
+          // refresh the GHL-wide badge so it matches the list immediately.
+          queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
+        })
         .catch((err) => console.error("mark as read failed", err));
     },
     [updateBootstrap]
