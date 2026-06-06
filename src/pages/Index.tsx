@@ -49,7 +49,9 @@ const FALLBACK_USER: User = { id: "agent", name: "Agente de Ventas", status: "on
 // shown in the agent-facing reference image. Names not in the map keep
 // whatever colour the backend resolved.
 const STAGE_COLOR_OVERRIDES: Record<string, string> = {
-  "lead nuevo": "bg-sky-500",
+  // "New Lead" se deja gris neutro a propósito (no confundir con Perdidos/rojo).
+  "new lead": "bg-slate-400",
+  "lead nuevo": "bg-slate-400",
   kiwi: "bg-lime-500",
   tibio: "bg-amber-500",
   caliente: "bg-orange-500",
@@ -70,20 +72,77 @@ function normaliseStageLabel(label: string): string {
   return label
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
+    // GHL stage names can include emojis/symbols ("🤖 New Lead", "🔥 Calientes").
+    // Strip anything that isn't a letter, number or space so the override keys
+    // ("new lead", "no asistio", …) still match.
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
 }
 
+// Distinct swatch palette (one Tailwind family each) used to guarantee every
+// funnel stage has its own colour. GHL leaves several stages grey/duplicated,
+// so we reassign those to unused colours from this list. Every family here is
+// covered by stageBadgeClasses(), so the chat-list "embudo" badge renders too.
+const DISTINCT_STAGE_PALETTE = [
+  "bg-rose-500", "bg-orange-500", "bg-amber-500", "bg-yellow-500",
+  "bg-lime-500", "bg-green-500", "bg-emerald-500", "bg-teal-500",
+  "bg-cyan-500", "bg-sky-500", "bg-blue-500", "bg-indigo-500",
+  "bg-violet-500", "bg-purple-500", "bg-fuchsia-500", "bg-pink-500",
+];
+// Greyish families we treat as "no real colour" and reassign.
+const GREYISH_COLOR = /-(slate|gray|zinc|neutral|stone)-/;
+
 function applyStageColorOverrides<T extends { label: string; color: string }>(
   list: T[]
 ): T[] {
-  return list.map((s) => {
+  // 1) Explicit per-label overrides keep meaningful colours (e.g. Perdidos→red,
+  //    New Lead→grey neutral). Track which stages were overridden so the
+  //    distinctness pass below leaves them alone — even when grey on purpose.
+  const withOverrides = list.map((s) => {
     const override =
       STAGE_COLOR_OVERRIDES[normaliseStageLabel(s.label)] ??
       // Also try the accented form so "no asistió" (with accent) matches
       // the canonical "no asistio" entry without losing the accented copy.
       STAGE_COLOR_OVERRIDES[s.label.trim().toLowerCase()];
-    return override ? { ...s, color: override } : s;
+    return { stage: override ? { ...s, color: override } : s, pinned: !!override };
+  });
+
+  // 2) Guarantee distinctness: any stage that's greyish (GHL left it grey) or
+  //    whose colour duplicates an earlier stage gets reassigned to the next
+  //    unused colour from the palette — so no two stages share a swatch.
+  const used = new Set<string>();
+  let palettePos = 0;
+  const nextFreeColor = (): string => {
+    for (let i = 0; i < DISTINCT_STAGE_PALETTE.length; i++) {
+      const c = DISTINCT_STAGE_PALETTE[(palettePos + i) % DISTINCT_STAGE_PALETTE.length];
+      if (!used.has(c)) {
+        palettePos = (palettePos + i + 1) % DISTINCT_STAGE_PALETTE.length;
+        return c;
+      }
+    }
+    // More stages than palette entries (>16) — cycle; collisions unavoidable.
+    const c = DISTINCT_STAGE_PALETTE[palettePos % DISTINCT_STAGE_PALETTE.length];
+    palettePos += 1;
+    return c;
+  };
+
+  return withOverrides.map(({ stage: s, pinned }) => {
+    // Pinned (explicitly overridden) stages keep their colour as-is — including
+    // an intentional neutral grey like "New Lead".
+    if (pinned) {
+      used.add(s.color);
+      return s;
+    }
+    const greyish = !s.color || GREYISH_COLOR.test(s.color);
+    if (!greyish && !used.has(s.color)) {
+      used.add(s.color);
+      return s;
+    }
+    const color = nextFreeColor();
+    used.add(color);
+    return { ...s, color };
   });
 }
 
