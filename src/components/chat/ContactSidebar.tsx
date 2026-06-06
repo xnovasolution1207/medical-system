@@ -88,7 +88,7 @@ const STATUS_LABELS: Record<Opportunity["status"], string> = {
 // the contact name. Open is the neutral default; the closed states pick up
 // semantic colors that match the Kanban board elsewhere.
 const STATUS_TRIGGER_CLASS: Record<Opportunity["status"], string> = {
-  open: "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200",
+  open: "border-slate-200 bg-slate-50 text-slate-700 dark:border-border dark:bg-muted/50 dark:text-foreground",
   won: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300",
   lost: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300",
   abandoned: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300",
@@ -688,7 +688,7 @@ export function ContactSidebar({
                 className={
                   opportunity
                     ? `h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border px-3 text-sm font-medium ${STATUS_TRIGGER_CLASS[opportunity.status]}`
-                    : "h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-400 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-500"
+                    : "h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-400 dark:border-border dark:bg-muted/50 dark:text-muted-foreground"
                 }
                 aria-label="Estado de la oportunidad"
               >
@@ -757,7 +757,7 @@ export function ContactSidebar({
                     e.currentTarget.blur();
                   }
                 }}
-                className="h-9 w-[110px] rounded-md border border-slate-300 bg-slate-50 px-3 text-center text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                className="h-9 w-[110px] rounded-md border border-slate-200 bg-slate-50 px-3 text-center text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-border dark:bg-muted/50 dark:text-foreground"
                 aria-label="Valor monetario"
               />
             </div>
