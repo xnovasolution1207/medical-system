@@ -1757,7 +1757,7 @@ export function ChatMessageArea({
                       <Button
                         type="button"
                         variant="outline"
-                        className="w-full h-10 justify-between font-normal bg-background"
+                        className="w-full h-10 justify-between font-normal bg-muted"
                       >
                         <span className="flex items-center gap-2 text-muted-foreground">
                           <List className="h-4 w-4" />

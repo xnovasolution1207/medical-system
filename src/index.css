@@ -57,7 +57,7 @@ All colors MUST be HSL.
 
     /* Lighter than --background (15%) so dropdown / select / popover menus
        clearly stand out from the dark page instead of blending in. */
-    --popover: 215 14% 25%;
+    --popover: 215 14% 30%;
     --popover-foreground: 0 0% 96%;
 
     --primary: 249 45% 55%;
@@ -69,7 +69,9 @@ All colors MUST be HSL.
     --muted: 215 14% 23%;
     --muted-foreground: 215 14% 65%;
 
-    --accent: 215 14% 26%;
+    /* Hover/active — kept lighter than --popover (30%) so hovering a menu
+       item reads as a highlight, not a darker sink. */
+    --accent: 215 14% 38%;
     --accent-foreground: 0 0% 96%;
 
     --destructive: 0 62.8% 30.6%;

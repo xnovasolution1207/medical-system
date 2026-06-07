@@ -291,7 +291,7 @@ export function FilterBuilder({
                     });
                   }}
                 >
-                  <SelectTrigger className="h-9 w-full bg-background">
+                  <SelectTrigger className="h-9 w-full bg-muted">
                     <SelectValue placeholder="Tipo de filtro" />
                   </SelectTrigger>
                   <SelectContent>
@@ -306,7 +306,7 @@ export function FilterBuilder({
               </div>
 
               <Select value={condition.operator} onValueChange={(val) => updateCondition(condition.id, { operator: val })}>
-                <SelectTrigger className="h-9 bg-background">
+                <SelectTrigger className="h-9 bg-muted">
                   <SelectValue placeholder="Es" />
                 </SelectTrigger>
                 <SelectContent>
@@ -327,7 +327,7 @@ export function FilterBuilder({
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-dashed border-border" />
                 </div>
-                <div className="relative flex bg-background border rounded-md shadow-sm">
+                <div className="relative flex bg-muted border rounded-md shadow-sm">
                   <button 
                     className={`px-3 py-1 text-xs font-medium ${logic === "AND" ? "bg-muted text-foreground" : "text-muted-foreground"} rounded-l-md`}
                     onClick={() => onLogicChange("AND")}
