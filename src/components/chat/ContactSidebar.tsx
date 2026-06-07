@@ -127,6 +127,20 @@ function formatMonetary(value: number | undefined): string {
   })}`;
 }
 
+// Contact creation date for the subtitle under the name. Returns the Peru-time
+// date ("Creado el 5 jun. 2026") or null when there's no valid timestamp.
+function formatCreatedDate(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return `Creado el ${d.toLocaleDateString("es-PE", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "America/Lima",
+  })}`;
+}
+
 // One editable row in the "Información de Contacto" section.
 type ContactField = {
   id: string;
@@ -660,7 +674,9 @@ export function ContactSidebar({
               <Edit2 className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute right-4 sm:right-8" />
             </div>
           )}
-          <p className="text-sm text-muted-foreground mb-4">Lead</p>
+          <p className="text-sm text-muted-foreground mb-4">
+            {formatCreatedDate(contact.createdAt) ?? "Lead"}
+          </p>
 
           {/* Opportunity status + monetary chip. Rendered for every lead so
               the sidebar layout doesn't jump when toggling between a lead

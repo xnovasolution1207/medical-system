@@ -23,6 +23,9 @@ export type User = {
   documentNumber?: string;
   tags?: string[];
   assignedTo?: string;
+  // GHL contact creation date (ISO) — shown under the name in the contact
+  // panel. Populated when the contact is enriched via api.contacts.get.
+  createdAt?: string;
   // GHL user ids that watch this contact. Local-only on the backend (see
   // followersStore). Always present (possibly empty) so consumers don't have
   // to handle `undefined`.
