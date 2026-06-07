@@ -329,6 +329,10 @@ export const api = {
       lastMessageDirection?: "inbound" | "outbound";
       status?: string;
       mode?: "AND" | "OR";
+      // Funnel/stage id. Not a native conversation-search field — the backend
+      // resolves the stage's contacts via opportunity search and returns their
+      // conversations, so the funnel filter spans the whole location.
+      stage?: string;
     }) => {
       const qs = new URLSearchParams();
       if (params?.limit != null) qs.set("limit", String(params.limit));
@@ -343,6 +347,7 @@ export const api = {
         qs.set("lastMessageDirection", params.lastMessageDirection);
       if (params?.status) qs.set("status", params.status);
       if (params?.mode) qs.set("mode", params.mode);
+      if (params?.stage) qs.set("stage", params.stage);
       const query = qs.toString();
       return request<{ conversations: Conversation[]; nextCursor: number | null }>(
         "GET",

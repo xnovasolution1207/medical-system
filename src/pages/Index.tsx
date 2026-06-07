@@ -1218,6 +1218,14 @@ export default function Index() {
           case "etiqueta":
             params.tags = cond.value;
             break;
+          case "embudo_actual":
+            // Funnel/stage isn't a native conversation-search field, but the
+            // backend resolves it: it finds the stage's contacts via the
+            // opportunity search and returns their conversations — so the
+            // funnel filter covers the whole location, not just the loaded
+            // window.
+            params.stage = cond.value;
+            break;
           case "canal_ultimo_mensaje": {
             const t = ghlChannelType(cond.value);
             if (t) params.lastMessageType = t;
@@ -1303,7 +1311,10 @@ export default function Index() {
     const handle = window.setTimeout(() => {
       api.conversations
         .list({
-          limit: 25,
+          // 100 (GHL's per-page max) so an active filter/search surfaces far
+          // more matches across the whole location in one shot, instead of
+          // only the first 25 (which forced manual load-more to "filter more").
+          limit: 100,
           ...(q ? { query: q } : {}),
           ...(assignedFilterActive && myUserId
             ? { assignedTo: myUserId }
