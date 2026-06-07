@@ -202,6 +202,35 @@ function messageMatchesFilters(message: Message, filters: string[]): boolean {
 // Attachment types the bubble actually knows how to render. Anything outside
 // this set falls through to `null` in the render switch — without a fallback
 // the bubble shows up empty.
+// Task description templates persist in localStorage (browser-local). No GHL
+// equivalent exists for these, so this is the durable store; survives reloads
+// and the per-conversation remount of this component.
+const TASK_PRESETS_KEY = "medchat:taskPresets";
+const DEFAULT_TASK_PRESETS = [
+  "Llamar para seguimiento",
+  "Enviar cotización",
+  "Agendar reunión",
+];
+function loadTaskPresets(): string[] {
+  try {
+    const raw = localStorage.getItem(TASK_PRESETS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr.filter((x): x is string => typeof x === "string");
+    }
+  } catch {
+    // ignore parse / storage errors → fall back to defaults
+  }
+  return DEFAULT_TASK_PRESETS;
+}
+function saveTaskPresets(presets: string[]): void {
+  try {
+    localStorage.setItem(TASK_PRESETS_KEY, JSON.stringify(presets));
+  } catch {
+    // storage unavailable (private mode / quota) — non-fatal
+  }
+}
+
 const RENDERABLE_ATTACHMENT_TYPES: ReadonlySet<NonNullable<Message["attachment"]>["type"]> = new Set([
   "image",
   "video",
@@ -767,7 +796,15 @@ export function ChatMessageArea({
   const [customDueDateTime, setCustomDueDateTime] = useState("");
   // Holds the GHL user id of the selected assignee (default: current user).
   const [newTaskAssignee, setNewTaskAssignee] = useState(currentUser.id);
-  const [taskPresets, setTaskPresets] = useState<string[]>(["Llamar para seguimiento", "Enviar cotización", "Agendar reunión"]);
+  // Task description templates ("Plantillas de tarea"). Persisted to
+  // localStorage so saved/edited/deleted templates survive a reload AND a
+  // conversation switch (this component is remounted per conversation via
+  // key={conversation.id}, which previously reset them to the defaults).
+  const [taskPresets, setTaskPresets] = useState<string[]>(loadTaskPresets);
+  // Mirror every change back to localStorage.
+  useEffect(() => {
+    saveTaskPresets(taskPresets);
+  }, [taskPresets]);
   const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
   const [editingPresetValue, setEditingPresetValue] = useState("");
   const [isStagesOpen, setIsStagesOpen] = useState(false);
