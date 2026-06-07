@@ -55,7 +55,9 @@ All colors MUST be HSL.
     --card: 215 14% 18%;
     --card-foreground: 0 0% 96%;
 
-    --popover: 215 14% 18%;
+    /* Lighter than --background (15%) so dropdown / select / popover menus
+       clearly stand out from the dark page instead of blending in. */
+    --popover: 215 14% 25%;
     --popover-foreground: 0 0% 96%;
 
     --primary: 249 45% 55%;
