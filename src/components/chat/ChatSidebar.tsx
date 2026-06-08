@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentUser, Conversation, TagSummary } from "./types";
 import { cn } from "@/lib/utils";
+import { TAB_LIST_CLASS, TAB_TRIGGER_CLASS } from "@/lib/tabStyles";
 import { stageBadgeClasses } from "@/lib/stageColors";
 import {
   DropdownMenu,
@@ -952,8 +953,8 @@ export function ChatSidebar({
       {/* Tabs */}
       <div className="px-4 pt-3">
         <Tabs defaultValue="all" onValueChange={(v) => setFilter(v as any)} className="w-full">
-          <TabsList className="items-center justify-center text-muted-foreground w-full flex bg-slate-100 dark:bg-black/20 rounded-full p-1 h-auto">
-            <TabsTrigger value="unread" className="flex-1 text-[11px] font-medium rounded-full py-1.5 text-slate-500 dark:text-slate-400 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-600 data-[state=active]:text-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm flex items-center justify-center gap-1.5">
+          <TabsList className={cn(TAB_LIST_CLASS, "items-center justify-center text-muted-foreground w-full flex")}>
+            <TabsTrigger value="unread" className={cn(TAB_TRIGGER_CLASS, "flex-1 text-[11px] flex items-center justify-center gap-1.5")}>
               No leídos
               {totalUnread > 0 && (
                 <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
@@ -961,9 +962,9 @@ export function ChatSidebar({
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="all" className="flex-1 text-[11px] font-medium rounded-full py-1.5 text-slate-500 dark:text-slate-400 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-600 data-[state=active]:text-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm">Todos</TabsTrigger>
-            <TabsTrigger value="recent" className="flex-1 text-[11px] font-medium rounded-full py-1.5 text-slate-500 dark:text-slate-400 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-600 data-[state=active]:text-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm">Recientes</TabsTrigger>
-            <TabsTrigger value="favorites" className="w-10 shrink-0 text-[11px] font-medium rounded-full py-1.5 text-slate-500 dark:text-slate-400 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-600 data-[state=active]:text-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm flex items-center justify-center" title="Favoritos">
+            <TabsTrigger value="all" className={cn(TAB_TRIGGER_CLASS, "flex-1 text-[11px]")}>Todos</TabsTrigger>
+            <TabsTrigger value="recent" className={cn(TAB_TRIGGER_CLASS, "flex-1 text-[11px]")}>Recientes</TabsTrigger>
+            <TabsTrigger value="favorites" className={cn(TAB_TRIGGER_CLASS, "w-10 shrink-0 text-[11px] flex items-center justify-center")} title="Favoritos">
               <Star className="h-4 w-4" />
             </TabsTrigger>
           </TabsList>

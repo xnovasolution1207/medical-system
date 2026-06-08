@@ -30,6 +30,7 @@ import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
+import { TAB_LIST_CLASS, TAB_TRIGGER_CLASS } from "@/lib/tabStyles";
 import { proxyMediaUrl, api } from "@/lib/api";
 import { peruYmd, formatPeruDateTime } from "@/lib/datetime";
 import {
@@ -2947,16 +2948,19 @@ export function ChatMessageArea({
         {/* Channel Tabs */}
         <div className="px-4 pt-2">
           <Tabs value={activeChannel} onValueChange={(v) => setActiveChannel(v as NonNullable<Message["channel"]>)}>
-            <TabsList className="bg-slate-100 dark:bg-black/20 p-1 rounded-full">
+            <TabsList className={cn(TAB_LIST_CLASS)}>
               {availableChannels.map((ch) => (
                 <TabsTrigger
                   key={ch}
                   value={ch}
                   className={cn(
+                    TAB_TRIGGER_CLASS,
                     "text-xs h-6 px-4",
-                    ch === "internal"
-                      ? "data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800 dark:data-[state=active]:bg-amber-500/20 dark:data-[state=active]:text-amber-400"
-                      : "dark:data-[state=active]:bg-[#2a2d35] dark:text-slate-400 dark:data-[state=active]:text-slate-100 transition-all"
+                    // Internal notes keep an amber active accent (a semantic
+                    // "this is a private note" cue), overriding the canonical
+                    // white/slate active pill.
+                    ch === "internal" &&
+                      "data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800 dark:data-[state=active]:bg-amber-500/20 dark:data-[state=active]:text-amber-400"
                   )}
                 >
                   {CHANNEL_LABELS[ch]}

@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentUser, User, Conversation, FamilyMember, Message, Opportunity, TagSummary } from "./types";
 import { cn } from "@/lib/utils";
+import { TAB_LIST_CLASS, TAB_TRIGGER_CLASS } from "@/lib/tabStyles";
 import { api, downloadAttachment } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -1387,11 +1388,11 @@ export function ContactSidebar({
           </div>
 
           <Tabs defaultValue="image" className="w-full">
-            <TabsList className="w-full grid grid-cols-4 h-9 bg-muted/50 p-1">
-              <TabsTrigger value="image" className="text-[10px] sm:text-xs px-1">Imagen</TabsTrigger>
-              <TabsTrigger value="doc" className="text-[10px] sm:text-xs px-1">Doc</TabsTrigger>
-              <TabsTrigger value="link" className="text-[10px] sm:text-xs px-1">Enlaces</TabsTrigger>
-              <TabsTrigger value="media" className="text-[10px] sm:text-xs px-1">Multimedia</TabsTrigger>
+            <TabsList className={cn(TAB_LIST_CLASS, "w-full grid grid-cols-4")}>
+              <TabsTrigger value="image" className={cn(TAB_TRIGGER_CLASS, "text-[10px] sm:text-xs px-1")}>Imagen</TabsTrigger>
+              <TabsTrigger value="doc" className={cn(TAB_TRIGGER_CLASS, "text-[10px] sm:text-xs px-1")}>Doc</TabsTrigger>
+              <TabsTrigger value="link" className={cn(TAB_TRIGGER_CLASS, "text-[10px] sm:text-xs px-1")}>Enlaces</TabsTrigger>
+              <TabsTrigger value="media" className={cn(TAB_TRIGGER_CLASS, "text-[10px] sm:text-xs px-1")}>Multimedia</TabsTrigger>
             </TabsList>
 
             {["image", "doc", "link", "media"].map((tab) => {
