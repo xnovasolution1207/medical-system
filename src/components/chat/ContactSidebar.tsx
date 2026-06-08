@@ -1283,7 +1283,7 @@ export function ContactSidebar({
                   value={selectedOwner || "__unassigned__"}
                   onValueChange={(v) => handleOwnerChange(v === "__unassigned__" ? "" : v)}
                 >
-                  <SelectTrigger className="w-full [&>span]:flex [&>span]:items-center [&>span]:gap-2">
+                  <SelectTrigger className="w-full bg-popover hover:bg-popover [&>span]:flex [&>span]:items-center [&>span]:gap-2">
                     <SelectValue placeholder="Seleccionar propietario" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1308,7 +1308,7 @@ export function ContactSidebar({
                 <Label className="text-xs text-muted-foreground">Seguidores</Label>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between font-normal px-3 h-10 bg-background hover:bg-background">
+                    <Button variant="outline" className="w-full justify-between font-normal px-3 h-10 bg-popover hover:bg-popover">
                       <div className="flex items-center gap-2 overflow-hidden truncate">
                         {selectedFollowers.length > 0 ? (
                           selectedFollowers.length === 1 ? (
