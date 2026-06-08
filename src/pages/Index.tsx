@@ -312,6 +312,84 @@ function moveConversationToFront(
   return next;
 }
 
+// Apply a patch to a conversation WITHOUT reordering the list — used for the
+// agent's own outbound sends so replying doesn't jump the lead to the top.
+// (Inbound messages still use moveConversationToFront.)
+function patchConversationInPlace(
+  conversations: Conversation[],
+  id: string,
+  patch: Partial<Conversation>
+): Conversation[] {
+  const idx = conversations.findIndex((c) => c.id === id);
+  if (idx === -1) return conversations;
+  const next = conversations.slice();
+  next[idx] = { ...next[idx], ...patch };
+  return next;
+}
+
+// Patch a server-fetched result list (unread / assigned / followed / search)
+// IN PLACE when a `message.created` WS event arrives — so those tabs stay live
+// without a full re-fetch (which replaced the array and reset the scroll,
+// yanking the agent off the conversation they were managing). Returns the same
+// reference when the conversation isn't in the list, so React skips re-render.
+function patchResultsWithMessage(
+  list: Conversation[] | null,
+  conversationId: string,
+  message: Message,
+  currentUserId: string
+): Conversation[] | null {
+  if (!list) return list;
+  const idx = list.findIndex((c) => c.id === conversationId);
+  if (idx === -1) return list;
+  const c = list[idx];
+  const nextMessages = mergeIncomingMessage(c.messages, message, currentUserId);
+  if (nextMessages === c.messages) return list;
+  const isInbound = message.senderId !== currentUserId;
+  // Agent's own send (message.created is outbound only) — update in place so a
+  // reply doesn't jump the lead to the top of the list.
+  return patchConversationInPlace(list, c.id, {
+    messages: nextMessages,
+    lastMessage: message.text || c.lastMessage,
+    timestamp: message.timestamp || c.timestamp,
+    unreadCount: isInbound ? (c.unreadCount ?? 0) + 1 : c.unreadCount,
+  });
+}
+
+// Upsert the full conversation from a `lead.updated` WS event into a result
+// list. Present → merge messages + participant, move to front only on new chat
+// activity (metadata-only edits leave the row put). Absent → prepend only when
+// `addWhenAbsent` (e.g. a newly-unread lead belongs on the No-leídos tab).
+function upsertConvInList(
+  list: Conversation[] | null,
+  inc: Conversation,
+  contactPatch: Partial<User>,
+  currentUserId: string,
+  addWhenAbsent: boolean
+): Conversation[] | null {
+  if (!list) return list;
+  const idx = list.findIndex((c) => c.id === inc.id);
+  if (idx === -1) {
+    if (!addWhenAbsent) return list;
+    return [{ ...inc, participant: { ...inc.participant, ...contactPatch } }, ...list];
+  }
+  const existing = list[idx];
+  const mergedMessages = inc.messages.reduce(
+    (acc, m) => mergeIncomingMessage(acc, m, currentUserId),
+    existing.messages
+  );
+  const hasNewActivity = mergedMessages.length > existing.messages.length;
+  const merged: Conversation = {
+    ...existing,
+    ...inc,
+    participant: { ...inc.participant, ...contactPatch },
+    messages: mergedMessages,
+    scheduledMessages: existing.scheduledMessages ?? inc.scheduledMessages,
+  };
+  return hasNewActivity
+    ? moveConversationToFront(list, inc.id, merged)
+    : list.map((c) => (c.id === inc.id ? merged : c));
+}
+
 export default function Index() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -843,7 +921,10 @@ export default function Index() {
           const nextUnreadCount = isInbound ? (c.unreadCount ?? 0) + 1 : c.unreadCount;
           return {
             ...prev,
-            conversations: moveConversationToFront(prev.conversations, c.id, {
+            // Our own outbound send (message.created is broadcast only for the
+            // SPA's sends) — update in place so replying doesn't move the lead
+            // to the top of the list.
+            conversations: patchConversationInPlace(prev.conversations, c.id, {
               messages: nextMessages,
               lastMessage: event.message.text || c.lastMessage,
               timestamp: event.message.timestamp || c.timestamp,
@@ -851,6 +932,18 @@ export default function Index() {
             }),
           };
         });
+        // Keep the server-fetched tab lists (No leídos / Asignados / Seguidos /
+        // search) live IN PLACE — no full re-fetch, so the scroll position is
+        // preserved and the agent isn't yanked off the conversation they're on.
+        {
+          const cid = event.conversationId;
+          const m = event.message;
+          const uid = currentUserIdRef.current;
+          setUnreadResults((p) => patchResultsWithMessage(p, cid, m, uid));
+          setAssignedResults((p) => patchResultsWithMessage(p, cid, m, uid));
+          setFollowedResults((p) => patchResultsWithMessage(p, cid, m, uid));
+          setSearchResults((p) => patchResultsWithMessage(p, cid, m, uid));
+        }
       } else if (event.type === "conversation.updated") {
         updateBootstrap((prev) => {
           const idx = prev.conversations.findIndex((c) => c.id === event.conversation.id);
@@ -1073,6 +1166,24 @@ export default function Index() {
 
           return { ...prev, conversations, tasks: Array.from(taskMap.values()) };
         });
+        // Keep the server-fetched tab lists live IN PLACE (no full re-fetch →
+        // no scroll reset, so the agent isn't yanked off the conversation
+        // they're managing). Present rows merge + move-to-front on new chat
+        // activity; a newly-unread lead is also prepended to the No-leídos list.
+        // (Assigned/Followed only patch existing rows here — a brand-new
+        // assigned/followed lead surfaces on the next tab open, which avoids a
+        // stale-closure read of `myUserId` in this long-lived subscription.)
+        if (realConv) {
+          const inc = realConv;
+          const contact = event.lead.contact;
+          const uid = currentUserIdRef.current;
+          setUnreadResults((p) =>
+            upsertConvInList(p, inc, contact, uid, (inc.unreadCount ?? 0) > 0)
+          );
+          setAssignedResults((p) => upsertConvInList(p, inc, contact, uid, false));
+          setFollowedResults((p) => upsertConvInList(p, inc, contact, uid, false));
+          setSearchResults((p) => upsertConvInList(p, inc, contact, uid, false));
+        }
       }
     });
     return () => sub.close();
@@ -1400,12 +1511,16 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
+    // NOTE: intentionally NOT keyed on `totalUnread`. Re-fetching the whole
+    // list on every incoming message replaced the array and reset the scroll
+    // position, yanking the agent away from the conversation they were managing.
+    // The list now fetches on tab-open / scope-change only; the unread badge
+    // still updates live, and mark-as-read patches this list in place.
   }, [
     unreadFilterActive,
     assignedFilterActive,
     followedFilterActive,
     myUserId,
-    totalUnread,
   ]);
 
   // Server-side fetch for "Asignados a mí". Hits GHL's native
@@ -1442,7 +1557,9 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
-  }, [assignedFilterActive, myUserId, totalUnread]);
+    // Not keyed on `totalUnread` — see the unread effect's note: re-fetching on
+    // every message reset the list scroll. Fetches on tab-open only.
+  }, [assignedFilterActive, myUserId]);
 
   // Server-side fetch for "Seguidos por mí". Followers are local-only
   // (Prisma followersStore), but the backend route translates the
@@ -1476,7 +1593,9 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
-  }, [followedFilterActive, myUserId, totalUnread]);
+    // Not keyed on `totalUnread` — see the unread effect's note: re-fetching on
+    // every message reset the list scroll. Fetches on tab-open only.
+  }, [followedFilterActive, myUserId]);
 
   // When the user is typing a query (or has applied an advanced filter
   // that translates to a GHL param), the search results win over the
@@ -1586,7 +1705,8 @@ export default function Index() {
         const c = prev.conversations[idx];
         return {
           ...prev,
-          conversations: moveConversationToFront(prev.conversations, activeId, {
+          // Reply stays in place — don't jump the lead to the top on send.
+          conversations: patchConversationInPlace(prev.conversations, activeId, {
             messages: [...c.messages, optimistic],
             lastMessage: text || "Archivo adjunto",
             timestamp: optimistic.timestamp,
@@ -1799,7 +1919,8 @@ export default function Index() {
         const c = prev.conversations[idx];
         return {
           ...prev,
-          conversations: moveConversationToFront(prev.conversations, conversationId, {
+          // Template send stays in place — don't jump the lead to the top.
+          conversations: patchConversationInPlace(prev.conversations, conversationId, {
             messages: [...c.messages, optimistic],
             lastMessage: template.name ? `Plantilla: ${template.name}` : text,
             timestamp: optimistic.timestamp,
