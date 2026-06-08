@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft, Clock } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Mail, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +64,7 @@ interface ChatSidebarProps {
   onArchiveConversation?: (id: string) => void;
   // "Marcar como leído" — clears the conversation's unread badge.
   onMarkAsRead?: (id: string) => void;
+  onMarkAsUnread?: (id: string) => void;
   savedViews?: SavedView[];
   activeViewId?: string | null;
   onSaveView?: (view: SavedView) => void;
@@ -153,6 +154,7 @@ export function ChatSidebar({
   onToggleFavorite,
   onArchiveConversation,
   onMarkAsRead,
+  onMarkAsUnread,
   savedViews = [],
   activeViewId = null,
   onSaveView,
@@ -1179,6 +1181,17 @@ export function ChatSidebar({
                             >
                               <CheckCheck className="h-4 w-4" />
                               <span>Marcar como leído</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="gap-2 cursor-pointer"
+                              disabled={conv.unreadCount > 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMarkAsUnread?.(conv.id);
+                              }}
+                            >
+                              <Mail className="h-4 w-4" />
+                              <span>Marcar como no leído</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

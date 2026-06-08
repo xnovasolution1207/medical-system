@@ -2426,6 +2426,29 @@ export default function Index() {
     [updateBootstrap]
   );
 
+  // "Marcar como no leído" — flag a conversation as unread again. The inverse
+  // of handleMarkAsRead. Unread is tracked locally (GHL's per-conversation
+  // unread is unreliable here — see the unread-tracking notes), so this just
+  // sets the local badge to 1; the No-leídos list and header count are derived
+  // from `conversations`, so the row reappears there automatically. Best-effort
+  // per session — a full refresh reseeds counts from GHL.
+  const handleMarkAsUnread = useCallback(
+    (id: string) => {
+      const bump = (c: Conversation) =>
+        c.id === id && (c.unreadCount ?? 0) === 0 ? { ...c, unreadCount: 1 } : c;
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map(bump),
+      }));
+      // Mirror into the server-fetched result lists so the badge shows there
+      // too. (No-leídos is derived locally, so it needs no explicit patch.)
+      setSearchResults((prev) => (prev ? prev.map(bump) : prev));
+      setAssignedResults((prev) => (prev ? prev.map(bump) : prev));
+      setFollowedResults((prev) => (prev ? prev.map(bump) : prev));
+    },
+    [updateBootstrap]
+  );
+
   // Set the AI bot Active/Paused for a conversation. Optimistically flips
   // the local state, then fires the backend (which writes the GHL tag mirror
   // and triggers the bot-status workflow). Reverts on failure.
@@ -3237,6 +3260,7 @@ export default function Index() {
               onToggleFavorite={handleToggleFavorite}
               onArchiveConversation={handleToggleArchive}
               onMarkAsRead={handleMarkAsRead}
+              onMarkAsUnread={handleMarkAsUnread}
               activeViewId={activeViewId}
               savedViews={savedViews}
               onSaveView={handleSaveView}
@@ -3311,6 +3335,7 @@ export default function Index() {
               onToggleFavorite={handleToggleFavorite}
               onArchiveConversation={handleToggleArchive}
               onMarkAsRead={handleMarkAsRead}
+              onMarkAsUnread={handleMarkAsUnread}
               activeViewId={activeViewId}
               savedViews={savedViews}
               onSaveView={handleSaveView}

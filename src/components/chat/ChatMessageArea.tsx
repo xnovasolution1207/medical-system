@@ -1693,28 +1693,24 @@ export function ChatMessageArea({
             </TooltipContent>
           </Tooltip>
 
-          {/* Email: opens the OS mailto: handler. Disabled when the contact has no email.
-              Hidden below xl — also reachable from the contact sidebar. */}
+          {/* Unread indicator: read-only. Shows how many unread messages the
+              lead has sent, as a badge on the envelope. No action on click —
+              the count comes from the conversation's local unread badge. */}
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="hidden 2xl:inline-flex h-9 w-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 disabled:opacity-40"
-                disabled={!conversation.participant.email}
-                onClick={() => {
-                  if (conversation.participant.email) {
-                    window.location.href = `mailto:${conversation.participant.email}`;
-                  }
-                }}
-              >
+              <div className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
                 <Mail className="h-4 w-4" />
-              </Button>
+                {(conversation.unreadCount ?? 0) > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                    {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                  </span>
+                )}
+              </div>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              {conversation.participant.email
-                ? `Enviar email a ${conversation.participant.email}`
-                : "Sin dirección de email"}
+              {(conversation.unreadCount ?? 0) > 0
+                ? `${conversation.unreadCount} mensaje${conversation.unreadCount === 1 ? "" : "s"} sin leer`
+                : "Sin mensajes sin leer"}
             </TooltipContent>
           </Tooltip>
 
