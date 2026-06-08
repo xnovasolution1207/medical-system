@@ -1533,7 +1533,7 @@ export function ChatMessageArea({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2 min-w-0 overflow-x-auto -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 overflow-x-auto -mx-1 px-1 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {/* Status Dropdown */}
           <Popover open={isStagesOpen} onOpenChange={setIsStagesOpen}>
             <PopoverTrigger asChild>
@@ -1701,7 +1701,7 @@ export function ChatMessageArea({
               <div className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
                 <Mail className="h-4 w-4" />
                 {(conversation.unreadCount ?? 0) > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  <span className="absolute top-0 right-0 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground ring-2 ring-card">
                     {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
                   </span>
                 )}
