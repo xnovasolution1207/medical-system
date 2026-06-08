@@ -1182,7 +1182,7 @@ export function OpportunitiesView({
                 return (
                   <div
                     key={stage.id}
-                    className="flex flex-col w-72 bg-muted/30 rounded-lg border shrink-0"
+                    className="flex flex-col w-72 bg-muted/30 dark:bg-black/20 rounded-lg border shrink-0"
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, stage.id)}
                   >
