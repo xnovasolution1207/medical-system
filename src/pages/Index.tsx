@@ -355,6 +355,60 @@ function patchResultsWithMessage(
   });
 }
 
+// Count genuinely-new inbound messages in `incoming` that aren't already
+// present in `existing` (matched by id / clientId). Drives a local floor on
+// the unread badge: GHL's own `unreadCount` is eventually consistent and
+// frequently still reports the pre-message value at the instant the
+// InboundMessage webhook fires, so trusting it verbatim leaves the badge
+// stuck (it never bumps when a new lead message lands). Mirrors the backend's
+// inbound classification (`senderId !== "agent" / "system"`), plus internal
+// notes are excluded — they aren't unread inbound traffic.
+function countNewInboundMessages(
+  existing: Message[],
+  incoming: Message[]
+): number {
+  let count = 0;
+  for (const m of incoming) {
+    // A badge-worthy message = one the lead typed directly. Exclude outbound
+    // ("agent"), system events, internal notes, AND the GHL Conversation AI
+    // bot's auto-replies (aiBot) — those aren't the human lead reaching out.
+    const isInbound =
+      m.senderId !== "agent" &&
+      m.senderId !== "system" &&
+      m.channel !== "internal" &&
+      !m.aiBot;
+    if (!isInbound) continue;
+    const already = existing.some(
+      (e) =>
+        e.id === m.id ||
+        (m.clientId != null && (e.clientId === m.clientId || e.id === m.clientId))
+    );
+    if (!already) count++;
+  }
+  return count;
+}
+
+// Reconcile the unread badge for a `lead.updated` merge. GHL's `incomingCount`
+// is eventually consistent and routinely still reports the pre-message value
+// when the InboundMessage webhook fires, so it can't be trusted to drive live
+// increments. Rules:
+//   • New inbound message(s) → bump by the count we can actually see locally
+//     (floored over GHL in case it already counted higher). This is what makes
+//     the badge grow when a lead replies — even on the conversation the agent
+//     currently has open (it clears only via "Marcar como leído").
+//   • Otherwise (metadata-only event with no new inbound — tags/owner/name) →
+//     keep the existing count. We must NOT copy GHL's value here, or a lagging
+//     metadata echo would drag a freshly-bumped badge back down. Genuine
+//     "read" decreases come from the markRead path, which sets it to 0.
+function reconcileUnread(
+  existingCount: number,
+  incomingCount: number,
+  newInbound: number
+): number {
+  if (newInbound <= 0) return existingCount;
+  return Math.max(incomingCount, existingCount + newInbound);
+}
+
 // Upsert the full conversation from a `lead.updated` WS event into a result
 // list. Present → merge messages + participant, move to front only on new chat
 // activity (metadata-only edits leave the row put). Absent → prepend only when
@@ -378,9 +432,17 @@ function upsertConvInList(
     existing.messages
   );
   const hasNewActivity = mergedMessages.length > existing.messages.length;
+  const newInbound = countNewInboundMessages(existing.messages, inc.messages);
   const merged: Conversation = {
     ...existing,
     ...inc,
+    // Floor the badge with prior + new inbound — GHL's unreadCount lags the
+    // webhook, so a verbatim copy never bumps when a lead message arrives.
+    unreadCount: reconcileUnread(
+      existing.unreadCount ?? 0,
+      inc.unreadCount ?? 0,
+      newInbound
+    ),
     participant: { ...inc.participant, ...contactPatch },
     messages: mergedMessages,
     scheduledMessages: existing.scheduledMessages ?? inc.scheduledMessages,
@@ -646,7 +708,25 @@ export default function Index() {
     refetchOnWindowFocus: false,
     retry: 1,
   });
-  const totalUnread = unreadCountData?.total ?? 0;
+  // "No leídos" badge count — derived locally from the loaded conversations
+  // (scoped to the active tab) instead of GHL's aggregate unread endpoint.
+  // GHL's unread tracking is unreliable for this location's WhatsApp provider:
+  // the aggregate count disagrees with the status=unread list and doesn't drop
+  // when a lead is marked read. Keeping it local makes the badge always match
+  // the No-leídos list and respond to mark-read. (`unreadCountData` above is
+  // left in place but no longer drives the badge.)
+  const totalUnread = useMemo(() => {
+    let base = conversations.filter(
+      (c) => !c.isArchived && (c.unreadCount ?? 0) > 0
+    );
+    if (unreadScope.kind === "assignedTo")
+      base = base.filter((c) => c.participant?.assignedTo === unreadScope.userId);
+    else if (unreadScope.kind === "followers")
+      base = base.filter((c) =>
+        (c.participant?.followers ?? []).includes(unreadScope.userId)
+      );
+    return base.length;
+  }, [conversations, unreadScope]);
   // Count of conversations assigned to the logged-in agent across the
   // whole tenant — not just the locally-loaded window. Drives the
   // badge next to "Asignados a mí" in MainSidebar. Re-runs on
@@ -1085,8 +1165,22 @@ export default function Index() {
                 existing.messages
               );
               const hasNewActivity = mergedMessages.length > existing.messages.length;
+              const newInbound = countNewInboundMessages(
+                existing.messages,
+                inc.messages
+              );
               const merged: Conversation = {
                 ...inc,
+                // GHL's unreadCount is eventually consistent — it frequently
+                // still reports the pre-message value when the InboundMessage
+                // webhook fires, so trusting it verbatim means the badge never
+                // bumps. Floor it with prior + new inbound (skip when this
+                // conversation is the one the agent is actively viewing).
+                unreadCount: reconcileUnread(
+                  existing.unreadCount ?? 0,
+                  inc.unreadCount ?? 0,
+                  newInbound
+                ),
                 // The conversation mapper only carries id/name/avatar/tags on
                 // the participant — it intentionally drops assignedTo,
                 // followers, email, phone, dnd. Layer the full contact
@@ -1216,6 +1310,11 @@ export default function Index() {
             ...full,
             source: existing.source,
             stage: existing.stage ?? full.stage,
+            // Preserve the locally-tracked unread badge. GHL's per-conversation
+            // unreadCount is unreliable for this location, so letting the detail
+            // fetch overwrite it would wipe the badge the moment the agent opens
+            // the chat. Unread clears only via "Marcar como leído".
+            unreadCount: existing.unreadCount ?? full.unreadCount,
           };
           return { ...prev, conversations: next };
         });
@@ -1475,53 +1574,15 @@ export default function Index() {
   const isSearchActive =
     searchQuery.trim().length > 0 || advancedFilterServerInfo.hasServerParam;
 
-  // Fetch the first GHL-wide unread page whenever the No leídos tab
-  // activates. Combined with the active sidebar tab — clicking
-  // "No leídos" while on "Asignados a mí" fetches with both
-  // assignedTo and status=unread so the list narrows to "unread AND
-  // assigned to me". Re-runs on `lead.updated` (via `totalUnread`)
-  // and on tab toggles so it stays current.
+  // The "No leídos" list is derived locally (see `unreadConversations`) — we
+  // no longer fetch GHL's status=unread search, which is unreliable for this
+  // location (it returns an empty list even when leads have unread messages,
+  // and its aggregate count won't drop on mark-read). Keep the result slot
+  // null so any legacy `unreadResults ?? <local>` fallbacks resolve to local.
   useEffect(() => {
-    if (!unreadFilterActive) {
-      setUnreadResults(null);
-      setUnreadNextCursor(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await api.conversations.list({
-          status: "unread",
-          assignedTo: assignedFilterActive ? myUserId : undefined,
-          followers: followedFilterActive ? myUserId : undefined,
-          limit: 25,
-        });
-        if (!cancelled) {
-          setUnreadResults(result.conversations);
-          setUnreadNextCursor(result.nextCursor);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.warn("[unread] fetch failed", err);
-          setUnreadResults([]);
-          setUnreadNextCursor(null);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // NOTE: intentionally NOT keyed on `totalUnread`. Re-fetching the whole
-    // list on every incoming message replaced the array and reset the scroll
-    // position, yanking the agent away from the conversation they were managing.
-    // The list now fetches on tab-open / scope-change only; the unread badge
-    // still updates live, and mark-as-read patches this list in place.
-  }, [
-    unreadFilterActive,
-    assignedFilterActive,
-    followedFilterActive,
-    myUserId,
-  ]);
+    setUnreadResults(null);
+    setUnreadNextCursor(null);
+  }, [unreadFilterActive]);
 
   // Server-side fetch for "Asignados a mí". Hits GHL's native
   // assignedTo search, returning every conversation in the location
@@ -1632,12 +1693,26 @@ export default function Index() {
       ),
     [stageByConvId]
   );
+  // No-leídos list — local + tab-scoped, matching `totalUnread`. We don't use
+  // GHL's status=unread search here (it's unreliable for this location and
+  // returns an empty list even when leads have unread messages); the local
+  // `conversations` set is kept live by the WS `lead.updated` handler.
+  const unreadConversations = unreadFilterActive
+    ? conversations.filter((c) => {
+        if ((c.unreadCount ?? 0) <= 0) return false;
+        if (assignedFilterActive && myUserId)
+          return c.participant?.assignedTo === myUserId;
+        if (followedFilterActive && myUserId)
+          return (c.participant?.followers ?? []).includes(myUserId);
+        return true;
+      })
+    : [];
   const displayConversationsBase = archivedFilterActive
     ? conversations.filter((c) => c.isArchived)
     : isSearchActive
       ? withCachedStage(searchResults ?? [])
       : unreadFilterActive
-        ? withCachedStage(unreadResults ?? conversations.filter((c) => (c.unreadCount ?? 0) > 0))
+        ? withCachedStage(unreadConversations)
         : assignedFilterActive
           ? withCachedStage(assignedResults ?? [])
           : followedFilterActive
@@ -1659,8 +1734,8 @@ export default function Index() {
   // state is the truthful answer, not a loading one.
   const isLoadingConversationList =
     (assignedFilterActive && Boolean(myUserId) && assignedResults === null) ||
-    (followedFilterActive && Boolean(myUserId) && followedResults === null) ||
-    (unreadFilterActive && unreadResults === null);
+    (followedFilterActive && Boolean(myUserId) && followedResults === null);
+  // (No-leídos is derived locally and synchronously — never "loading".)
   const activeConversation = conversations.find((c) => c.id === activeId);
 
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
