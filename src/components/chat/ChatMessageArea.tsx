@@ -2538,12 +2538,16 @@ export function ChatMessageArea({
               // Render GHL's historical opportunity activity (incl. the
               // opportunities transferred/imported from GHL) in the same
               // rich move-event style: arrow + bold name + funnel stage.
-              // Fall back to the conversation's current stage when the
-              // event itself didn't carry one, so the funnel always shows.
+              // PREFER the stage GHL recorded ON THIS event (`stageName`) so the
+              // thread preserves the history/evolution of stage changes. Only
+              // fall back to the conversation's current stage for older events
+              // that didn't carry one (so a funnel still shows).
               const activityStageId = ev.stageId || conversation.stage;
-              const stageLabel = activityStageId
-                ? stages.find((s) => s.id === activityStageId)?.label ?? activityStageId
-                : null;
+              const stageLabel =
+                ev.stageName ??
+                (activityStageId
+                  ? stages.find((s) => s.id === activityStageId)?.label ?? activityStageId
+                  : null);
               const name = ev.opportunityName || conversation.participant.name;
               return (
                 <React.Fragment key={message.id}>

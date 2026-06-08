@@ -150,6 +150,9 @@ export type Message = {
         // Current pipeline stage id — the SPA maps it to a label so the
         // activity pill reflects the funnel stage.
         stageId?: string;
+        // Stage NAME GHL recorded on THIS event (its stage at the time).
+        // Preferred over stageId so the thread shows the stage-change history.
+        stageName?: string;
         user: string;
       };
 };
