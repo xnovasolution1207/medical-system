@@ -1671,10 +1671,16 @@ export default function Index() {
       channel: Message["channel"] = "sms",
       mentions?: string[],
       reminder?: string,
-      replyTo?: Message["replyTo"]
+      replyTo?: Message["replyTo"],
+      // Explicit target conversation. The inbox omits it and we fall back to
+      // the active selection; the Opportunities modal passes its own conv.id
+      // so the send doesn't depend on `activeId` (which it can't flip
+      // synchronously before this memoized callback reads it).
+      targetConversationId?: string
     ) => {
-      if (!activeId) return;
-      if (isStubConvId(activeId)) {
+      const convId = targetConversationId ?? activeId;
+      if (!convId) return;
+      if (isStubConvId(convId)) {
         toast({
           title: "Conversación no disponible",
           description:
@@ -1700,13 +1706,13 @@ export default function Index() {
       };
 
       updateBootstrap((prev) => {
-        const idx = prev.conversations.findIndex((c) => c.id === activeId);
+        const idx = prev.conversations.findIndex((c) => c.id === convId);
         if (idx === -1) return prev;
         const c = prev.conversations[idx];
         return {
           ...prev,
           // Reply stays in place — don't jump the lead to the top on send.
-          conversations: patchConversationInPlace(prev.conversations, activeId, {
+          conversations: patchConversationInPlace(prev.conversations, convId, {
             messages: [...c.messages, optimistic],
             lastMessage: text || "Archivo adjunto",
             timestamp: optimistic.timestamp,
@@ -1718,12 +1724,12 @@ export default function Index() {
       });
 
       api.conversations
-        .send(activeId, { text, channel, attachment, mentions, reminder, replyTo, clientId: optimisticId })
+        .send(convId, { text, channel, attachment, mentions, reminder, replyTo, clientId: optimisticId })
         .then((sent) => {
           updateBootstrap((prev) => ({
             ...prev,
             conversations: prev.conversations.map((conv) =>
-              conv.id === activeId
+              conv.id === convId
                 ? {
                     ...conv,
                     messages: mergeIncomingMessage(
@@ -1748,7 +1754,7 @@ export default function Index() {
           updateBootstrap((prev) => ({
             ...prev,
             conversations: prev.conversations.map((conv) =>
-              conv.id === activeId
+              conv.id === convId
                 ? {
                     ...conv,
                     messages: conv.messages.map((m) =>
@@ -3524,17 +3530,21 @@ export default function Index() {
                     onAddTask={handleAddTask}
                     onUpdateTask={handleUpdateTask}
                     onToggleTask={handleToggleTask}
-                    onSendMessage={(text, attachment, channel, mentions, reminder, replyTo) => {
-                      // Temporarily route through the same handler — it
-                      // expects the active conversation, so flip activeId
-                      // for this send only. The optimistic insert lands
-                      // against conv.id; we restore activeId on the next
-                      // tick so the sidebar selection isn't disturbed.
-                      const previous = activeId;
-                      setActiveId(conv.id);
-                      handleSendMessage(text, attachment, channel, mentions, reminder, replyTo);
-                      setTimeout(() => setActiveId(previous), 0);
-                    }}
+                    onSendMessage={(text, attachment, channel, mentions, reminder, replyTo) =>
+                      // Target conv.id explicitly — `activeId` can't be flipped
+                      // synchronously before the memoized handler reads it, so
+                      // the inbox selection (or null) would otherwise win.
+                      handleSendMessage(
+                        text,
+                        attachment,
+                        channel,
+                        mentions,
+                        reminder,
+                        replyTo,
+                        conv.id
+                      )
+                    }
+                    onSendTemplateNow={handleSendTemplateNow}
                     onScheduleMessage={handleScheduleMessage}
                     onCancelScheduledMessage={handleCancelScheduledMessage}
                     onUpdateStage={handleUpdateStage}
