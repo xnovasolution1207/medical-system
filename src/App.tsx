@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import Configuracion from "./pages/Configuracion";
+import AdminLocations from "./pages/AdminLocations";
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "@/lib/authContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -46,6 +47,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Configuracion />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/ubicaciones"
+              element={
+                <ProtectedRoute>
+                  <AdminLocations />
                 </ProtectedRoute>
               }
             />

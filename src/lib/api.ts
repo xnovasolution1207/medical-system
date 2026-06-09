@@ -198,6 +198,37 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   bootstrap: () => request<BootstrapPayload>("GET", "/bootstrap"),
 
+  // Admin: dynamic management of the multi-tenant location allowlist. All
+  // routes are gated server-side by requireAdmin (403 for non-admins).
+  admin: {
+    listLocations: () =>
+      request<{
+        enforced: boolean;
+        locations: Array<{
+          locationId: string;
+          name: string | null;
+          allowed: boolean;
+          source: string | null;
+          firstSeenAt: string;
+          lastSeenAt: string;
+        }>;
+      }>("GET", "/admin/locations"),
+    addLocation: (locationId: string, name?: string) =>
+      request<{ ok: boolean }>("POST", "/admin/locations", { locationId, name }),
+    setAllowed: (locationId: string, allowed: boolean) =>
+      request<{ ok: boolean }>("PATCH", `/admin/locations/${encodeURIComponent(locationId)}`, {
+        allowed,
+      }),
+    rename: (locationId: string, name: string) =>
+      request<{ ok: boolean }>("PATCH", `/admin/locations/${encodeURIComponent(locationId)}`, {
+        name,
+      }),
+    removeLocation: (locationId: string) =>
+      request<{ ok: boolean }>("DELETE", `/admin/locations/${encodeURIComponent(locationId)}`),
+    setEnforcement: (enforced: boolean) =>
+      request<{ enforced: boolean }>("PUT", "/admin/settings/enforcement", { enforced }),
+  },
+
   auth: {
     // Returns the GHL authorize URL the SPA should send the browser to.
     startLogin: () => request<{ url: string }>("GET", "/auth/login"),
@@ -208,6 +239,7 @@ export const api = {
         userId: string;
         locationId: string;
         userType: string | null;
+        isAdmin: boolean;
         sessionExpiresAt: number;
       }>("GET", "/auth/me"),
     logout: () => request<{ ok: boolean }>("POST", "/auth/logout"),

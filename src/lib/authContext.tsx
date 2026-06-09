@@ -26,6 +26,9 @@ export interface AuthUser {
   userId: string;
   locationId: string;
   userType: string | null;
+  // True when this user may open the admin area (manage the allowlist).
+  // Drives the admin nav link + route guard; the API is gated server-side.
+  isAdmin: boolean;
   // Display fields populated from `/auth/me/profile` after the session
   // verify resolves. Kept optional so consumers can render fallbacks
   // (initials, generic icon) before the second fetch lands.
@@ -114,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           userId: me.userId,
           locationId: me.locationId,
           userType: me.userType,
+          isAdmin: me.isAdmin,
         });
         try {
           const profile = await api.auth.profile.get();
@@ -126,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             userId: me.userId,
             locationId: me.locationId,
             userType: me.userType,
+            isAdmin: me.isAdmin,
             name: fullName,
             avatar: profile.profilePhoto ?? undefined,
             email: profile.email || undefined,
