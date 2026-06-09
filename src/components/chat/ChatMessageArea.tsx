@@ -744,6 +744,20 @@ export function ChatMessageArea({
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Real GHL user id of the logged-in agent. `currentUser.id` is the "agent"
+  // dedup sentinel — NOT a valid GHL user id — so resolve the real one from
+  // the roster by name. Tasks MUST be assigned to this; GHL rejects "agent"
+  // with "The assigned to field is invalid". Undefined if the roster hasn't
+  // loaded or the agent isn't in it (then "me" is offered no option and the
+  // task is created unassigned rather than with an invalid id).
+  const myGhlUserId = useMemo(
+    () =>
+      users.find(
+        (u) => u.name?.toLowerCase() === currentUser.name?.toLowerCase()
+      )?.id,
+    [users, currentUser.name]
+  );
+
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   // When non-null, the Nueva Tarea dialog is being used to edit an
   // existing task (vs. creating a new one). The submit handler branches
@@ -785,18 +799,20 @@ export function ChatMessageArea({
     setNewTaskAssignee(
       task.assignee.id ||
         users.find((u) => u.name === task.assignee.name)?.id ||
-        currentUser.id
+        myGhlUserId ||
+        ""
     );
     setIsTaskDialogOpen(true);
-  }, [currentUser.name]);
+  }, [currentUser.name, users, myGhlUserId]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDueDate, setNewTaskDueDate] = useState("Hoy");
   // Captured by the datetime-local input when "Personalizado" is the chosen
   // preset. Shape is "YYYY-MM-DDTHH:mm" — `new Date(value)` parses it as
   // local time, then we hand the ISO string to the backend.
   const [customDueDateTime, setCustomDueDateTime] = useState("");
-  // Holds the GHL user id of the selected assignee (default: current user).
-  const [newTaskAssignee, setNewTaskAssignee] = useState(currentUser.id);
+  // Holds the GHL user id of the selected assignee (default: current user's
+  // real GHL id — never the "agent" sentinel, which GHL rejects).
+  const [newTaskAssignee, setNewTaskAssignee] = useState(myGhlUserId ?? "");
   // Task description templates ("Plantillas de tarea"). Persisted to
   // localStorage so saved/edited/deleted templates survive a reload AND a
   // conversation switch (this component is remounted per conversation via
@@ -1722,12 +1738,18 @@ export function ChatMessageArea({
             open={isTaskDialogOpen}
             onOpenChange={(open) => {
               setIsTaskDialogOpen(open);
-              if (!open) {
+              if (open) {
+                // User-triggered open = create mode (edit mode opens via
+                // openTaskEditor, which sets the assignee itself and doesn't
+                // route through here). Default the assignee to the agent's
+                // real GHL id so the field isn't empty / invalid.
+                if (!editingTaskId) setNewTaskAssignee(myGhlUserId ?? "");
+              } else {
                 setEditingTaskId(null);
                 setNewTaskTitle("");
                 setNewTaskDueDate("Hoy");
                 setCustomDueDateTime("");
-                setNewTaskAssignee(currentUser.id);
+                setNewTaskAssignee(myGhlUserId ?? "");
               }
             }}
           >
@@ -1932,9 +1954,11 @@ export function ChatMessageArea({
                       <SelectValue placeholder="Selecciona un usuario" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={currentUser.id}>Yo ({currentUser.name})</SelectItem>
+                      {myGhlUserId && (
+                        <SelectItem value={myGhlUserId}>Yo ({currentUser.name})</SelectItem>
+                      )}
                       {users
-                        .filter((u) => u.id && u.id !== currentUser.id)
+                        .filter((u) => u.id && u.id !== myGhlUserId)
                         .map((u) => (
                           <SelectItem key={u.id} value={u.id}>
                             {u.name}
@@ -1992,13 +2016,15 @@ export function ChatMessageArea({
 
                     setIsTaskDialogOpen(false);
 
-                    // newTaskAssignee is a GHL user id — resolve the agent so
-                    // the task carries the right id (for GHL assignment) and
-                    // name/avatar (for the UI label).
+                    // newTaskAssignee is a real GHL user id — resolve the agent
+                    // from the roster so the task carries the right id (for GHL
+                    // assignment) and name/avatar (for the UI label). When it's
+                    // the logged-in agent, prefer their "Yo" display name.
+                    const rosterUser = users.find((u) => u.id === newTaskAssignee);
                     const assigneeUser =
-                      newTaskAssignee === currentUser.id
-                        ? { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar }
-                        : users.find((u) => u.id === newTaskAssignee);
+                      newTaskAssignee && newTaskAssignee === myGhlUserId
+                        ? { id: myGhlUserId, name: currentUser.name, avatar: rosterUser?.avatar ?? currentUser.avatar }
+                        : rosterUser;
                     onAddTask({
                       title: newTaskTitle,
                       dueDate: dueDateOut,

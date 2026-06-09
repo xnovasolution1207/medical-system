@@ -2807,8 +2807,13 @@ export default function Index() {
           title: task.title,
           dueDate: task.dueDate,
           // GHL user id picked in the "Asignado a" dropdown. GHL assigns the
-          // task to this user; omitted (unassigned) when no id resolved.
-          assignedTo: task.assignee.id || undefined,
+          // task to this user; omitted (unassigned) when no id resolved. Guard
+          // against the "agent" dedup sentinel — it is NOT a valid GHL user id
+          // and GHL rejects it ("The assigned to field is invalid").
+          assignedTo:
+            task.assignee.id && task.assignee.id !== "agent"
+              ? task.assignee.id
+              : undefined,
         })
         .then((saved) => {
           updateBootstrap((prev) => ({
