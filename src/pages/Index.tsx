@@ -388,6 +388,25 @@ function countNewInboundMessages(
   return count;
 }
 
+// True when `incoming` brings a genuinely-new REAL message (one not already in
+// `existing`, matched by id/clientId) that is NOT a system event. Drives
+// move-to-front: only real chat activity (a message from the lead or an agent)
+// reorders the list. System events — a stage/funnel move, an assignment change,
+// or bare opportunity activity — are spliced into the thread too, but they must
+// NOT bump the lead to the top (changing a lead's stage shouldn't jump it).
+function hasNewRealMessage(existing: Message[], incoming: Message[]): boolean {
+  for (const m of incoming) {
+    if (m.systemEvent) continue;
+    const already = existing.some(
+      (e) =>
+        e.id === m.id ||
+        (m.clientId != null && (e.clientId === m.clientId || e.id === m.clientId))
+    );
+    if (!already) return true;
+  }
+  return false;
+}
+
 // Reconcile the unread badge for a `lead.updated` merge. GHL's `incomingCount`
 // is eventually consistent and routinely still reports the pre-message value
 // when the InboundMessage webhook fires, so it can't be trusted to drive live
@@ -431,7 +450,7 @@ function upsertConvInList(
     (acc, m) => mergeIncomingMessage(acc, m, currentUserId),
     existing.messages
   );
-  const hasNewActivity = mergedMessages.length > existing.messages.length;
+  const hasNewActivity = hasNewRealMessage(existing.messages, inc.messages);
   const newInbound = countNewInboundMessages(existing.messages, inc.messages);
   const merged: Conversation = {
     ...existing,
@@ -1164,7 +1183,7 @@ export default function Index() {
                   mergeIncomingMessage(acc, m, currentUserIdRef.current),
                 existing.messages
               );
-              const hasNewActivity = mergedMessages.length > existing.messages.length;
+              const hasNewActivity = hasNewRealMessage(existing.messages, inc.messages);
               const newInbound = countNewInboundMessages(
                 existing.messages,
                 inc.messages
