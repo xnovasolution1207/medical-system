@@ -1555,8 +1555,12 @@ export function ChatMessageArea({
             <PopoverTrigger asChild>
               <Button variant="outline" className="h-9 text-[13px] font-medium border-slate-200 bg-slate-50 hover:bg-slate-100 focus:ring-0 w-[110px] sm:w-[120px] shrink-0 rounded-full px-3 shadow-none text-slate-700 dark:bg-muted/50 dark:border-border dark:text-foreground transition-colors mr-1 justify-between">
                 <div className="flex items-center gap-2 truncate">
-                  <div className={cn("h-2 w-2 shrink-0 rounded-full", stages.find(s => s.id === conversation.stage)?.color || "bg-slate-500")} />
-                  <span className="truncate">{stages.find(s => s.id === conversation.stage)?.label || "Estado"}</span>
+                  {/* Resolve the stage exactly like the conversation-list badge
+                      (ChatSidebar): fall back to the first pipeline stage when
+                      the conversation has no explicit stage yet, so the header
+                      and the list always show the same thing. */}
+                  <div className={cn("h-2 w-2 shrink-0 rounded-full", stages.find(s => s.id === (conversation.stage || stages[0]?.id))?.color || "bg-slate-500")} />
+                  <span className="truncate">{stages.find(s => s.id === (conversation.stage || stages[0]?.id))?.label || "Estado"}</span>
                 </div>
                 <ChevronDown className="h-4 w-4 shrink-0 opacity-50 ml-1" />
               </Button>
@@ -1573,8 +1577,8 @@ export function ChatMessageArea({
                       }}
                     >
                       <div className="flex items-center gap-2 truncate">
-                        {conversation.stage === stage.id && <Check className="h-4 w-4 shrink-0" />}
-                        <div className={cn("h-2 w-2 shrink-0 rounded-full", stage.color, conversation.stage !== stage.id && "ml-6")} />
+                        {(conversation.stage || stages[0]?.id) === stage.id && <Check className="h-4 w-4 shrink-0" />}
+                        <div className={cn("h-2 w-2 shrink-0 rounded-full", stage.color, (conversation.stage || stages[0]?.id) !== stage.id && "ml-6")} />
                         <span className="truncate">{stage.label}</span>
                       </div>
                     </div>
