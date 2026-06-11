@@ -1038,6 +1038,11 @@ export function ChatMessageArea({
   const scrollTopBeforeRef = useRef(0);
   // Guards against firing onLoadOlderMessages twice before isLoadingOlderMessages updates.
   const requestedOlderRef = useRef(false);
+  // Set the moment the agent sends a message from THIS composer, so the next
+  // appended message scrolls the thread to the bottom unconditionally — even if
+  // the agent had scrolled up. Inbound messages keep the "only if near bottom"
+  // behaviour so reading history isn't interrupted.
+  const forceScrollOnSendRef = useRef(false);
 
   // When the conversation changes, reset all scroll-state refs so the new
   // conversation always starts with a jump-to-bottom (branch 1 in the
@@ -1072,7 +1077,15 @@ export function ChatMessageArea({
       return;
     }
 
-    // New message appended — scroll to bottom only if already near the bottom.
+    // New message appended. If the agent just sent it from this composer, jump
+    // to the bottom so they see their own message regardless of where they had
+    // scrolled. Otherwise (an inbound message), only follow when already near
+    // the bottom so reading older history isn't interrupted.
+    if (forceScrollOnSendRef.current) {
+      forceScrollOnSendRef.current = false;
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 150) {
       el.scrollTop = el.scrollHeight;
@@ -1352,6 +1365,8 @@ export function ChatMessageArea({
       primaryAttachment = extraAttachments.shift();
     }
 
+    // Agent is sending — scroll the thread to their new message once it lands.
+    forceScrollOnSendRef.current = true;
     onSendMessage(inputText, primaryAttachment, activeChannel, mentions.length > 0 ? mentions : undefined, activeReminder || undefined, replyTo);
     for (const extra of extraAttachments) {
       onSendMessage("", extra, activeChannel, undefined, undefined, undefined);
@@ -2326,6 +2341,8 @@ export function ChatMessageArea({
         onSendNow={
           onSendTemplateNow
             ? async (payload) => {
+                // Agent is sending a template — scroll to it once it lands.
+                forceScrollOnSendRef.current = true;
                 await onSendTemplateNow(
                   conversation.id,
                   payload.text,
