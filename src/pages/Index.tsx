@@ -388,20 +388,35 @@ function countNewInboundMessages(
   return count;
 }
 
-// True when `inc` carries genuinely NEWER message traffic than `existing` —
-// i.e. the last-message timestamp advanced. Drives move-to-front: only a new
-// inbound/outbound MESSAGE bumps the lead up. `lastMessageAt` reflects real
-// messages only, so a stage/funnel move, an assignment change, or other
-// metadata update leaves it unchanged → the lead stays in place. Timestamp-
-// based (not message-count/presence) on purpose: when the stage is changed
-// from the Opportunities chat modal, that conversation's messages aren't loaded
-// into the list cache, so a presence check would mistake the back-filled last
-// message for new activity and wrongly bump the lead. A pure metadata update
-// keeps the same timestamp, so no jump.
-function hasNewerMessage(existing: Conversation, inc: Conversation): boolean {
-  const prev = existing.lastMessageAt ? Date.parse(existing.lastMessageAt) : 0;
-  const next = inc.lastMessageAt ? Date.parse(inc.lastMessageAt) : 0;
-  return Number.isFinite(next) && next > prev;
+// True ONLY when `inc` brings a new message FROM THE LEAD (inbound) that is
+// newer than anything we've seen. This is the only thing that moves a
+// conversation to the top of the list. Everything else leaves the row where it
+// is: agent sends are patched in place (never reorder); a stage/funnel move,
+// assignment change, tag edit or other metadata update carries no inbound
+// message (only system events or an already-seen one), so it does NOT jump.
+//
+// Two guards, both required:
+//  • DIRECTION — the message must be inbound (not "agent"/"system"/AI-bot/note).
+//    This is what makes an agent send (even one echoed through `lead.updated`)
+//    or a metadata update never move the row.
+//  • TIMESTAMP — the inbound message must be newer than the conversation's
+//    last-message time. This stops a stage change made from the Opportunities
+//    modal — where the conversation's messages aren't loaded, so `lead.updated`
+//    back-fills the last (older) inbound message — from looking like new
+//    activity. A genuinely new inbound is always newer; a back-filled one isn't.
+function hasNewInboundMessage(existing: Conversation, inc: Conversation): boolean {
+  const prevTs = existing.lastMessageAt ? Date.parse(existing.lastMessageAt) : 0;
+  for (const m of inc.messages) {
+    const isInbound =
+      m.senderId !== "agent" &&
+      m.senderId !== "system" &&
+      m.channel !== "internal" &&
+      !m.aiBot;
+    if (!isInbound) continue;
+    const ts = m.date ? Date.parse(m.date) : NaN;
+    if (Number.isFinite(ts) && ts > prevTs) return true;
+  }
+  return false;
 }
 
 // Reconcile the unread badge for a `lead.updated` merge. GHL's `incomingCount`
@@ -447,7 +462,7 @@ function upsertConvInList(
     (acc, m) => mergeIncomingMessage(acc, m, currentUserId),
     existing.messages
   );
-  const hasNewActivity = hasNewerMessage(existing, inc);
+  const hasNewActivity = hasNewInboundMessage(existing, inc);
   const newInbound = countNewInboundMessages(existing.messages, inc.messages);
   const merged: Conversation = {
     ...existing,
@@ -1180,7 +1195,7 @@ export default function Index() {
                   mergeIncomingMessage(acc, m, currentUserIdRef.current),
                 existing.messages
               );
-              const hasNewActivity = hasNewerMessage(existing, inc);
+              const hasNewActivity = hasNewInboundMessage(existing, inc);
               const newInbound = countNewInboundMessages(
                 existing.messages,
                 inc.messages
