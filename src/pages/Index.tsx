@@ -879,6 +879,13 @@ export default function Index() {
               scheduledMessages:
                 prev.conversations[idx].scheduledMessages ??
                 bundle.conversation!.scheduledMessages,
+              // Keep the locally-tracked unread badge. GHL's per-conversation
+              // unreadCount — and the backend's inbound-floor over the modal's
+              // wider message window — is unreliable here, so OPENING the
+              // dialog must not overwrite it, or a phantom unread appears on
+              // the lead list. Unread changes only via a new inbound message
+              // (lead.updated) or "Marcar como leído".
+              unreadCount: prev.conversations[idx].unreadCount,
             };
             return { ...prev, conversations: next };
           });
