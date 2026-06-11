@@ -847,10 +847,23 @@ export default function Index() {
             const idx = prev.conversations.findIndex(
               (c) => c.id === bundle.conversation!.id
             );
+            // The conversation mapper only carries id/name/avatar/tags on the
+            // participant — it drops email/phone/address/documentNumber and
+            // assignedTo/followers/dnd. Layer the full contact bundle back on
+            // so the modal's right rail (Información de Contacto) isn't blank —
+            // AND so replacing the cached conversation here doesn't wipe the
+            // contact details the inbox already enriched.
+            const enrichedConv: Conversation = {
+              ...bundle.conversation!,
+              participant: {
+                ...bundle.conversation!.participant,
+                ...bundle.contact,
+              },
+            };
             if (idx === -1) {
               return {
                 ...prev,
-                conversations: [bundle.conversation!, ...prev.conversations],
+                conversations: [enrichedConv, ...prev.conversations],
               };
             }
             const next = prev.conversations.slice();
@@ -861,7 +874,7 @@ export default function Index() {
             // scheduled messages) that the bundle endpoint doesn't
             // carry because they're flagsStore-derived.
             next[idx] = {
-              ...bundle.conversation!,
+              ...enrichedConv,
               stage: prev.conversations[idx].stage ?? bundle.conversation!.stage,
               scheduledMessages:
                 prev.conversations[idx].scheduledMessages ??
