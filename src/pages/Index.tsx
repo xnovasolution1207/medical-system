@@ -388,23 +388,20 @@ function countNewInboundMessages(
   return count;
 }
 
-// True when `incoming` brings a genuinely-new REAL message (one not already in
-// `existing`, matched by id/clientId) that is NOT a system event. Drives
-// move-to-front: only real chat activity (a message from the lead or an agent)
-// reorders the list. System events — a stage/funnel move, an assignment change,
-// or bare opportunity activity — are spliced into the thread too, but they must
-// NOT bump the lead to the top (changing a lead's stage shouldn't jump it).
-function hasNewRealMessage(existing: Message[], incoming: Message[]): boolean {
-  for (const m of incoming) {
-    if (m.systemEvent) continue;
-    const already = existing.some(
-      (e) =>
-        e.id === m.id ||
-        (m.clientId != null && (e.clientId === m.clientId || e.id === m.clientId))
-    );
-    if (!already) return true;
-  }
-  return false;
+// True when `inc` carries genuinely NEWER message traffic than `existing` —
+// i.e. the last-message timestamp advanced. Drives move-to-front: only a new
+// inbound/outbound MESSAGE bumps the lead up. `lastMessageAt` reflects real
+// messages only, so a stage/funnel move, an assignment change, or other
+// metadata update leaves it unchanged → the lead stays in place. Timestamp-
+// based (not message-count/presence) on purpose: when the stage is changed
+// from the Opportunities chat modal, that conversation's messages aren't loaded
+// into the list cache, so a presence check would mistake the back-filled last
+// message for new activity and wrongly bump the lead. A pure metadata update
+// keeps the same timestamp, so no jump.
+function hasNewerMessage(existing: Conversation, inc: Conversation): boolean {
+  const prev = existing.lastMessageAt ? Date.parse(existing.lastMessageAt) : 0;
+  const next = inc.lastMessageAt ? Date.parse(inc.lastMessageAt) : 0;
+  return Number.isFinite(next) && next > prev;
 }
 
 // Reconcile the unread badge for a `lead.updated` merge. GHL's `incomingCount`
@@ -450,7 +447,7 @@ function upsertConvInList(
     (acc, m) => mergeIncomingMessage(acc, m, currentUserId),
     existing.messages
   );
-  const hasNewActivity = hasNewRealMessage(existing.messages, inc.messages);
+  const hasNewActivity = hasNewerMessage(existing, inc);
   const newInbound = countNewInboundMessages(existing.messages, inc.messages);
   const merged: Conversation = {
     ...existing,
@@ -1183,7 +1180,7 @@ export default function Index() {
                   mergeIncomingMessage(acc, m, currentUserIdRef.current),
                 existing.messages
               );
-              const hasNewActivity = hasNewRealMessage(existing.messages, inc.messages);
+              const hasNewActivity = hasNewerMessage(existing, inc);
               const newInbound = countNewInboundMessages(
                 existing.messages,
                 inc.messages
