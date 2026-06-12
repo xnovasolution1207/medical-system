@@ -1837,11 +1837,18 @@ export default function Index() {
         const c = prev.conversations[idx];
         return {
           ...prev,
-          // Reply stays in place — don't jump the lead to the top on send.
-          conversations: patchConversationInPlace(prev.conversations, convId, {
+          // A message the agent TYPED directly moves the lead to the top of the
+          // list (active engagement). `lastMessageAt` is advanced to now so the
+          // ordering data stays consistent and a later metadata update (e.g. a
+          // stage change, which doesn't advance it) won't re-bump or fight it.
+          // Template sends (handleSendTemplateNow) and the WS echo stay in place,
+          // so only this typed path reorders.
+          conversations: moveConversationToFront(prev.conversations, convId, {
             messages: [...c.messages, optimistic],
             lastMessage: text || "Archivo adjunto",
             timestamp: optimistic.timestamp,
+            lastMessageAt: new Date().toISOString(),
+            lastMessageDirection: "outbound",
             // Agent/manager replied → the lead's chat is now considered seen.
             unreadCount: 0,
             ...(reminder ? { activeReminder: reminder } : {}),
