@@ -402,6 +402,13 @@ export const api = {
         `/conversations/unread-count${query ? `?${query}` : ""}`
       );
     },
+    // True total of conversations assigned to a user (GHL's reported count,
+    // not a capped page) — drives the "Asignados a mí" badge.
+    assignedCount: (assignedTo: string) =>
+      request<{ count: number }>(
+        "GET",
+        `/conversations/assigned-count?assignedTo=${encodeURIComponent(assignedTo)}`
+      ),
     messages: (id: string, params?: { lastMessageId?: string; limit?: number }) => {
       const qs = new URLSearchParams();
       if (params?.lastMessageId) qs.set("lastMessageId", params.lastMessageId);

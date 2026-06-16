@@ -772,11 +772,9 @@ export default function Index() {
     queryKey: assignedCountQueryKey,
     queryFn: async () => {
       if (!myUserId) return { count: 0 };
-      const result = await api.conversations.list({
-        assignedTo: myUserId,
-        limit: 100,
-      });
-      return { count: result.conversations.length };
+      // Use GHL's reported total (not the length of a single page) so the badge
+      // shows EVERY lead assigned to me, uncapped.
+      return api.conversations.assignedCount(myUserId);
     },
     enabled: !!myUserId,
     staleTime: 60_000,

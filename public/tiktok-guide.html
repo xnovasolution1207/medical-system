@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guía detallada — TikTok Business Messaging API</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212a; --border:#2a2f3a;
+    --text:#e6e8ee; --muted:#9aa3b2; --accent:#7c5cff; --accent2:#22c55e;
+    --warn:#f59e0b; --code:#0b0d12;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:920px;margin:0 auto;padding:30px 20px 90px;}
+  h1{font-size:26px;margin:0 0 4px}
+  h2{font-size:19px;margin:36px 0 8px;padding-top:14px;border-top:1px solid var(--border)}
+  h3{font-size:15px;margin:18px 0 6px;color:#cdd3df}
+  p{margin:8px 0}
+  a{color:#9d86ff}
+  .sub{color:var(--muted);margin-top:0}
+  .step{display:inline-flex;align-items:center;justify-content:center;
+    width:24px;height:24px;border-radius:50%;background:var(--accent);
+    color:#fff;font-size:13px;font-weight:700;margin-right:8px;vertical-align:middle}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin:14px 0}
+  .warn{border-color:#5a4012;background:#251a08}
+  .warn .tag{color:var(--warn);font-weight:700}
+  .ok{border-color:#14431f;background:#0e1f12}
+  .ok .tag{color:var(--accent2);font-weight:700}
+  .muted{color:var(--muted)} .small{font-size:13px}
+  ul{margin:8px 0;padding-left:20px} li{margin:5px 0}
+  .copy{display:flex;align-items:stretch;margin:10px 0;border:1px solid var(--border);
+    border-radius:10px;overflow:hidden;background:var(--code)}
+  .copy .wrapv{flex:1;min-width:0;display:flex;flex-direction:column}
+  .copy .lbl{font:11px/1 ui-monospace,monospace;color:var(--muted);padding:8px 13px 0;text-transform:uppercase;letter-spacing:.5px}
+  .copy .val{padding:10px 13px;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:#dfe4ee;white-space:pre-wrap;word-break:break-word}
+  .copy .btn{flex:0 0 auto;border:0;border-left:1px solid var(--border);background:var(--panel2);
+    color:#c9cfdb;padding:0 16px;cursor:pointer;font-weight:600;font-size:13px;transition:.15s;white-space:nowrap}
+  .copy .btn:hover{background:#262b36;color:#fff}
+  .copy .btn.done{background:var(--accent2);color:#062b12}
+  code.inline{background:#000;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:13px}
+  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--border);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted);margin:2px 4px 2px 0}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  th,td{border:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:#cdd3df}
+  footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Guía detallada — TikTok Business Messaging API</h1>
+  <p class="sub">Cada valor / código tiene un botón <b>Copiar</b>. Reemplaza los marcadores <code class="inline">APP_ID</code>, <code class="inline">APP_SECRET</code>, <code class="inline">AUTH_CODE</code> por los tuyos.</p>
+
+  <!-- STEP 0 -->
+  <div class="card warn">
+    <p><span class="tag">⚠️ Paso 0 — Verifica la elegibilidad ANTES de empezar</span></p>
+    <p>La Business Messaging API <b>solo</b> cubre mensajes que llegan por <b>TikTok Messaging Ads</b> (el usuario toca “Mensaje” en tu anuncio) o por <b>TikTok Shop</b>. <b>NO</b> cubre los DM orgánicos a tu perfil (TikTok no expone esos por API, por privacidad).</p>
+    <ul>
+      <li>¿Tus leads empiezan desde un <b>anuncio</b> o <b>Shop</b>? → ✅ continúa.</li>
+      <li>¿Te escriben directo al <b>perfil</b> (orgánico)? → ❌ esta API no aplica. Usa texto desde la app + la interfaz de GHL para archivos.</li>
+    </ul>
+    <p class="small muted">La revisión tarda días/semanas — no la inicies si tus DM son orgánicos. Los DM que recibe GHL funcionan porque GHL es socio oficial de mensajería de TikTok; ese acceso no se puede replicar como tercero.</p>
+  </div>
+
+  <!-- PLATFORM -->
+  <h2>Las dos plataformas de TikTok (no las confundas)</h2>
+  <table>
+    <tr><th>Plataforma</th><th>Para qué</th><th>¿Mensajería?</th></tr>
+    <tr><td><code class="inline">developers.tiktok.com</code><br>(TikTok for Developers)</td><td>Login Kit, publicar videos, datos de perfil. Apps de consumidor.</td><td>❌ No</td></tr>
+    <tr><td><code class="inline">business-api.tiktok.com</code><br>(API for Business)</td><td>Anuncios, Marketing API y <b>Business Messaging</b>. Anunciantes.</td><td>✅ Sí (gated)</td></tr>
+  </table>
+  <p>Para mensajería usas <b>API for Business</b>. El SDK público es de anuncios; los endpoints de mensajería se entregan tras aprobar el producto Business Messaging.</p>
+
+  <!-- PREREQS -->
+  <h2>Requisitos previos</h2>
+  <div class="card"><ul>
+    <li>✅ Cuenta <b>TikTok Business</b> verificada (ya la tienes).</li>
+    <li>Perfil de empresa completo + documentos de registro del negocio.</li>
+    <li>Historial de inversión publicitaria ayuda (no siempre obligatorio).</li>
+    <li>URL de política de privacidad + redirect HTTPS público (ya tienes <code class="inline">api.coaccrm.com</code>).</li>
+  </ul></div>
+
+  <!-- STEP 1 -->
+  <h2><span class="step">1</span>Registrarte como desarrollador</h2>
+  <p>Inicia sesión con tu cuenta <b>TikTok Business</b> y regístrate en el portal:</p>
+  <div class="copy"><div class="wrapv"><div class="lbl">Portal</div><div class="val" data-copy>https://business-api.tiktok.com/portal</div></div><button class="btn">Copiar</button></div>
+
+  <!-- STEP 2 -->
+  <h2><span class="step">2</span>Crear la app</h2>
+  <p>En <b>My Apps → Create</b>. Plataforma: <span class="pill">Server-side / Web</span>. Pega estos valores:</p>
+  <div class="copy"><div class="wrapv"><div class="lbl">Nombre de la app</div><div class="val" data-copy>COAC CRM – TikTok Messaging</div></div><button class="btn">Copiar</button></div>
+  <div class="copy"><div class="wrapv"><div class="lbl">Descripción (específica — las vagas son la causa nº1 de rechazo)</div><div class="val" data-copy>COAC CRM is a customer-support inbox for our dental clinic. We integrate TikTok business messaging so our agents can receive messages from leads who contacted our business via TikTok ads / TikTok Shop and reply from a single CRM inbox. We only access messaging data for conversations the user initiated with our business, to provide timely customer service.</div></div><button class="btn">Copiar</button></div>
+  <div class="copy"><div class="wrapv"><div class="lbl">Redirect URI (OAuth callback)</div><div class="val" data-copy>https://api.coaccrm.com/oauth/tiktok/callback</div></div><button class="btn">Copiar</button></div>
+
+  <!-- STEP 3 -->
+  <h2><span class="step">3</span>Solicitar el producto / scope Business Messaging</h2>
+  <p>Agrega el producto <b>Business Messaging API</b> y solicita <b>solo</b> el/los scope(s) de mensajería. Pedir scopes de más retrasa o tumba la aprobación.</p>
+  <div class="copy"><div class="wrapv"><div class="lbl">Referencia de scopes</div><div class="val" data-copy>https://developers.tiktok.com/doc/scopes-overview</div></div><button class="btn">Copiar</button></div>
+
+  <!-- STEP 4 -->
+  <h2><span class="step">4</span>Enviar a revisión (días → semanas)</h2>
+  <p>TikTok revisa <b>manualmente</b>. Causas comunes de rechazo: descripción vaga, scopes de más, falta de verificación del negocio, o caso de uso fuera de ads/Shop.</p>
+
+  <!-- STEP 5 -->
+  <h2><span class="step">5</span>Credenciales</h2>
+  <p>Al aprobarse obtienes <b>App ID</b> y <b>App Secret</b>. Guárdalos seguros — me los pasarás.</p>
+
+  <!-- STEP 6 -->
+  <h2><span class="step">6</span>OAuth — obtener el access token (con código real)</h2>
+
+  <h3>6.1 — Enviar al usuario a autorizar</h3>
+  <p>Abre esta URL en el navegador (reemplaza <code class="inline">APP_ID</code> y <code class="inline">STATE</code>). TikTok pedirá permiso y redirigirá a tu callback con <code class="inline">?auth_code=...</code>:</p>
+  <div class="copy"><div class="wrapv"><div class="lbl">URL de autorización</div><div class="val" data-copy>https://business-api.tiktok.com/portal/auth?app_id=APP_ID&state=STATE&redirect_uri=https%3A%2F%2Fapi.coaccrm.com%2Foauth%2Ftiktok%2Fcallback</div></div><button class="btn">Copiar</button></div>
+
+  <h3>6.2 — Intercambiar el auth_code por tokens</h3>
+  <p>Tu servidor recibe <code class="inline">auth_code</code> en el callback y hace este POST:</p>
+  <div class="copy"><div class="wrapv"><div class="lbl">curl — token exchange</div><div class="val" data-copy>curl -X POST 'https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "app_id": "APP_ID",
+    "secret": "APP_SECRET",
+    "auth_code": "AUTH_CODE",
+    "grant_type": "authorization_code"
+  }'</div></div><button class="btn">Copiar</button></div>
+  <p class="small muted">Respuesta (forma): <code class="inline">{ "data": { "access_token": "...", "refresh_token": "...", "expires_in": ... } }</code>. El access token de mensajería suele durar ~24 h; el refresh token ~1 año (refrescas el access token a diario). La forma exacta la confirma el Education Hub tras aprobar.</p>
+
+  <h3>6.3 — Base URL y cómo se usa el token</h3>
+  <div class="copy"><div class="wrapv"><div class="lbl">Base API URL</div><div class="val" data-copy>https://business-api.tiktok.com/open_api/v1.3</div></div><button class="btn">Copiar</button></div>
+  <p class="small muted">El <code class="inline">access_token</code> se envía en la cabecera <code class="inline">Access-Token</code> (o como campo, según el endpoint).</p>
+
+  <!-- STEP 7 -->
+  <h2><span class="step">7</span>Enviar mensajes</h2>
+  <ul>
+    <li><b>Texto:</b> envío directo al endpoint de mensajería (lo entrega el Education Hub tras la aprobación).</li>
+    <li><b>Archivos:</b> primero <b>subes el media a TikTok</b>, luego envías un mensaje que referencia el media id.</li>
+    <li><b>Ventana de mensajería:</b> solo puedes responder dentro de cierto periodo tras el contacto del usuario.</li>
+  </ul>
+  <div class="copy"><div class="wrapv"><div class="lbl">Education Hub (specs de envío)</div><div class="val" data-copy>https://business-api.tiktok.com/portal/bm-api/education-hub</div></div><button class="btn">Copiar</button></div>
+  <div class="copy"><div class="wrapv"><div class="lbl">SDK oficial (referencia de auth)</div><div class="val" data-copy>https://github.com/tiktok/tiktok-business-api-sdk</div></div><button class="btn">Copiar</button></div>
+
+  <!-- WHAT TO SEND -->
+  <h2>✅ Qué enviarme cuando esté aprobado</h2>
+  <div class="card ok">
+    <p><span class="tag">Para integrar el envío/recepción en la app necesito:</span></p>
+    <ul>
+      <li><b>App ID</b> + <b>App Secret</b></li>
+      <li>El <b>access token</b> (o me dejas construir el callback OAuth para generarlo y refrescarlo solo)</li>
+      <li>Confirmación del <b>scope de mensajería</b> otorgado y el origen de los leads (ads / Shop)</li>
+    </ul>
+    <p class="small muted">Con eso: el agente envía texto/archivo → la app llama a la Business Messaging API → se entrega, y las respuestas vuelven al inbox.</p>
+  </div>
+
+  <footer>
+    Fuentes oficiales:
+    <a href="https://business-api.tiktok.com/portal" target="_blank">Portal API for Business</a> ·
+    <a href="https://business-api.tiktok.com/portal/bm-api/education-hub" target="_blank">Business Messaging Education Hub</a> ·
+    <a href="https://developers.tiktok.com/doc/scopes-overview" target="_blank">Scopes</a> ·
+    <a href="https://developers.tiktok.com/doc/oauth-user-access-token-management" target="_blank">OAuth / tokens</a> ·
+    <a href="https://github.com/tiktok/tiktok-business-api-sdk" target="_blank">SDK</a>
+  </footer>
+</div>
+
+<script>
+  document.querySelectorAll('.copy').forEach(function(row){
+    var btn = row.querySelector('.btn'), src = row.querySelector('[data-copy]');
+    if(!btn || !src) return;
+    btn.addEventListener('click', function(){
+      var text = src.textContent.trim();
+      function done(){ var o=btn.textContent; btn.textContent='¡Copiado!'; btn.classList.add('done');
+        setTimeout(function(){ btn.textContent=o; btn.classList.remove('done'); },1500); }
+      function fallback(){ var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(done).catch(fallback);
+      } else { fallback(); }
+    });
+  });
+</script>
+</body>
+</html>
