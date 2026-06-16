@@ -286,10 +286,12 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                               setDateRange(range);
                               if (range?.from) {
                                 if (range.to) {
-                                  onSelectTab(`tareas-${format(range.from, "dd MMM", { locale: es })} - ${format(range.to, "dd MMM", { locale: es })}`);
+                                  // ISO token so TaskList can compare actual calendar
+                                  // days (the display label is unreliable for this).
+                                  onSelectTab(`tareas-${format(range.from, "yyyy-MM-dd")}_${format(range.to, "yyyy-MM-dd")}`);
                                   onSelectView(null);
                                 } else {
-                                  onSelectTab(`tareas-${format(range.from, "dd MMM", { locale: es })}`);
+                                  onSelectTab(`tareas-${format(range.from, "yyyy-MM-dd")}`);
                                   onSelectView(null);
                                 }
                               }
@@ -487,10 +489,12 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                               setDateRange(range);
                               if (range?.from) {
                                 if (range.to) {
-                                  onSelectTab(`tareas-${format(range.from, "dd MMM", { locale: es })} - ${format(range.to, "dd MMM", { locale: es })}`);
+                                  // ISO token so TaskList can compare actual calendar
+                                  // days (the display label is unreliable for this).
+                                  onSelectTab(`tareas-${format(range.from, "yyyy-MM-dd")}_${format(range.to, "yyyy-MM-dd")}`);
                                   onSelectView(null);
                                 } else {
-                                  onSelectTab(`tareas-${format(range.from, "dd MMM", { locale: es })}`);
+                                  onSelectTab(`tareas-${format(range.from, "yyyy-MM-dd")}`);
                                   onSelectView(null);
                                 }
                               }

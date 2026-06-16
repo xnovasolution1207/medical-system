@@ -2018,6 +2018,27 @@ export function ChatMessageArea({
                         ? new Date(customDueDateTime).toISOString()
                         : newTaskDueDate;
 
+                    // Resolve the concrete ISO due instant so the optimistic
+                    // row is immediately filterable by date (mirrors the
+                    // backend's parseDueDate). The server echo replaces it
+                    // with GHL's authoritative dueAt shortly after.
+                    const dueAtOut = (() => {
+                      if (newTaskDueDate === "Personalizado") {
+                        return new Date(customDueDateTime).toISOString();
+                      }
+                      const d = new Date();
+                      if (newTaskDueDate === "Hoy") d.setHours(17, 0, 0, 0);
+                      else if (newTaskDueDate === "Mañana") {
+                        d.setDate(d.getDate() + 1);
+                        d.setHours(9, 0, 0, 0);
+                      } else if (newTaskDueDate.toLowerCase().includes("semana")) {
+                        d.setDate(d.getDate() + 7);
+                      } else {
+                        d.setDate(d.getDate() + 1);
+                      }
+                      return d.toISOString();
+                    })();
+
                     // Edit mode: patch the existing task via onUpdateTask
                     // and bail out before the optimistic-create branch.
                     if (editingTaskId && onUpdateTask) {
@@ -2047,6 +2068,7 @@ export function ChatMessageArea({
                     onAddTask({
                       title: newTaskTitle,
                       dueDate: dueDateOut,
+                      dueAt: dueAtOut,
                       assignee: {
                         id: assigneeUser?.id,
                         name: assigneeUser?.name ?? currentUser.name,

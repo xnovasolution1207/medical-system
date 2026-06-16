@@ -342,6 +342,9 @@ export type Task = {
   id: string;
   title: string;
   dueDate: string;
+  // Raw ISO due date from GHL. The task list filters by this (real date math)
+  // rather than the localized `dueDate` label, so the date filters are exact.
+  dueAt?: string;
   assignee: {
     // GHL user id of the assignee — sent to GHL as `assignedTo`. Optional
     // for backwards-compat / unassigned tasks; the name drives the label.

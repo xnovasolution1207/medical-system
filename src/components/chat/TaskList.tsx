@@ -21,6 +21,19 @@ interface TaskListProps {
 export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSelectConversation, activeConversationId, onOpenMobileNav }: TaskListProps) {
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
 
+  // Date filtering is done on the raw ISO due date (`dueAt`), compared as a
+  // Peru-local calendar day ("YYYY-MM-DD" sorts chronologically). The localized
+  // `dueDate` label ("Hoy, 03:00 PM", "30 may, ...") is display-only and is
+  // only used as a fallback for legacy rows that predate `dueAt`.
+  const PERU_TZ = "America/Lima";
+  const peruDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: PERU_TZ });
+  const todayStr = peruDay(new Date());
+  const dayOf = (t: Task): string | null => {
+    if (!t.dueAt) return null;
+    const d = new Date(t.dueAt);
+    return isNaN(d.getTime()) ? null : peruDay(d);
+  };
+
   const filteredTasks = tasks.filter(t => {
     // 1. Filter by user if selectedUsers is not empty
     if (selectedUsers.length > 0 && !selectedUsers.includes(t.assignee.name)) {
@@ -28,13 +41,37 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
     }
 
     // 2. Filter by date/status
-    if (filterType === "tareas-hoy") return t.dueDate.includes("Hoy") && t.status !== "completed";
-    if (filterType === "tareas-atrasado") return (t.dueDate.includes("Ayer") || t.dueDate.includes("Atrasado")) && t.status !== "completed";
-    if (filterType === "tareas-proximos") return (t.dueDate.includes("Mañana") || t.dueDate.includes("Próximos")) && t.status !== "completed";
     if (filterType === "tareas-realizadas") return t.status === "completed";
-    if (filterType.startsWith("tareas-") && !["tareas-hoy", "tareas-atrasado", "tareas-proximos", "tareas-realizadas", "tareas-personalizada"].includes(filterType)) {
-      const customDateStr = filterType.replace("tareas-", "");
-      return t.dueDate.toLowerCase().includes(customDateStr.toLowerCase());
+
+    const day = dayOf(t);
+
+    if (filterType === "tareas-hoy") {
+      if (t.status === "completed") return false;
+      return day ? day === todayStr : t.dueDate.includes("Hoy");
+    }
+    if (filterType === "tareas-atrasado") {
+      if (t.status === "completed") return false;
+      return day ? day < todayStr : (t.dueDate.includes("Ayer") || t.dueDate.includes("Atrasado"));
+    }
+    if (filterType === "tareas-proximos") {
+      if (t.status === "completed") return false;
+      return day ? day > todayStr : (t.dueDate.includes("Mañana") || t.dueDate.includes("Próximos"));
+    }
+
+    // Custom date / range from the calendar. New tokens are ISO:
+    //   "tareas-YYYY-MM-DD"            (single day)
+    //   "tareas-YYYY-MM-DD_YYYY-MM-DD" (range)
+    // Legacy tokens were a localized label ("tareas-16 jun"); fall back to a
+    // substring match so old bookmarked URLs still resolve.
+    if (filterType.startsWith("tareas-") && filterType !== "tareas-personalizada") {
+      const token = filterType.replace("tareas-", "");
+      const iso = token.match(/^(\d{4}-\d{2}-\d{2})(?:_(\d{4}-\d{2}-\d{2}))?$/);
+      if (iso) {
+        const from = iso[1];
+        const to = iso[2] ?? from;
+        return day ? day >= from && day <= to : false;
+      }
+      return t.dueDate.toLowerCase().includes(token.toLowerCase());
     }
     return true; // para "tareas-personalizada" o todos
   });
