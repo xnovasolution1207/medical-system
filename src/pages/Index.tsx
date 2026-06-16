@@ -2900,11 +2900,28 @@ export default function Index() {
             task.assignee.id && task.assignee.id !== "agent"
               ? task.assignee.id
               : undefined,
+          // Pass the contact name we already know (GHL's task response omits
+          // it) so the saved row + WS broadcast don't fall back to "Contacto".
+          contactName: task.contact?.name,
         })
         .then((saved) => {
           updateBootstrap((prev) => ({
             ...prev,
-            tasks: prev.tasks.map((t) => (t.id === optimisticId ? saved : t)),
+            // Reconcile the optimistic row with the server's. GHL's task-detail
+            // response doesn't carry the contact's name, so the backend falls
+            // back to the generic "Contacto"; keep the name/avatar we already
+            // have from the active conversation in that case.
+            tasks: prev.tasks.map((t) =>
+              t.id === optimisticId
+                ? {
+                    ...saved,
+                    contact:
+                      !saved.contact?.name || saved.contact.name === "Contacto"
+                        ? t.contact
+                        : saved.contact,
+                  }
+                : t
+            ),
           }));
         })
         .catch((err) => {
