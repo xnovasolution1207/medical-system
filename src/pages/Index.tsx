@@ -655,6 +655,36 @@ export default function Index() {
     };
   }, [activeMainTab]);
 
+  // The bootstrap only carries tasks for the first handful of contacts (it caps
+  // the fan-out to stay fast). That's far too few for the Tareas view and its
+  // date filters. When the user first opens a tasks tab, pull the full task
+  // list (GET /api/tasks aggregates every recent contact's tasks, with the raw
+  // `dueAt` the date filters compare against) and merge it into the cache —
+  // server rows win (they carry dueAt + the resolved assignee), local-only
+  // optimistic rows are preserved.
+  const inTasksSectionRef = useRef(false);
+  useEffect(() => {
+    const inTasks = activeMainTab.startsWith("tareas-");
+    // Refetch only when ENTERING the tasks section (not on every date-filter
+    // click within it), so fresh tasks load each visit without spamming the
+    // heavy aggregate endpoint as the user flips between date filters.
+    if (inTasks && !inTasksSectionRef.current) {
+      api.tasks
+        .list()
+        .then((serverTasks) => {
+          updateBootstrap((prev) => {
+            const byId = new Map(prev.tasks.map((t) => [t.id, t]));
+            for (const t of serverTasks) byId.set(t.id, t);
+            return { ...prev, tasks: Array.from(byId.values()) };
+          });
+        })
+        .catch((err) => {
+          console.warn("[tasks] full list fetch failed", err);
+        });
+    }
+    inTasksSectionRef.current = inTasks;
+  }, [activeMainTab, updateBootstrap]);
+
   // Live opportunities with enriched metadata overlaid — passed to the kanban
   // so filters see channel/direction/followers while WS updates still flow
   // through `opportunities`.

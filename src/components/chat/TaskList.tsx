@@ -28,10 +28,24 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
   const PERU_TZ = "America/Lima";
   const peruDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: PERU_TZ });
   const todayStr = peruDay(new Date());
+  // Shift a "YYYY-MM-DD" by N days (used for relative-label fallback).
+  const shiftYmd = (ymd: string, days: number): string => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    const x = new Date(Date.UTC(y, m - 1, d) + days * 86400000);
+    return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+  };
   const dayOf = (t: Task): string | null => {
-    if (!t.dueAt) return null;
-    const d = new Date(t.dueAt);
-    return isNaN(d.getTime()) ? null : peruDay(d);
+    if (t.dueAt) {
+      const d = new Date(t.dueAt);
+      if (!isNaN(d.getTime())) return peruDay(d);
+    }
+    // Fallback for rows that arrived without a raw ISO (older cached data):
+    // derive the day from the relative display label so filters still work.
+    const lbl = (t.dueDate || "").toLowerCase();
+    if (lbl.startsWith("hoy")) return todayStr;
+    if (lbl.startsWith("mañana") || lbl.startsWith("manana")) return shiftYmd(todayStr, 1);
+    if (lbl.startsWith("ayer")) return shiftYmd(todayStr, -1);
+    return null;
   };
 
   const filteredTasks = tasks.filter(t => {
