@@ -1105,7 +1105,12 @@ export function ChatSidebar({
               // created/moved, assignment changes) also use the "internal"
               // channel, so a brand-new lead would otherwise show the note
               // icon with no actual comment. Exclude them.
-              const hasInternalComments = conv.messages?.some(m => m.channel === "internal" && !m.systemEvent);
+              // Prefer the backend flag (`hasInternalComment`) so the icon shows
+              // without opening the lead to hydrate its messages; fall back to a
+              // local message scan once the conversation has been opened.
+              const hasInternalComments =
+                conv.hasInternalComment ||
+                conv.messages?.some((m) => m.channel === "internal" && !m.systemEvent);
               const hasPendingTasks = tasks.some(t => t.conversationId === conv.id && t.status === "pending");
               const hasScheduled = (conv.scheduledMessages?.length ?? 0) > 0;
               
