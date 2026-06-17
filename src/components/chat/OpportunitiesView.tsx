@@ -336,6 +336,9 @@ export function OpportunitiesView({
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [searchQuery, setSearchQuery] = useState("");
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
+  // Height (px) of the card being dragged — drives the size of the preview
+  // gap that opens at the drop position so it matches the incoming card.
+  const [draggedHeight, setDraggedHeight] = useState<number | null>(null);
   // Per-column infinite scroll: how many cards each stage column currently
   // renders. Columns can hold hundreds of opportunities (e.g. "New Lead"
   // with 467) — rendering them all at once is slow, so we render a page and
@@ -802,6 +805,37 @@ export function OpportunitiesView({
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedOppId(id);
     e.dataTransfer.effectAllowed = "move";
+    // GHL-style "lifted card" drag preview: the browser's default drag image is
+    // a flat snapshot, so we clone the card, give it a drop shadow + slight tilt
+    // and scale, render it off-screen, and hand it to setDragImage so the
+    // floating card looks picked-up while the original stays as a faded slot.
+    try {
+      const card = e.currentTarget as HTMLElement;
+      const rect = card.getBoundingClientRect();
+      setDraggedHeight(rect.height);
+      const ghost = card.cloneNode(true) as HTMLElement;
+      ghost.style.position = "fixed";
+      ghost.style.top = "-9999px";
+      ghost.style.left = "-9999px";
+      ghost.style.width = `${rect.width}px`;
+      ghost.style.margin = "0";
+      ghost.style.pointerEvents = "none";
+      ghost.style.transform = "rotate(2.5deg) scale(1.03)";
+      ghost.style.opacity = "0.97";
+      ghost.style.borderRadius = "8px";
+      ghost.style.boxShadow = "0 18px 45px -10px rgba(0,0,0,0.45)";
+      // The clone keeps the card's `bg-card` class, so its background renders
+      // correctly without an inline override.
+      document.body.appendChild(ghost);
+      const offsetX = Math.max(0, e.clientX - rect.left);
+      const offsetY = Math.max(0, e.clientY - rect.top);
+      e.dataTransfer.setDragImage(ghost, offsetX, offsetY);
+      // The browser snapshots the element synchronously, so it's safe to remove
+      // on the next tick.
+      window.setTimeout(() => ghost.remove(), 0);
+    } catch {
+      // setDragImage unsupported / clone failed — keep the default drag image.
+    }
   };
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -1323,9 +1357,43 @@ export function OpportunitiesView({
                           conv?.messages?.filter((m) => m.channel === "internal")
                             .length ?? 0;
                         const statusPill = STATUS_PILL[opp.status];
-                        return (
+                        // Preview gap: when the cursor is over this card, open a
+                        // dashed slot (sized to the dragged card) on the side
+                        // it would drop, smoothly pushing the rest of the column
+                        // down — GHL's "make room for the card" effect.
+                        const showGap =
+                          dragOverCard?.id === opp.id && draggedOppId !== opp.id;
+                        // The gap is itself a drop zone that PINS the current
+                        // target while the cursor is over it. Without this the
+                        // gap opening pushes the card off the cursor → the
+                        // card's dragleave fires → gap collapses → card returns
+                        // → reopens: the up/down flapping. Pinning breaks it.
+                        const makeGap = (pos: "before" | "after") => (
                           <div
-                            key={opp.id}
+                            aria-hidden
+                            className="opp-drop-gap rounded-md border-2 border-dashed border-primary/60 bg-primary/10"
+                            style={
+                              {
+                                "--gap-h": `${draggedHeight ?? 88}px`,
+                              } as React.CSSProperties
+                            }
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.dataTransfer.dropEffect = "move";
+                              setDragOverCard((prev) =>
+                                prev && prev.id === opp.id && prev.pos === pos
+                                  ? prev
+                                  : { id: opp.id, pos }
+                              );
+                            }}
+                            onDrop={(e) => handleCardDrop(e, opp, stageOppIds)}
+                          />
+                        );
+                        return (
+                          <React.Fragment key={opp.id}>
+                            {showGap && dragOverCard?.pos === "before" && makeGap("before")}
+                          <div
                             draggable
                             onDragStart={(e) => handleDragStart(e, opp.id)}
                             onDragEnd={() => {
@@ -1333,11 +1401,6 @@ export function OpportunitiesView({
                               setDragOverCard(null);
                             }}
                             onDragOver={(e) => handleCardDragOver(e, opp.id)}
-                            onDragLeave={() =>
-                              setDragOverCard((prev) =>
-                                prev?.id === opp.id ? null : prev
-                              )
-                            }
                             onDrop={(e) => handleCardDrop(e, opp, stageOppIds)}
                             onClick={() => {
                               if (canOpenChat) onOpenChat?.(opp.contactId);
@@ -1346,14 +1409,13 @@ export function OpportunitiesView({
                               "group bg-card border rounded-md p-3 shadow-sm hover:shadow-md transition-all active:cursor-grabbing relative",
                               canOpenChat ? "cursor-pointer" : "cursor-grab",
                               isSelected && "ring-2 ring-primary ring-offset-1",
-                              // Insertion indicator: a primary line on the
-                              // edge the dragged card would drop at.
-                              dragOverCard?.id === opp.id &&
-                                draggedOppId !== opp.id &&
-                                (dragOverCard.pos === "before"
-                                  ? "before:absolute before:-top-1 before:left-0 before:right-0 before:h-0.5 before:rounded-full before:bg-primary"
-                                  : "after:absolute after:-bottom-1 after:left-0 after:right-0 after:h-0.5 after:rounded-full after:bg-primary"),
-                              draggedOppId === opp.id && "opacity-50"
+                              // The drop position is shown by the preview gap
+                              // (gapEl) that opens at the insertion point.
+                              // Origin slot while dragging: a faded, dashed
+                              // placeholder so it reads as "this card is being
+                              // moved from here" (matches GHL's ghost slot).
+                              draggedOppId === opp.id &&
+                                "opacity-40 border-dashed bg-muted/40 shadow-none"
                             )}
                           >
                             <div className="flex items-start justify-between mb-1.5">
@@ -1485,6 +1547,8 @@ export function OpportunitiesView({
                               </div>
                             </div>
                           </div>
+                            {showGap && dragOverCard?.pos === "after" && makeGap("after")}
+                          </React.Fragment>
                         );
                       })}
                       {hasMoreInStage && (

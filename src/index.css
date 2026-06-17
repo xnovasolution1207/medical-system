@@ -125,3 +125,21 @@ All colors MUST be HSL.
     background: transparent;
   }
 }
+/* Opportunity kanban: the drop-preview gap grows its height in (driven by the
+   --gap-h custom property = the dragged card's height) so the cards below
+   slide down smoothly to make room, matching GHL's drag effect. */
+@keyframes oppGapGrow {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--gap-h, 88px);
+    opacity: 1;
+  }
+}
+.opp-drop-gap {
+  height: var(--gap-h, 88px);
+  overflow: hidden;
+  animation: oppGapGrow 160ms ease-out;
+}
