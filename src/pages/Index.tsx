@@ -1852,6 +1852,19 @@ export default function Index() {
         const idx = prev.conversations.findIndex((c) => c.id === convId);
         if (idx === -1) return prev;
         const c = prev.conversations[idx];
+        // Internal comments ("Comentarios Interno") are private notes, not
+        // messages to the lead — they must NOT reorder the list or change the
+        // lead's last-activity preview. Append the note in place and keep the
+        // conversation exactly where it is.
+        if (channel === "internal") {
+          return {
+            ...prev,
+            conversations: patchConversationInPlace(prev.conversations, convId, {
+              messages: [...c.messages, optimistic],
+              ...(reminder ? { activeReminder: reminder } : {}),
+            }),
+          };
+        }
         return {
           ...prev,
           // A message the agent TYPED directly moves the lead to the top of the
