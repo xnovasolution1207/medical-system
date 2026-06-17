@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Search,
   Filter,
@@ -336,6 +336,21 @@ export function OpportunitiesView({
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [searchQuery, setSearchQuery] = useState("");
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
+  // Per-column infinite scroll: how many cards each stage column currently
+  // renders. Columns can hold hundreds of opportunities (e.g. "New Lead"
+  // with 467) — rendering them all at once is slow, so we render a page and
+  // grow the count as the operator scrolls a column near its bottom. Keyed by
+  // stageId; missing → STAGE_PAGE_SIZE. Counts only ever grow, and a too-big
+  // count is harmless (the slice is clamped to the column's length).
+  const STAGE_PAGE_SIZE = 20;
+  const [visibleByStage, setVisibleByStage] = useState<Record<string, number>>({});
+  const showMoreInStage = useCallback((stageId: string, total: number) => {
+    setVisibleByStage((prev) => {
+      const current = prev[stageId] ?? STAGE_PAGE_SIZE;
+      if (current >= total) return prev;
+      return { ...prev, [stageId]: Math.min(total, current + STAGE_PAGE_SIZE) };
+    });
+  }, []);
   // Manual within-column ordering. GHL exposes no arbitrary opportunity-
   // order API, so card reordering is a local override: stageId → ordered
   // opp ids. Applied on top of the active sort (cards present here win;
@@ -1161,6 +1176,11 @@ export function OpportunitiesView({
                   filteredOpps.filter((o) => o.stageId === stage.id),
                   stage.id
                 );
+                // Infinite scroll: render only the first N cards; more reveal
+                // as the column is scrolled near its bottom (see onScroll).
+                const visibleCount = visibleByStage[stage.id] ?? STAGE_PAGE_SIZE;
+                const visibleOpps = stageOpps.slice(0, visibleCount);
+                const hasMoreInStage = stageOpps.length > visibleOpps.length;
                 // The column's current on-screen order — passed to each
                 // card's drop handler so reordering is computed from what
                 // the operator actually sees.
@@ -1260,8 +1280,18 @@ export function OpportunitiesView({
                         </div>
                       </div>
                     </div>
-                    <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-                      {stageOpps.map((opp) => {
+                    <div
+                      className="flex-1 p-2 space-y-2 overflow-y-auto"
+                      onScroll={(e) => {
+                        if (!hasMoreInStage) return;
+                        const el = e.currentTarget;
+                        // Within ~300px of the bottom → reveal the next page.
+                        if (el.scrollHeight - el.scrollTop - el.clientHeight < 300) {
+                          showMoreInStage(stage.id, stageOpps.length);
+                        }
+                      }}
+                    >
+                      {visibleOpps.map((opp) => {
                         const isSelected = selectedOppIds.has(opp.id);
                         const canOpenChat = Boolean(onOpenChat && opp.contactId);
                         // Join the linked conversation so the card can show
@@ -1457,6 +1487,15 @@ export function OpportunitiesView({
                           </div>
                         );
                       })}
+                      {hasMoreInStage && (
+                        <button
+                          type="button"
+                          onClick={() => showMoreInStage(stage.id, stageOpps.length)}
+                          className="w-full py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                        >
+                          Mostrar más ({stageOpps.length - visibleOpps.length})
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
