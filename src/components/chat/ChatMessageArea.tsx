@@ -2039,6 +2039,22 @@ export function ChatMessageArea({
                       return d.toISOString();
                     })();
 
+                    // Friendly label for the optimistic row's display. For a
+                    // custom date, format it (Peru) instead of showing the raw
+                    // ISO; presets already read well. The server echo replaces
+                    // this with GHL's canonical label moments later.
+                    const dueLabel =
+                      newTaskDueDate === "Personalizado"
+                        ? new Date(customDueDateTime).toLocaleString("es-ES", {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: true,
+                            timeZone: "America/Lima",
+                          })
+                        : newTaskDueDate;
+
                     // Edit mode: patch the existing task via onUpdateTask
                     // and bail out before the optimistic-create branch.
                     if (editingTaskId && onUpdateTask) {
@@ -2067,7 +2083,7 @@ export function ChatMessageArea({
                         : rosterUser;
                     onAddTask({
                       title: newTaskTitle,
-                      dueDate: dueDateOut,
+                      dueDate: dueLabel,
                       dueAt: dueAtOut,
                       assignee: {
                         id: assigneeUser?.id,

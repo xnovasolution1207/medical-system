@@ -1160,28 +1160,19 @@ export default function Index() {
         });
       } else if (event.type === "task.created") {
         updateBootstrap((prev) => {
-          // Already present by id — POST .then probably ran first. No-op.
-          if (prev.tasks.some((t) => t.id === event.task.id)) return prev;
-
-          // Otherwise look for an optimistic row from `handleAddTask` that's
-          // still carrying its temp id. Without this branch the WS broadcast
-          // races ahead of the POST response: the optimistic stays in state,
-          // the WS event appends a second row with the real id, and then the
-          // POST .then maps the optimistic into a *third* row with the same
-          // real id — two visible duplicates that React can't key.
-          const optimisticIdx = prev.tasks.findIndex(
-            (t) =>
-              t.id.startsWith("t-tmp-") &&
-              t.conversationId === event.task.conversationId &&
-              t.title === event.task.title
-          );
-          if (optimisticIdx !== -1) {
-            const next = prev.tasks.slice();
-            next[optimisticIdx] = event.task;
-            return { ...prev, tasks: next };
-          }
-
-          return { ...prev, tasks: [event.task, ...prev.tasks] };
+          // Drop the optimistic row this broadcast reconciles, matched by the
+          // clientId the backend echoed back (title/date are not unique). This
+          // prevents both the duplicate (optimistic + real) and the disappear
+          // (an unrelated same-titled row being removed).
+          const cid = event.task.clientId;
+          let tasks = cid
+            ? prev.tasks.filter((t) => !(t.id.startsWith("t-tmp-") && t.clientId === cid))
+            : prev.tasks;
+          // Upsert by real id so we never end up with two rows for one task.
+          tasks = tasks.some((t) => t.id === event.task.id)
+            ? tasks.map((t) => (t.id === event.task.id ? event.task : t))
+            : [event.task, ...tasks];
+          return { ...prev, tasks };
         });
       } else if (event.type === "task.updated") {
         updateBootstrap((prev) => ({
@@ -1313,28 +1304,15 @@ export default function Index() {
             }
           }
 
-          // 3. Upsert tasks (add new, update existing, never remove).
-          //
-          // Before the upsert, drop any still-pending optimistic rows
-          // (`t-tmp-…` ids inserted by handleAddTask) that the incoming
-          // payload is about to provide with a real GHL id. Without
-          // this, creating a task races: the SPA's POST .then or the
-          // direct `task.created` WS event reconciles the optimistic
-          // → real row, but GHL also fires its own `TaskCreate`
-          // webhook which bounces back through here as a fresh
-          // lead.updated. By that point the optimistic may still be in
-          // state (if lead.updated arrives before .then), and a naive
-          // upsert-by-id would leave both rows visible as duplicates.
-          const incomingMatchKeys = new Set<string>();
-          for (const t of event.lead.tasks) {
-            incomingMatchKeys.add(`${t.conversationId}|${t.title}`);
-          }
-          const dedupedPrev = prev.tasks.filter(
-            (t) =>
-              !t.id.startsWith("t-tmp-") ||
-              !incomingMatchKeys.has(`${t.conversationId}|${t.title}`)
-          );
-          const taskMap = new Map(dedupedPrev.map((t) => [t.id, t]));
+          // 3. Upsert tasks by real GHL id (add new, update existing, never
+          //    remove). We do NOT touch optimistic (`t-tmp-…`) rows here — they
+          //    are owned by the create flow and reconciled precisely via their
+          //    clientId in the POST .then / `task.created` handler. (Previously
+          //    this block removed optimistic rows by matching title, which both
+          //    wiped freshly-created same-titled tasks and, when too strict,
+          //    left duplicates. Reconciliation-by-clientId makes that
+          //    heuristic unnecessary.)
+          const taskMap = new Map(prev.tasks.map((t) => [t.id, t]));
           for (const t of event.lead.tasks) taskMap.set(t.id, t);
 
           return { ...prev, conversations, tasks: Array.from(taskMap.values()) };
@@ -2884,14 +2862,43 @@ export default function Index() {
   const handleAddTask = useCallback(
     (task: Omit<Task, "id">) => {
       const optimisticId = `t-tmp-${Date.now()}`;
-      const optimistic: Task = { ...task, id: optimisticId };
+      // clientId travels to the backend and comes back on the create response +
+      // WS broadcast, so we reconcile the optimistic row to the real one by an
+      // exact key instead of title/date (which collide across identical tasks).
+      const optimistic: Task = { ...task, id: optimisticId, clientId: optimisticId };
       updateBootstrap((prev) => ({ ...prev, tasks: [optimistic, ...prev.tasks] }));
+
+      // If the user is viewing the task list, jump to the date filter that
+      // actually shows the new task. Otherwise a future-dated task created
+      // while the "Hoy" filter is active looks like it vanished — it's just
+      // filtered out. (No-op when not in the tasks section, e.g. creating
+      // from a conversation view, so we don't yank the user away.)
+      if (activeMainTab.startsWith("tareas-") && task.dueAt) {
+        const peruDay = (d: Date) =>
+          d.toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+        const due = new Date(task.dueAt);
+        if (!Number.isNaN(due.getTime())) {
+          const today = peruDay(new Date());
+          const day = peruDay(due);
+          const target =
+            day < today
+              ? "tareas-atrasado"
+              : day > today
+                ? "tareas-proximos"
+                : "tareas-hoy";
+          if (activeMainTab !== target) setActiveMainTab(target);
+        }
+      }
+
       if (!task.conversationId) return;
       api.tasks
         .create({
           conversationId: task.conversationId,
+          // Send the raw ISO instant when we have it — `task.dueDate` is now a
+          // display label (e.g. "30 jun, 02:43 a. m.") that the backend's
+          // parseDueDate can't read; the ISO is unambiguous.
+          dueDate: task.dueAt ?? task.dueDate,
           title: task.title,
-          dueDate: task.dueDate,
           // GHL user id picked in the "Asignado a" dropdown. GHL assigns the
           // task to this user; omitted (unassigned) when no id resolved. Guard
           // against the "agent" dedup sentinel — it is NOT a valid GHL user id
@@ -2903,26 +2910,35 @@ export default function Index() {
           // Pass the contact name we already know (GHL's task response omits
           // it) so the saved row + WS broadcast don't fall back to "Contacto".
           contactName: task.contact?.name,
+          clientId: optimisticId,
         })
         .then((saved) => {
-          updateBootstrap((prev) => ({
-            ...prev,
-            // Reconcile the optimistic row with the server's. GHL's task-detail
-            // response doesn't carry the contact's name, so the backend falls
-            // back to the generic "Contacto"; keep the name/avatar we already
-            // have from the active conversation in that case.
-            tasks: prev.tasks.map((t) =>
-              t.id === optimisticId
-                ? {
-                    ...saved,
-                    contact:
-                      !saved.contact?.name || saved.contact.name === "Contacto"
-                        ? t.contact
-                        : saved.contact,
-                  }
-                : t
-            ),
-          }));
+          updateBootstrap((prev) => {
+            const optimisticRow = prev.tasks.find((t) => t.id === optimisticId);
+            // Merge: GHL's create response can drop the contact name (→ generic
+            // "Contacto") and the due date, so fall back to the optimistic
+            // values we already have for those.
+            const savedDueValid =
+              saved.dueAt && !Number.isNaN(Date.parse(saved.dueAt));
+            const merged: Task = {
+              ...saved,
+              contact:
+                (!saved.contact?.name || saved.contact.name === "Contacto") &&
+                optimisticRow
+                  ? optimisticRow.contact
+                  : saved.contact,
+              dueAt: savedDueValid ? saved.dueAt : optimisticRow?.dueAt,
+              dueDate: savedDueValid ? saved.dueDate : optimisticRow?.dueDate ?? saved.dueDate,
+            };
+            // If the real row already arrived via WS (task.created/lead.updated),
+            // just drop the optimistic — converting it would leave two rows with
+            // the same id. Otherwise convert the optimistic row in place.
+            const realAlreadyPresent = prev.tasks.some((t) => t.id === saved.id);
+            const tasks = realAlreadyPresent
+              ? prev.tasks.filter((t) => t.id !== optimisticId)
+              : prev.tasks.map((t) => (t.id === optimisticId ? merged : t));
+            return { ...prev, tasks };
+          });
         })
         .catch((err) => {
           console.error("create task failed", err);
@@ -2937,7 +2953,7 @@ export default function Index() {
           });
         });
     },
-    [toast, updateBootstrap]
+    [activeMainTab, setActiveMainTab, toast, updateBootstrap]
   );
 
   // Edit an existing task in place. Mirrors handleAddTask's optimistic

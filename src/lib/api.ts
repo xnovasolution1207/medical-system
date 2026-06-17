@@ -760,6 +760,9 @@ export const api = {
       // conversation. GHL's task response omits it, so we pass it through to
       // avoid the task card falling back to a generic "Contacto".
       contactName?: string;
+      // Optimistic-row id; the backend echoes it so the client reconciles the
+      // optimistic task to the real one precisely (avoids duplicate/disappear).
+      clientId?: string;
     }) => request<Task>("POST", "/tasks", payload),
     setCompleted: (contactId: string, taskId: string, completed: boolean) =>
       request<Task>("PATCH", `/tasks/${contactId}/${taskId}`, { completed }),

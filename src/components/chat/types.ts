@@ -340,6 +340,10 @@ export type SavedView = {
 
 export type Task = {
   id: string;
+  // Optimistic-row id, echoed by the backend on create so the SPA can reconcile
+  // the optimistic task to the real one without relying on title/date (which are
+  // not unique — a contact may have several identical tasks).
+  clientId?: string;
   title: string;
   dueDate: string;
   // Raw ISO due date from GHL. The task list filters by this (real date math)

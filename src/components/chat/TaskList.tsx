@@ -68,8 +68,12 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
       return day ? day < todayStr : (t.dueDate.includes("Ayer") || t.dueDate.includes("Atrasado"));
     }
     if (filterType === "tareas-proximos") {
+      // "Próximos" = upcoming pending work: today and onward (not overdue,
+      // not done). Includes today so tasks due "Hoy" still surface here.
       if (t.status === "completed") return false;
-      return day ? day > todayStr : (t.dueDate.includes("Mañana") || t.dueDate.includes("Próximos"));
+      return day
+        ? day >= todayStr
+        : (t.dueDate.includes("Hoy") || t.dueDate.includes("Mañana") || t.dueDate.includes("Próximos"));
     }
 
     // Custom date / range from the calendar. New tokens are ISO:
