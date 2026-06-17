@@ -1000,6 +1000,11 @@ export default function Index() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
+  // Active "Filtrar por fecha" window (epoch ms), reported up from ChatSidebar.
+  // When set, the server-search path below adds startDate/endDate so the date
+  // filter spans the WHOLE GHL location with cursor-based infinite scroll.
+  const [dateFilterRange, setDateFilterRange] = useState<{ from: number; to: number } | null>(null);
+  const dateFilterActive = dateFilterRange !== null;
   // When the user clicks the "No leídos" tab in ChatSidebar we fetch the
   // GHL-wide unread set (status=unread) and store it here. This lets the
   // sidebar surface every unread lead — not just the ones that happen to
@@ -1567,7 +1572,7 @@ export default function Index() {
       advancedFilters,
       advancedLogic
     );
-    if (!q && !hasServerParam) {
+    if (!q && !hasServerParam && !dateFilterActive) {
       setSearchResults(null);
       setSearchNextCursor(null);
       setIsSearching(false);
@@ -1578,10 +1583,10 @@ export default function Index() {
     const handle = window.setTimeout(() => {
       api.conversations
         .list({
-          // 100 (GHL's per-page max) so an active filter/search surfaces far
-          // more matches across the whole location in one shot, instead of
-          // only the first 25 (which forced manual load-more to "filter more").
-          limit: 100,
+          // 25 per page — matches the rest of the app's pagination. The cursor
+          // (nextCursor) drives infinite scroll, so the full match set still
+          // loads as the user scrolls, just 25 at a time.
+          limit: 25,
           ...(q ? { query: q } : {}),
           ...(assignedFilterActive && myUserId
             ? { assignedTo: myUserId }
@@ -1590,6 +1595,9 @@ export default function Index() {
             ? { followers: myUserId }
             : {}),
           ...(unreadFilterActive ? { status: "unread" } : {}),
+          ...(dateFilterRange
+            ? { startDate: dateFilterRange.from, endDate: dateFilterRange.to }
+            : {}),
           ...filterParams,
         })
         .then((result) => {
@@ -1619,6 +1627,7 @@ export default function Index() {
     assignedFilterActive,
     followedFilterActive,
     unreadFilterActive,
+    dateFilterRange,
     myUserId,
   ]);
 
@@ -1629,7 +1638,9 @@ export default function Index() {
   // blank list while the user was still picking a value, which the previous
   // implementation suffered from.
   const isSearchActive =
-    searchQuery.trim().length > 0 || advancedFilterServerInfo.hasServerParam;
+    searchQuery.trim().length > 0 ||
+    advancedFilterServerInfo.hasServerParam ||
+    dateFilterActive;
 
   // The "No leídos" list is derived locally (see `unreadConversations`) — we
   // no longer fetch GHL's status=unread search, which is unreliable for this
@@ -2302,6 +2313,11 @@ export default function Index() {
         // them while search/filter is active — otherwise we'd narrow
         // tab-only pagination by stale filter values.
         ...(isSearchActive ? filterParams : {}),
+        // Date-range window rides on every page so infinite scroll stays
+        // inside the selected range.
+        ...(dateFilterRange
+          ? { startDate: dateFilterRange.from, endDate: dateFilterRange.to }
+          : {}),
       });
       // Anti-flap guard: cursor pagination keys off `lastMessageDate`, and
       // the tail of the list can have several conversations sharing the
@@ -3406,6 +3422,7 @@ export default function Index() {
               isLoadingList={isLoadingConversationList}
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
+              onDateRangeChange={setDateFilterRange}
               isSearching={isSearching}
               onOpenMobileNav={() => {
                 setIsChatListSheetOpen(false);
@@ -3481,6 +3498,7 @@ export default function Index() {
               isLoadingList={isLoadingConversationList}
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
+              onDateRangeChange={setDateFilterRange}
               isSearching={isSearching}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
               onCreateContact={handleCreateContact}

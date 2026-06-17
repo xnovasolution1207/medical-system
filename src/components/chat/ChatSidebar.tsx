@@ -84,6 +84,10 @@ interface ChatSidebarProps {
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   isSearching?: boolean;
+  // Reports the active "Filtrar por fecha" window (epoch ms) up to Index so it
+  // can fetch the WHOLE GHL location for that range with cursor pagination,
+  // instead of only narrowing the locally-loaded page. null = no date filter.
+  onDateRangeChange?: (range: { from: number; to: number } | null) => void;
   // May be async — the parent kicks off an HTTP delete + backfill chain.
   // We await it so the dialog stays open ("Eliminando…") until the work
   // finishes.
@@ -166,6 +170,7 @@ export function ChatSidebar({
   isLoadingList = false,
   searchValue,
   onSearchChange,
+  onDateRangeChange,
   isSearching = false,
   myUserId,
   onDeleteConversation,
@@ -502,6 +507,13 @@ export function ChatSidebar({
     }
     return null;
   }, [dateFilter, dateRange]);
+
+  // Report the active date window up to Index so it fetches the whole GHL
+  // location for that range (with infinite scroll), not just the loaded page.
+  // The local filter below stays as a same-bounds safety net.
+  React.useEffect(() => {
+    onDateRangeChange?.(dateFilterRange);
+  }, [dateFilterRange, onDateRangeChange]);
 
   const filteredConversations = conversations.filter((conv) => {
     if (activeTab === "recordatorios" && !conv.activeReminder) {

@@ -365,10 +365,17 @@ export const api = {
       // resolves the stage's contacts via opportunity search and returns their
       // conversations, so the funnel filter spans the whole location.
       stage?: string;
+      // Date-range filter (epoch ms). Backend pages from `endDate` down to
+      // `startDate` by last_message_date, so the range spans the whole location
+      // with cursor-based infinite scroll.
+      startDate?: number;
+      endDate?: number;
     }) => {
       const qs = new URLSearchParams();
       if (params?.limit != null) qs.set("limit", String(params.limit));
       if (params?.startAfterDate != null) qs.set("startAfterDate", String(params.startAfterDate));
+      if (params?.startDate != null) qs.set("startDate", String(params.startDate));
+      if (params?.endDate != null) qs.set("endDate", String(params.endDate));
       if (params?.query) qs.set("query", params.query);
       if (params?.assignedTo) qs.set("assignedTo", params.assignedTo);
       if (params?.followers) qs.set("followers", params.followers);
