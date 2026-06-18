@@ -59,16 +59,26 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
   const [dateRange, setDateRange] = useState<any>();
 
   useEffect(() => {
-    setIsDarkMode(document.documentElement.classList.contains("dark"));
+    // Restore the saved theme on load so dark mode survives a reload. Falls
+    // back to whatever class is already on <html> (set by the no-flash inline
+    // script in index.html) when nothing is stored yet.
+    const saved = localStorage.getItem("theme");
+    const dark = saved
+      ? saved === "dark"
+      : document.documentElement.classList.contains("dark");
+    setIsDarkMode(dark);
+    document.documentElement.classList.toggle("dark", dark);
   }, []);
 
   const toggleTheme = () => {
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
-    if (newTheme) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    document.documentElement.classList.toggle("dark", newTheme);
+    // Persist so the choice survives a page reload.
+    try {
+      localStorage.setItem("theme", newTheme ? "dark" : "light");
+    } catch {
+      /* localStorage unavailable (private mode) — theme just won't persist */
     }
   };
 

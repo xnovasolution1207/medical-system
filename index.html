@@ -9,6 +9,16 @@
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+    <!-- Apply the saved theme before first paint so a reload in dark mode
+         doesn't flash light then switch. Mirrors the toggle in MainSidebar. -->
+    <script>
+      try {
+        if (localStorage.getItem("theme") === "dark") {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {}
+    </script>
+
     <meta property="og:title" content="COAC - Crm" />
     <meta property="og:description" content="A beautiful, real-time chat interface for seamless team communication and collaboration." />
     <meta property="og:type" content="website" />
