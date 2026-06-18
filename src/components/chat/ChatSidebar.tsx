@@ -1100,7 +1100,11 @@ export function ChatSidebar({
             </div>
           ) : (
             filteredConversations.map((conv) => {
-              const hasMentions = conv.messages?.some(m => m.mentions && m.mentions.length > 0);
+              // Prefer the backend flag so the @ icon shows without opening the
+              // lead; fall back to a local message scan once it's been opened.
+              const hasMentions =
+                conv.hasMention ||
+                conv.messages?.some((m) => m.mentions && m.mentions.length > 0);
               // Real internal notes only — system events (opportunity
               // created/moved, assignment changes) also use the "internal"
               // channel, so a brand-new lead would otherwise show the note

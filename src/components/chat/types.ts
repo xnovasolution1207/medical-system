@@ -276,6 +276,9 @@ export type Conversation = {
   // Conversation has internal comments (GHL contact notes). Set by the backend
   // so the sidebar's note icon shows without opening the conversation.
   hasInternalComment?: boolean;
+  // Conversation has an @mention. Set by the backend so the sidebar's @ icon
+  // shows without opening the conversation.
+  hasMention?: boolean;
   scheduledMessages?: ScheduledMessage[];
   // Stack of pinned messages ("cintillos superiores"). Local-only —
   // not modelled by GHL. Each entry renders as its own banner above
