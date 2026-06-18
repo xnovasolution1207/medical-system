@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { CheckCircle2, Circle, Clock, User as UserIcon, Edit2, LayoutList, AlignJustify, List, Menu } from "lucide-react";
@@ -20,6 +20,15 @@ interface TaskListProps {
 
 export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSelectConversation, activeConversationId, onOpenMobileNav }: TaskListProps) {
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
+  // Infinite scroll: render 25 tasks at a time and reveal 25 more as the list is
+  // scrolled near its bottom, so a large filtered set stays fast to render.
+  const TASK_PAGE_SIZE = 25;
+  const [visibleCount, setVisibleCount] = useState(TASK_PAGE_SIZE);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Reset to the first page whenever the active filter/user scope changes.
+  useEffect(() => {
+    setVisibleCount(TASK_PAGE_SIZE);
+  }, [filterType, selectedUsers.join("|")]);
 
   // Date filtering is done on the raw ISO due date (`dueAt`), compared as a
   // Peru-local calendar day ("YYYY-MM-DD" sorts chronologically). The localized
@@ -94,6 +103,25 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
     return true; // para "tareas-personalizada" o todos
   });
 
+  const visibleTasks = filteredTasks.slice(0, visibleCount);
+  const hasMore = filteredTasks.length > visibleTasks.length;
+
+  // Reveal the next page when the (Radix) scroll viewport nears its bottom.
+  useEffect(() => {
+    const root = scrollRef.current;
+    const vp = root?.querySelector(
+      "[data-radix-scroll-area-viewport]"
+    ) as HTMLElement | null;
+    if (!vp) return;
+    const onScroll = () => {
+      if (vp.scrollHeight - vp.scrollTop - vp.clientHeight < 300) {
+        setVisibleCount((c) => (c < filteredTasks.length ? c + TASK_PAGE_SIZE : c));
+      }
+    };
+    vp.addEventListener("scroll", onScroll, { passive: true });
+    return () => vp.removeEventListener("scroll", onScroll);
+  }, [filteredTasks.length]);
+
   return (
     <TooltipProvider>
       <div className="flex h-full w-full flex-col border-r bg-card text-card-foreground md:w-72 lg:w-80 xl:w-[350px]">
@@ -147,7 +175,7 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
           </div>
         </div>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1" ref={scrollRef}>
           <div className="flex flex-col gap-0.5 p-2">
             {filteredTasks.length === 0 ? (
               <div className="text-center p-8 text-sm text-muted-foreground flex flex-col items-center gap-2">
@@ -155,7 +183,7 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
                 <p>No hay tareas para esta vista</p>
               </div>
             ) : (
-              filteredTasks.map((task) => (
+              visibleTasks.map((task) => (
                 <div
                   key={task.id}
                   onClick={() => onSelectConversation(task.conversationId)}
@@ -279,6 +307,19 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
                   </div>
                 </div>
               ))
+            )}
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() =>
+                  setVisibleCount((c) =>
+                    Math.min(filteredTasks.length, c + TASK_PAGE_SIZE)
+                  )
+                }
+                className="w-full py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Mostrar más ({filteredTasks.length - visibleTasks.length})
+              </button>
             )}
           </div>
         </ScrollArea>

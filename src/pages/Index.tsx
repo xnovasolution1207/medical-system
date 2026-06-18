@@ -927,6 +927,18 @@ export default function Index() {
           // modal can show the right rail + an empty chat area.
           setOpportunityChatFallback(bundle.contact);
         }
+        // Merge the contact's tasks from the bundle into global state. The
+        // bootstrap only loads tasks for the most-recent contacts, so a task
+        // created in this opportunity preview otherwise "vanishes" on refresh
+        // (it's saved in GHL but never re-loaded). This re-hydrates them on
+        // every modal open. Dedupe by id; optimistic/local rows are preserved.
+        if (Array.isArray(bundle.tasks) && bundle.tasks.length > 0) {
+          updateBootstrap((prev) => {
+            const byId = new Map(prev.tasks.map((t) => [t.id, t]));
+            for (const t of bundle.tasks) byId.set(t.id, t);
+            return { ...prev, tasks: Array.from(byId.values()) };
+          });
+        }
       })
       .catch((err) => {
         if (cancelled) return;
