@@ -889,10 +889,21 @@ export default function Index() {
               },
             };
             if (idx === -1) {
-              return {
-                ...prev,
-                conversations: [enrichedConv, ...prev.conversations],
-              };
+              // Insert in chronological position (the list is ordered by
+              // last-message time, newest first) instead of prepending —
+              // otherwise opening an opportunity preview jumps that lead to the
+              // TOP of the Lead list, which the user doesn't want.
+              const incomingTs = enrichedConv.lastMessageAt
+                ? Date.parse(enrichedConv.lastMessageAt)
+                : 0;
+              const list = prev.conversations.slice();
+              let insertAt = list.findIndex((c) => {
+                const ts = c.lastMessageAt ? Date.parse(c.lastMessageAt) : 0;
+                return ts < incomingTs;
+              });
+              if (insertAt === -1) insertAt = list.length;
+              list.splice(insertAt, 0, enrichedConv);
+              return { ...prev, conversations: list };
             }
             const next = prev.conversations.slice();
             // Replace the conversation outright so the modal sees the
