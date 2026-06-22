@@ -646,6 +646,23 @@ export default function Index() {
           });
         }
         setOppEnrichById(map);
+        // The bootstrap now loads only one page of opportunities (to keep it
+        // fast); the kanban needs the WHOLE set. Merge the lazily-fetched full
+        // list into state — add any opportunities the bootstrap didn't have,
+        // and keep existing rows (which may carry live WS stage moves).
+        updateBootstrap((prev) => {
+          const byId = new Map(prev.opportunities.map((o) => [o.id, o]));
+          let added = 0;
+          for (const o of opps) {
+            if (!byId.has(o.id)) {
+              byId.set(o.id, o);
+              added++;
+            }
+          }
+          return added > 0
+            ? { ...prev, opportunities: Array.from(byId.values()) }
+            : prev;
+        });
       })
       .catch((err) => {
         console.warn("[opportunities] enrich fetch failed", err);
