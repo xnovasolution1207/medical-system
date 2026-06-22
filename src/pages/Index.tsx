@@ -626,8 +626,15 @@ export default function Index() {
   // tipo / ANS / seguidor) have data for every card. We keep only the
   // enriched fields, keyed by id, and overlay them onto the live
   // `opportunities` below — so WS stage moves still apply while filters work.
+  const oppsPrefetchedRef = useRef(false);
   useEffect(() => {
-    if (activeMainTab !== "oportunidades") return;
+    // Prefetch the full opportunity set in the BACKGROUND as soon as the
+    // bootstrap has loaded — so the kanban is ready instantly when opened,
+    // without the (heavy) all-opportunities walk blocking the initial load.
+    // Runs once; live updates afterward arrive via the opportunity.updated WS.
+    if (!data) return;
+    if (oppsPrefetchedRef.current) return;
+    oppsPrefetchedRef.current = true;
     let cancelled = false;
     api.opportunities
       .list({ enrich: true })
@@ -670,7 +677,11 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
-  }, [activeMainTab]);
+    // Depend on whether the bootstrap has loaded (false→true ONCE), NOT on
+    // `data` itself — `data` changes on every WS update / cache mutation, which
+    // would re-run this effect and its cleanup would cancel the in-flight
+    // opportunities fetch (discarding the result → empty kanban).
+  }, [Boolean(data)]);
 
   // The bootstrap only carries tasks for the first handful of contacts (it caps
   // the fan-out to stay fast). That's far too few for the Tareas view and its
