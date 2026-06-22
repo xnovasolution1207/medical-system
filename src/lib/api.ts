@@ -781,5 +781,14 @@ export const api = {
       taskId: string,
       patch: { title?: string; dueDate?: string; body?: string }
     ) => request<Task>("PATCH", `/tasks/${contactId}/${taskId}`, patch),
+    // taskId-only fallbacks for when the SPA doesn't know the contactId (a task
+    // whose conversation isn't loaded). The backend resolves the contact from
+    // its durable task mirror so the change always reaches GHL.
+    setCompletedById: (taskId: string, completed: boolean) =>
+      request<Task>("PATCH", `/tasks/${taskId}`, { completed }),
+    updateById: (
+      taskId: string,
+      patch: { title?: string; dueDate?: string; body?: string }
+    ) => request<Task>("PATCH", `/tasks/${taskId}`, patch),
   },
 };

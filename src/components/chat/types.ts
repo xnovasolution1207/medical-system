@@ -366,6 +366,10 @@ export type Task = {
     name: string;
     avatar?: string;
   };
+  // GHL contact id the task belongs to. The backend stamps it (and persists it
+  // in its durable task mirror) so completing/editing a task always reaches GHL
+  // even when the task's conversation isn't loaded in the SPA.
+  contactId?: string;
   status: "pending" | "completed";
   conversationId: string;
 };

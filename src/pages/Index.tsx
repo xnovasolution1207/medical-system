@@ -3051,14 +3051,19 @@ export default function Index() {
         const conv = prev.conversations.find(
           (c) => c.id === prevSnapshot!.conversationId
         );
-        contactId = conv?.contactId ?? conv?.participant.id;
+        // Prefer the task's own contactId (from the durable mirror).
+        contactId = prevSnapshot.contactId ?? conv?.contactId ?? conv?.participant.id;
         const next = prev.tasks.slice();
         next[idx] = { ...prevSnapshot, ...patch };
         return { ...prev, tasks: next };
       });
-      if (!contactId || id.startsWith("t-tmp-")) return;
-      api.tasks
-        .update(contactId, id, patch)
+      if (id.startsWith("t-tmp-")) return;
+      // Always persist. Use contactId when known; otherwise the taskId-only
+      // endpoint (backend resolves the contact from the mirror).
+      (contactId
+        ? api.tasks.update(contactId, id, patch)
+        : api.tasks.updateById(id, patch)
+      )
         .then((saved) => {
           updateBootstrap((prev) => ({
             ...prev,
@@ -3096,14 +3101,21 @@ export default function Index() {
           if (t.id !== id) return t;
           nextStatus = t.status === "completed" ? "pending" : "completed";
           const conv = prev.conversations.find((c) => c.id === t.conversationId);
-          contactId = conv?.contactId ?? conv?.participant.id;
+          // Prefer the task's own contactId (carried from the durable mirror);
+          // fall back to the loaded conversation only if absent.
+          contactId = t.contactId ?? conv?.contactId ?? conv?.participant.id;
           return { ...t, status: nextStatus };
         }),
       }));
-      if (contactId && !id.startsWith("t-tmp-")) {
-        api.tasks
-          .setCompleted(contactId, id, nextStatus === "completed")
-          .catch((err) => console.error("toggle task failed", err));
+      if (!id.startsWith("t-tmp-")) {
+        // Always send to GHL. Use the contactId when known; otherwise the
+        // taskId-only endpoint (backend resolves the contact from the mirror)
+        // so completion persists even for tasks whose lead isn't loaded.
+        const done = nextStatus === "completed";
+        const req = contactId
+          ? api.tasks.setCompleted(contactId, id, done)
+          : api.tasks.setCompletedById(id, done);
+        req.catch((err) => console.error("toggle task failed", err));
       }
     },
     [updateBootstrap]
