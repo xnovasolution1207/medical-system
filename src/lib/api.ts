@@ -709,7 +709,7 @@ export const api = {
       id: string,
       payload: {
         name: string;
-        phone: string;
+        phone?: string;
         relationship: FamilyMember["relationship"];
       }
     ) => request<FamilyMember>("POST", `/contacts/${id}/family`, payload),

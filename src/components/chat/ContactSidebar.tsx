@@ -356,12 +356,13 @@ export function ContactSidebar({
   const handleAddFamilyMember = async () => {
     const name = familyName.trim();
     const phone = familyPhone.trim();
-    if (!name || !phone || !familyRelationship) return;
+    // Phone is optional; only name and relationship are required.
+    if (!name || !familyRelationship) return;
     setFamilySaving(true);
     try {
       const created = await api.contacts.addFamily(contact.id, {
         name,
-        phone,
+        phone: phone || undefined,
         relationship: familyRelationship,
       });
       setFamilyMembers((prev) => [...prev, created]);
@@ -1200,9 +1201,7 @@ export function ContactSidebar({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium">
-                  Teléfono <span className="text-destructive">*</span>
-                </Label>
+                <Label className="text-sm font-medium">Teléfono</Label>
                 <Input
                   value={familyPhone}
                   onChange={(e) => setFamilyPhone(e.target.value)}
@@ -1246,7 +1245,6 @@ export function ContactSidebar({
                 disabled={
                   familySaving ||
                   !familyName.trim() ||
-                  !familyPhone.trim() ||
                   !familyRelationship
                 }
               >
