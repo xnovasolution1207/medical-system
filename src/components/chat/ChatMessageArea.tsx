@@ -678,6 +678,10 @@ function bubbleHasNoVisibleContent(m: Message): boolean {
   return true;
 }
 
+// Call (phone) button in the chat header is temporarily hidden by request.
+// Set to `true` to re-enable it.
+const SHOW_CALL_BUTTON = false;
+
 export function ChatMessageArea({
   conversation,
   currentUser,
@@ -1681,7 +1685,9 @@ export function ChatMessageArea({
             </DropdownMenuContent>
           </DropdownMenu>
           {/* Call: opens the OS tel: handler. Disabled when the contact has no phone.
-              Hidden below xl — also reachable from the contact sidebar. */}
+              Hidden below xl — also reachable from the contact sidebar.
+              Temporarily hidden by request — flip SHOW_CALL_BUTTON to true to restore. */}
+          {SHOW_CALL_BUTTON && (
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>
               <Button
@@ -1704,6 +1710,7 @@ export function ChatMessageArea({
                 : "Sin número de teléfono"}
             </TooltipContent>
           </Tooltip>
+          )}
 
           {/* Favorite: toggles isFavorite via the parent's handler (which patches
               the GHL flag store). Star fills when the conversation is favorited. */}

@@ -780,16 +780,6 @@ export function ContactSidebar({
             </div>
           </div>
 
-          <div className="flex gap-2 w-full">
-            <Button variant="outline" className="flex-1 gap-2">
-              <Phone className="h-4 w-4" />
-              Llamar
-            </Button>
-            <Button variant="outline" className="flex-1 gap-2">
-              <Mail className="h-4 w-4" />
-              Email
-            </Button>
-          </div>
         </div>
 
         <Separator />
