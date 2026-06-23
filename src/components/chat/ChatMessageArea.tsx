@@ -775,6 +775,14 @@ export function ChatMessageArea({
     [users, currentUser.name]
   );
 
+  // Outbound message bubbles show the contact's assigned user (Owner),
+  // regardless of who actually sent each message. Resolve the owner from the
+  // roster once for the whole thread.
+  const ownerUser = useMemo(() => {
+    const ownerId = conversation.participant?.assignedTo;
+    return ownerId ? users.find((u) => u.id === ownerId) : undefined;
+  }, [users, conversation.participant?.assignedTo]);
+
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   // When non-null, the Nueva Tarea dialog is being used to edit an
   // existing task (vs. creating a new one). The submit handler branches
@@ -2712,19 +2720,18 @@ export function ChatMessageArea({
             // GHL's userId on each outbound message). Fall back to the
             // logged-in currentUser when the backend hasn't resolved it yet
             // or the message was just sent from this session.
+            // Outbound bubbles show the contact's assigned user (Owner),
+            // regardless of who actually sent each message. AI bot messages keep
+            // the dedicated bot avatar. When there's no owner, fall back to the
+            // resolved sender, then the current user. Empty photo → initials.
             const outboundName = message.aiBot
               ? "Asistente IA"
-              : message.senderName ?? currentUser.name;
-            // Avatar must always reflect the ACTUAL sender — even when the agent
-            // who sent it isn't the contact's owner and isn't the logged-in
-            // viewer. Prefer the sender's GHL photo; if the backend resolved the
-            // sender (senderName present) but they have no photo, leave `src`
-            // undefined so the fallback shows the sender's INITIALS (not a
-            // generated avatar, and never the viewer's photo). Only fall back to
-            // the current user's own avatar for our own just-sent message the
-            // backend hasn't echoed/resolved yet (no senderName).
-            const outboundAvatar = message.senderAvatar
-              ?? (message.senderName ? undefined : currentUser.avatar);
+              : ownerUser?.name ?? message.senderName ?? currentUser.name;
+            const outboundAvatar = message.aiBot
+              ? undefined
+              : ownerUser
+                ? ownerUser.avatar
+                : message.senderAvatar ?? currentUser.avatar;
             const outboundInitials = nameInitials(outboundName);
 
             return (
