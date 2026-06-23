@@ -744,6 +744,18 @@ export const api = {
         `/opportunities${params?.enrich ? "?enrich=1" : ""}`
       ),
     pipelines: () => request<Pipeline[]>("GET", "/opportunities/pipelines"),
+    // True per-stage totals from GHL (meta.total) for the kanban headers, so
+    // they show the real count, not the number of loaded cards.
+    stageCounts: (pipelineId?: string) =>
+      request<{
+        pipelineId?: string;
+        counts: Record<string, number>;
+        values?: Record<string, number>;
+        valuesPending?: boolean;
+      }>(
+        "GET",
+        `/opportunities/stage-counts${pipelineId ? `?pipelineId=${encodeURIComponent(pipelineId)}` : ""}`
+      ),
     // GHL's update-opportunity API requires the pipelineId alongside the
     // new stage id — without it the stage move is silently rejected and the
     // card snaps back on reload. Always pass the opportunity's pipeline.

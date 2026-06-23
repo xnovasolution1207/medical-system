@@ -487,6 +487,54 @@ export function OpportunitiesView({
   };
 
   const stages = pipeline?.stages ?? [];
+
+  // True per-stage totals from GHL so the headers match GHL exactly. The kanban
+  // only loads a subset of opportunities into the browser, so counting/summing
+  // loaded cards under-reports big stages (e.g. 4 237 loaded vs 10 475 real).
+  // `counts` come from GHL's meta.total (fast); `values` are summed server-side
+  // across every opportunity and may arrive a moment later (valuesPending) — we
+  // re-fetch a few times until they land.
+  const [stageCounts, setStageCounts] = useState<Record<string, number>>({});
+  const [stageValues, setStageValues] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const pid = pipeline?.id;
+    if (!pid) return;
+    let cancelled = false;
+    let attempts = 0;
+    const poll = () => {
+      api.opportunities
+        .stageCounts(pid)
+        .then((r) => {
+          if (cancelled || !r) return;
+          if (r.counts) setStageCounts(r.counts);
+          if (r.values) setStageValues(r.values);
+          // Values are computed in the background server-side; keep polling
+          // (backing off) until they're ready, capped so we don't poll forever.
+          attempts += 1;
+          if (r.valuesPending && attempts < 8) {
+            window.setTimeout(poll, 4000);
+          }
+        })
+        .catch((err) => console.error("stage counts failed", err));
+    };
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [pipeline?.id]);
+
+  // When a search/filter narrows the board, the loaded card count is the right
+  // number to show (the GHL total is the unfiltered stage total). Only show the
+  // true GHL total when nothing is filtering.
+  const isBoardFiltered = useMemo(
+    () =>
+      searchQuery.trim().length > 0 ||
+      builderFilters.some(
+        (c) => c.field && c.value !== undefined && c.value !== ""
+      ),
+    [searchQuery, builderFilters]
+  );
+
   const stageLookup = useMemo(
     () => new Map(stages.map((s) => [s.id, s.label] as const)),
     [stages]
@@ -1297,10 +1345,16 @@ export function OpportunitiesView({
                               consistent across the board and an empty
                               column doesn't feel visually incomplete. */}
                           <span className="text-xs font-medium text-muted-foreground">
-                            {formatOppValue(stageTotal)}
+                            {formatOppValue(
+                              !isBoardFiltered && stageValues[stage.id] != null
+                                ? stageValues[stage.id]
+                                : stageTotal
+                            )}
                           </span>
                           <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border">
-                            {stageOpps.length}
+                            {!isBoardFiltered && stageCounts[stage.id] != null
+                              ? stageCounts[stage.id]
+                              : stageOpps.length}
                           </span>
                           {/* Select-all for this stage. Hidden when the
                               column is empty (nothing to select); only
