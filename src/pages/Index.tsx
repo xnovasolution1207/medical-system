@@ -3503,14 +3503,18 @@ export default function Index() {
               activeTab={activeMainTab}
               onLoadMore={handleLoadMoreConversations}
               hasMore={
-                (unreadFilterActive
-                  ? unreadNextCursor
-                  : assignedFilterActive
-                    ? assignedNextCursor
-                    : followedFilterActive
-                      ? followedNextCursor
-                      : isSearchActive
-                        ? searchNextCursor
+                // Precedence MUST match handleLoadMoreConversations and
+                // displayConversations (search/filter first) — otherwise a
+                // filter applied while on a tab reads the wrong cursor and
+                // infinite scroll stops firing.
+                (isSearchActive
+                  ? searchNextCursor
+                  : unreadFilterActive
+                    ? unreadNextCursor
+                    : assignedFilterActive
+                      ? assignedNextCursor
+                      : followedFilterActive
+                        ? followedNextCursor
                         : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
@@ -3530,6 +3534,7 @@ export default function Index() {
               availableTags={availableTags}
               advancedFilters={advancedFilters}
               advancedLogic={advancedLogic}
+              advancedFiltersServerApplied={advancedFilterServerInfo.hasServerParam}
               onAdvancedFiltersChange={setAdvancedFilters}
               onAdvancedLogicChange={setAdvancedLogic}
               onDeleteConversation={(id) => {
@@ -3579,14 +3584,18 @@ export default function Index() {
               activeTab={activeMainTab}
               onLoadMore={handleLoadMoreConversations}
               hasMore={
-                (unreadFilterActive
-                  ? unreadNextCursor
-                  : assignedFilterActive
-                    ? assignedNextCursor
-                    : followedFilterActive
-                      ? followedNextCursor
-                      : isSearchActive
-                        ? searchNextCursor
+                // Precedence MUST match handleLoadMoreConversations and
+                // displayConversations (search/filter first) — otherwise a
+                // filter applied while on a tab reads the wrong cursor and
+                // infinite scroll stops firing.
+                (isSearchActive
+                  ? searchNextCursor
+                  : unreadFilterActive
+                    ? unreadNextCursor
+                    : assignedFilterActive
+                      ? assignedNextCursor
+                      : followedFilterActive
+                        ? followedNextCursor
                         : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
@@ -3603,6 +3612,7 @@ export default function Index() {
               availableTags={availableTags}
               advancedFilters={advancedFilters}
               advancedLogic={advancedLogic}
+              advancedFiltersServerApplied={advancedFilterServerInfo.hasServerParam}
               onAdvancedFiltersChange={setAdvancedFilters}
               onAdvancedLogicChange={setAdvancedLogic}
               onDeleteConversation={(id) => {

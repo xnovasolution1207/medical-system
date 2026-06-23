@@ -52,6 +52,23 @@ import { UserPlus, Users } from "lucide-react";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+
+// Filter fields that Index.tsx can translate into a GHL server-side search
+// (with the "es" operator). When such a filter is forwarded to the backend,
+// the conversation list we get back is ALREADY the whole-dataset result, so
+// these conditions must NOT be re-evaluated client-side. Keep in sync with
+// buildServerFilterParams() in Index.tsx.
+const SERVER_TRANSLATABLE_FIELDS = new Set<string>([
+  "asignado",
+  "seguidor",
+  "mencion",
+  "etiqueta",
+  "embudo_actual",
+  "canal_ultimo_mensaje",
+  "tipo_ultimo_mensaje_saliente",
+  "direccion_ultimo_mensaje",
+]);
+
 interface ChatSidebarProps {
   conversations: Conversation[];
   tasks?: import("./types").Task[];
@@ -129,6 +146,12 @@ interface ChatSidebarProps {
   // for FilterBuilder.
   advancedFilters?: FilterCondition[];
   advancedLogic?: "AND" | "OR";
+  // True when Index.tsx already forwarded the (server-translatable) advanced
+  // filters to the backend, so the `conversations` we receive are the
+  // whole-dataset filtered result. We must then NOT re-filter those conditions
+  // client-side — search-list rows don't carry participant.assignedTo / tags,
+  // so re-filtering would drop the server matches down to the loaded window.
+  advancedFiltersServerApplied?: boolean;
   onAdvancedFiltersChange?: (filters: FilterCondition[]) => void;
   onAdvancedLogicChange?: (logic: "AND" | "OR") => void;
   // Total count of unread conversations across the entire GHL location
@@ -182,6 +205,7 @@ export function ChatSidebar({
   availableTags = [],
   advancedFilters,
   advancedLogic,
+  advancedFiltersServerApplied,
   onAdvancedFiltersChange,
   onAdvancedLogicChange,
   totalUnread: totalUnreadFromParent,
@@ -569,6 +593,18 @@ export function ChatSidebar({
 
       const passesFilters = currentFilters.map((cond) => {
         if (!cond.value) return true;
+        // The backend already filtered the WHOLE dataset for this condition —
+        // don't re-apply it on the loaded window (search-list rows often lack
+        // participant.assignedTo / followers / tags, so re-filtering would
+        // wrongly drop valid server matches). Non-"es" operators and
+        // non-translatable fields still fall through to client-side filtering.
+        if (
+          advancedFiltersServerApplied &&
+          cond.operator === "es" &&
+          SERVER_TRANSLATABLE_FIELDS.has(cond.field)
+        ) {
+          return true;
+        }
         const v = cond.value;
         const valLower = v.toLowerCase();
         const isNegated =
