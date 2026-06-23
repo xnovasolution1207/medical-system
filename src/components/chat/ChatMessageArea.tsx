@@ -87,6 +87,8 @@ interface ChatMessageAreaProps {
   onClearReminder?: (id: string) => void;
   onSetReminder?: (id: string, reminder: string) => void;
   onToggleFavorite?: (id: string) => void;
+  onMarkAsRead?: (id: string) => void;
+  onMarkAsUnread?: (id: string) => void;
   onSetBotStatus?: (id: string, status: "active" | "paused") => void;
   // True while the conversation's full history is being fetched on select —
   // shows a loading spinner in the message area.
@@ -698,6 +700,8 @@ export function ChatMessageArea({
   onClearReminder,
   onSetReminder,
   onToggleFavorite,
+  onMarkAsRead,
+  onMarkAsUnread,
   onSetBotStatus,
   isLoadingHistory = false,
   stages,
@@ -1735,24 +1739,39 @@ export function ChatMessageArea({
             </TooltipContent>
           </Tooltip>
 
-          {/* Unread indicator: read-only. Shows how many unread messages the
-              lead has sent, as a badge on the envelope. No action on click —
-              the count comes from the conversation's local unread badge. */}
+          {/* Unread toggle: shows how many unread messages the lead has sent
+              (badge on the envelope) and lets the agent mark the conversation
+              read (clears the badge) or unread again with a click. */}
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>
-              <div className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+              <button
+                type="button"
+                onClick={() => {
+                  if ((conversation.unreadCount ?? 0) > 0) {
+                    onMarkAsRead?.(conversation.id);
+                  } else {
+                    onMarkAsUnread?.(conversation.id);
+                  }
+                }}
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 transition-colors"
+                aria-label={
+                  (conversation.unreadCount ?? 0) > 0
+                    ? "Marcar como leído"
+                    : "Marcar como no leído"
+                }
+              >
                 <Mail className="h-4 w-4" />
                 {(conversation.unreadCount ?? 0) > 0 && (
                   <span className="absolute top-0 right-0 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground ring-2 ring-card">
                     {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
                   </span>
                 )}
-              </div>
+              </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
               {(conversation.unreadCount ?? 0) > 0
-                ? `${conversation.unreadCount} mensaje${conversation.unreadCount === 1 ? "" : "s"} sin leer`
-                : "Sin mensajes sin leer"}
+                ? `Marcar como leído (${conversation.unreadCount} sin leer)`
+                : "Marcar como no leído"}
             </TooltipContent>
           </Tooltip>
 

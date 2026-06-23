@@ -3647,6 +3647,8 @@ export default function Index() {
               onLoadOlderMessages={handleLoadOlderMessages}
               onDeleteLead={handleDeleteLead}
               onToggleFavorite={handleToggleFavorite}
+              onMarkAsRead={handleMarkAsRead}
+              onMarkAsUnread={handleMarkAsUnread}
               onSetBotStatus={handleSetBotStatus}
               isLoadingHistory={hydratingId === activeId}
               onPinMessage={handlePinMessage}
