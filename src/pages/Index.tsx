@@ -3549,77 +3549,53 @@ export default function Index() {
   const opportunitiesPipeline = pipelines[0];
 
   if (isLoading) {
-    // Full-app layout skeleton: left rail + conversation list + chat pane,
-    // mirroring the real shell so the initial load doesn't flash a blank screen.
+    // Branded splash loader for the initial app load: a spinning gradient ring
+    // around a glowing chat mark, with animated dots — themed in the project's
+    // primary color on the dark background.
     return (
-      <div className="flex h-screen w-full overflow-hidden bg-background">
-        {/* Left icon rail */}
-        <div className="hidden w-14 shrink-0 flex-col items-center gap-4 border-r bg-card py-4 md:flex">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-8 rounded-lg" />
-          ))}
-        </div>
-        {/* Conversation list */}
-        <div className="hidden w-80 shrink-0 flex-col border-r bg-card md:flex">
-          <div className="border-b p-4">
-            <Skeleton className="h-7 w-40 rounded" />
-            <Skeleton className="mt-3 h-9 w-full rounded-md" />
-          </div>
-          <div className="flex flex-col gap-0.5 p-2">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-lg p-3">
-                <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <Skeleton className="h-3.5 w-32 rounded" />
-                    <Skeleton className="h-3 w-10 rounded" />
-                  </div>
-                  <Skeleton className="h-3 w-48 rounded" />
-                  <Skeleton className="h-4 w-20 rounded-full" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* Chat pane */}
-        <div className="flex flex-1 flex-col">
-          <div className="flex h-[68px] items-center gap-3 border-b px-4">
-            <Skeleton className="h-10 w-10 rounded-full" />
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-40 rounded" />
-              <Skeleton className="h-3 w-24 rounded" />
+      <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-background">
+        {/* Soft ambient glow behind the mark. */}
+        <div className="pointer-events-none absolute h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
+        <div className="relative flex flex-col items-center gap-8">
+          <div className="relative flex h-24 w-24 items-center justify-center">
+            {/* Spinning conic-gradient ring (masked to a thin ring). */}
+            <div
+              className="absolute inset-0 animate-spin rounded-full [animation-duration:1.1s]"
+              style={{
+                background:
+                  "conic-gradient(from 90deg, transparent 0%, transparent 50%, hsl(var(--primary) / 0.35) 75%, hsl(var(--primary)) 100%)",
+                WebkitMask:
+                  "radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))",
+                mask: "radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))",
+              }}
+            />
+            {/* Gentle pulsing halo. */}
+            <div className="absolute inset-1.5 animate-ping rounded-full bg-primary/10 [animation-duration:2s]" />
+            {/* Inner disc with the chat mark. */}
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-7 w-7 animate-pulse text-primary"
+              >
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
             </div>
           </div>
-          <div className="flex-1 space-y-2 p-6">
-            {[
-              { me: false, lines: ["w-40", "w-52"] },
-              { me: true, lines: ["w-56", "w-28"] },
-              { me: false, lines: ["w-44"] },
-              { me: true, lines: ["w-60", "w-48", "w-24"] },
-              { me: false, lines: ["w-36", "w-52"] },
-            ].map((b, i) => (
-              <div
-                key={i}
-                className={`flex items-end gap-2 ${b.me ? "justify-end" : "justify-start"}`}
-              >
-                {!b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
-                <div
-                  className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 ${
-                    b.me ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"
-                  }`}
-                >
-                  <div className="space-y-2">
-                    {b.lines.map((w, j) => (
-                      <Skeleton key={j} className={`h-3 rounded bg-foreground/10 ${w}`} />
-                    ))}
-                  </div>
-                  <div className="mt-2 flex justify-end">
-                    <Skeleton className="h-2 w-8 rounded bg-foreground/10" />
-                  </div>
-                </div>
-                {b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
-              </div>
-            ))}
+          <div className="flex flex-col items-center gap-3">
+            <span className="text-sm font-medium tracking-wide text-foreground/70">
+              Cargando tu bandeja…
+            </span>
+            <div className="flex gap-1.5">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary" />
+            </div>
           </div>
         </div>
       </div>
