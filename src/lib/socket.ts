@@ -7,6 +7,7 @@ export type WsEvent =
   | { type: "hello"; clientId: string }
   | { type: "message.created"; conversationId: string; message: Message }
   | { type: "conversation.updated"; conversation: Conversation }
+  | { type: "conversation.read"; conversationId: string; readAt: number }
   | { type: "contact.updated"; contactId: string; patch: Partial<User> }
   | { type: "opportunity.updated"; opportunity: Opportunity }
   | { type: "task.created"; task: Task }

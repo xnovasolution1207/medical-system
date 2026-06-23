@@ -1177,6 +1177,25 @@ export default function Index() {
             conversations: moveConversationToFront(prev.conversations, merged.id, merged),
           };
         });
+      } else if (event.type === "conversation.read") {
+        // Another agent marked this conversation read (or answered it). Read is
+        // shared across the whole team, so clear the unread badge in EVERY
+        // session — this is what stops colleagues from seeing a high unread
+        // count after someone else already handled the lead.
+        const cid = event.conversationId;
+        const clearUnread = (c: Conversation) =>
+          c.id === cid && (c.unreadCount ?? 0) > 0 ? { ...c, unreadCount: 0 } : c;
+        updateBootstrap((prev) => ({
+          ...prev,
+          conversations: prev.conversations.map(clearUnread),
+        }));
+        // "No leídos" tab: drop the row entirely (it's no longer unread).
+        setUnreadResults((prev) => (prev ? prev.filter((c) => c.id !== cid) : prev));
+        setAssignedResults((prev) => (prev ? prev.map(clearUnread) : prev));
+        setFollowedResults((prev) => (prev ? prev.map(clearUnread) : prev));
+        setSearchResults((prev) => (prev ? prev.map(clearUnread) : prev));
+        // Keep the GHL-wide aggregate badge in sync.
+        queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       } else if (event.type === "contact.updated") {
         // GHL contact create / update / tag webhook → patch the participant
         // on every conversation whose contact id matches. New contacts with
