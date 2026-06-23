@@ -2680,7 +2680,16 @@ export function ChatMessageArea({
             const outboundName = message.aiBot
               ? "Asistente IA"
               : message.senderName ?? currentUser.name;
-            const outboundAvatar = message.senderAvatar ?? currentUser.avatar;
+            // Avatar must always reflect the ACTUAL sender — even when the agent
+            // who sent it isn't the contact's owner and isn't the logged-in
+            // viewer. Prefer the sender's GHL photo; if the backend resolved the
+            // sender (senderName present) but they have no photo, leave `src`
+            // undefined so ChannelAvatar deterministically generates an avatar
+            // from the sender's NAME (unique per agent). Only fall back to the
+            // current user's own avatar for our own just-sent message that the
+            // backend hasn't echoed/resolved yet (no senderName).
+            const outboundAvatar = message.senderAvatar
+              ?? (message.senderName ? undefined : currentUser.avatar);
 
             return (
               <React.Fragment key={message.id}>
@@ -3003,12 +3012,15 @@ export function ChatMessageArea({
                           // of any human profile photo.
                           <AiBotAvatar className="h-8 w-8 cursor-default" />
                         ) : (
-                          <Avatar className="h-8 w-8 cursor-default">
-                            <AvatarImage src={outboundAvatar} alt={outboundName} />
-                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                              {outboundName.charAt(0).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
+                          // ChannelAvatar generates a deterministic avatar from
+                          // `name` when `src` is empty, so an agent without a GHL
+                          // photo still gets their OWN consistent avatar (keyed
+                          // on the sender's name), never the viewer's.
+                          <ChannelAvatar
+                            name={outboundName}
+                            src={outboundAvatar}
+                            className="h-8 w-8 cursor-default"
+                          />
                         )}
                       </TooltipTrigger>
                       <TooltipContent side="left" className="text-xs font-medium">
