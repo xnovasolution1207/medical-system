@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Loader2, Pause, Play } from "lucide-react";
+import { AlertCircle, Download, Loader2, Pause, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AudioPlayerProps {
@@ -171,6 +171,41 @@ export function AudioPlayer({
     setSpeedIdx((i) => (i + 1) % SPEEDS.length);
   }, []);
 
+  const [downloading, setDownloading] = useState(false);
+  // Download the audio file (via the same-origin media proxy) so an agent can
+  // save it / forward it to the doctor.
+  const downloadAudio = useCallback(async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      const t = (blob.type || "").toLowerCase();
+      const ext = t.includes("mpeg") || t.includes("mp3")
+        ? "mp3"
+        : t.includes("mp4") || t.includes("m4a") || t.includes("aac")
+          ? "m4a"
+          : t.includes("wav")
+            ? "wav"
+            : t.includes("amr")
+              ? "amr"
+              : "ogg";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audio-${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback: open the source in a new tab so the user can save manually.
+      window.open(src, "_blank", "noopener,noreferrer");
+    } finally {
+      setDownloading(false);
+    }
+  }, [src, downloading]);
+
   const progressRatio =
     duration && duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
   const activeBars = Math.floor(progressRatio * bars.length);
@@ -268,6 +303,26 @@ export function AudioPlayer({
               )}
             >
               {speed}x
+            </button>
+            {/* Download — save / forward the audio (e.g. send a patient's note
+                to the doctor). */}
+            <button
+              type="button"
+              onClick={downloadAudio}
+              disabled={downloading}
+              aria-label="Descargar audio"
+              title="Descargar audio"
+              className={cn(
+                "flex items-center justify-center rounded p-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                speedPill,
+                downloading && "cursor-wait opacity-60"
+              )}
+            >
+              {downloading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
             </button>
             <span>
               {errored

@@ -27,7 +27,7 @@ import {
 } from "./scheduleOptions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Sparkles, Mail, Trash2, Loader2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Sparkles, Mail, Trash2, Loader2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Pause, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
@@ -90,6 +90,9 @@ interface ChatMessageAreaProps {
   onToggleFavorite?: (id: string) => void;
   onMarkAsRead?: (id: string) => void;
   onMarkAsUnread?: (id: string) => void;
+  // Forward an audio attachment to another conversation (opens a picker in
+  // Index, which has the conversation list + cross-conversation send).
+  onForwardAudio?: (audioUrl: string) => void;
   onSetBotStatus?: (id: string, status: "active" | "paused") => void;
   // True while the conversation's full history is being fetched on select —
   // shows a loading spinner in the message area.
@@ -712,6 +715,7 @@ export function ChatMessageArea({
   onToggleFavorite,
   onMarkAsRead,
   onMarkAsUnread,
+  onForwardAudio,
   onSetBotStatus,
   isLoadingHistory = false,
   stages,
@@ -756,6 +760,7 @@ export function ChatMessageArea({
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -1181,7 +1186,33 @@ export function ChatMessageArea({
     }
     mediaRecorderRef.current = null;
     setIsRecording(false);
+    setIsRecordingPaused(false);
     setRecordingDuration(0);
+  }, []);
+
+  // Pause / resume an in-progress recording. MediaRecorder.pause() stops
+  // capturing without finalizing, so resume() continues the same take; we just
+  // freeze/restart the duration timer to match.
+  const pauseRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "recording") return;
+    recorder.pause();
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setIsRecordingPaused(true);
+  }, []);
+
+  const resumeRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "paused") return;
+    recorder.resume();
+    recordingTimerRef.current = setInterval(
+      () => setRecordingDuration((d) => d + 1),
+      1000
+    );
+    setIsRecordingPaused(false);
   }, []);
 
   const startRecording = useCallback(async () => {
@@ -1206,6 +1237,7 @@ export function ChatMessageArea({
 
       recorder.start(250);
       setIsRecording(true);
+      setIsRecordingPaused(false);
       setRecordingDuration(0);
       recordingTimerRef.current = setInterval(
         () => setRecordingDuration((d) => d + 1),
@@ -3031,6 +3063,16 @@ export function ChatMessageArea({
                             <Reply className="h-4 w-4 mr-2" />
                             Responder
                           </DropdownMenuItem>
+                          {message.attachment?.type === "audio" && message.attachment.url && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                onForwardAudio?.(proxyMediaUrl(message.attachment!.url))
+                              }
+                            >
+                              <ArrowRight className="h-4 w-4 mr-2" />
+                              Reenviar a…
+                            </DropdownMenuItem>
+                          )}
                           {(conversation.pinnedMessages ?? []).some((p) => p.id === message.id) ? (
                             <DropdownMenuItem
                               onClick={() => onUnpinMessage?.(conversation.id, message.id)}
@@ -3481,13 +3523,29 @@ export function ChatMessageArea({
               <div className="flex items-center justify-between min-h-[80px] px-4 py-3">
                 <div className="flex items-center gap-3">
                   <span className="relative flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                    {!isRecordingPaused && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    )}
+                    <span
+                      className={cn(
+                        "relative inline-flex rounded-full h-3 w-3",
+                        isRecordingPaused ? "bg-amber-500" : "bg-red-500"
+                      )}
+                    />
                   </span>
-                  <span className="text-sm font-medium text-red-600 dark:text-red-400 tabular-nums">
+                  <span
+                    className={cn(
+                      "text-sm font-medium tabular-nums",
+                      isRecordingPaused
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-red-600 dark:text-red-400"
+                    )}
+                  >
                     {String(Math.floor(recordingDuration / 60)).padStart(2, "0")}:{String(recordingDuration % 60).padStart(2, "0")}
                   </span>
-                  <span className="text-sm text-muted-foreground">Grabando nota de voz…</span>
+                  <span className="text-sm text-muted-foreground">
+                    {isRecordingPaused ? "Grabación en pausa" : "Grabando nota de voz…"}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -3499,6 +3557,21 @@ export function ChatMessageArea({
                     onClick={cancelRecording}
                   >
                     <Trash2 className="h-4 w-4" />
+                  </Button>
+                  {/* Pause / resume the take without finalizing it. */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title={isRecordingPaused ? "Reanudar grabación" : "Pausar grabación"}
+                    onClick={isRecordingPaused ? resumeRecording : pauseRecording}
+                  >
+                    {isRecordingPaused ? (
+                      <Mic className="h-4 w-4" />
+                    ) : (
+                      <Pause className="h-4 w-4" />
+                    )}
                   </Button>
                   <Button
                     type="button"

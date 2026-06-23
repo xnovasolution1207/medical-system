@@ -14,6 +14,8 @@ import { TaskList } from "@/components/chat/TaskList";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ContactSidebar } from "@/components/chat/ContactSidebar";
 import { MainSidebar } from "@/components/chat/MainSidebar";
+import { ChannelAvatar } from "@/components/chat/ChannelAvatar";
+import { Loader2 } from "lucide-react";
 import { OpportunitiesView } from "@/components/chat/OpportunitiesView";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -872,6 +874,12 @@ export default function Index() {
   const [opportunityChatContactId, setOpportunityChatContactId] = useState<
     string | null
   >(null);
+  // "Reenviar audio" — the audio URL being forwarded (opens the picker dialog),
+  // a debounced conversation search for the target, and a sending flag.
+  const [forwardAudioUrl, setForwardAudioUrl] = useState<string | null>(null);
+  const [forwardSearch, setForwardSearch] = useState("");
+  const [forwardResults, setForwardResults] = useState<Conversation[] | null>(null);
+  const [forwardSending, setForwardSending] = useState(false);
   // Fallback contact for the opportunity-chat modal when the picked
   // contact doesn't have a conversation in the local cache yet — e.g.
   // a brand-new contact created via "Agregar contacto" without any
@@ -2161,6 +2169,95 @@ export default function Index() {
     },
     [activeId, currentUser.id, toast, updateBootstrap]
   );
+
+  // Open the "Reenviar audio" picker for a given audio URL.
+  const handleForwardAudio = useCallback((audioUrl: string) => {
+    setForwardAudioUrl(audioUrl);
+    setForwardSearch("");
+    setForwardResults(null);
+  }, []);
+
+  // Forward the staged audio to the chosen conversation: fetch the audio bytes
+  // (via the same-origin media proxy), upload them as a new attachment for the
+  // target, then send it there. Reuses the normal send pipeline.
+  const handleForwardAudioToConversation = useCallback(
+    async (target: Conversation) => {
+      if (!forwardAudioUrl || forwardSending) return;
+      setForwardSending(true);
+      try {
+        const res = await fetch(forwardAudioUrl);
+        const blob = await res.blob();
+        const t = (blob.type || "").toLowerCase();
+        const ext = t.includes("mpeg") || t.includes("mp3")
+          ? "mp3"
+          : t.includes("mp4") || t.includes("m4a") || t.includes("aac")
+            ? "m4a"
+            : t.includes("wav")
+              ? "wav"
+              : t.includes("amr")
+                ? "amr"
+                : "ogg";
+        const file = new File([blob], `audio-${Date.now()}.${ext}`, {
+          type: blob.type || "audio/ogg",
+        });
+        const uploaded = await api.uploads.create(file, target.id);
+        const attachment: Message["attachment"] = {
+          type: "audio",
+          url: uploaded.url,
+          name: uploaded.name,
+        };
+        handleSendMessage(
+          "",
+          attachment,
+          target.source ?? "whatsapp",
+          undefined,
+          undefined,
+          undefined,
+          target.id
+        );
+        setForwardAudioUrl(null);
+        toast({
+          title: "Audio reenviado",
+          description: `Enviado a ${target.participant?.name ?? "el contacto"}.`,
+        });
+      } catch (err) {
+        toast({
+          title: "No se pudo reenviar el audio",
+          description: (err as Error)?.message ?? "Inténtalo de nuevo.",
+          variant: "destructive",
+        });
+      } finally {
+        setForwardSending(false);
+      }
+    },
+    [forwardAudioUrl, forwardSending, handleSendMessage, toast]
+  );
+
+  // Search conversations to pick a forward target (whole location, not just the
+  // loaded window) — debounced. Empty query shows the recent/loaded list.
+  useEffect(() => {
+    if (!forwardAudioUrl) return;
+    const q = forwardSearch.trim();
+    if (!q) {
+      setForwardResults(null);
+      return;
+    }
+    let cancelled = false;
+    const h = window.setTimeout(() => {
+      api.conversations
+        .list({ query: q, limit: 20 })
+        .then((r) => {
+          if (!cancelled) setForwardResults(r.conversations);
+        })
+        .catch(() => {
+          if (!cancelled) setForwardResults([]);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(h);
+    };
+  }, [forwardAudioUrl, forwardSearch]);
 
   const handleScheduleMessage = useCallback(
     (
@@ -3870,6 +3967,7 @@ export default function Index() {
               onMarkAsRead={handleMarkAsRead}
               onMarkAsUnread={handleMarkAsUnread}
               onSetBotStatus={handleSetBotStatus}
+              onForwardAudio={handleForwardAudio}
               isLoadingHistory={hydratingId === activeId}
               onPinMessage={handlePinMessage}
               onUnpinMessage={handleUnpinMessage}
@@ -4134,6 +4232,7 @@ export default function Index() {
                     onSetReminder={handleSetReminder}
                     onToggleFavorite={handleToggleFavorite}
                     onSetBotStatus={handleSetBotStatus}
+              onForwardAudio={handleForwardAudio}
                     // The preview has its own "Cargando contacto…" state; this
                     // flag tracks the INBOX's background hydration (hydratingId
                     // vs activeId), so it would show a spurious "Cargando
@@ -4202,6 +4301,80 @@ export default function Index() {
               </>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* "Reenviar audio" — pick a conversation to forward the audio to. */}
+      <Dialog
+        open={forwardAudioUrl !== null}
+        onOpenChange={(open) => {
+          if (!open && !forwardSending) {
+            setForwardAudioUrl(null);
+            setForwardSearch("");
+            setForwardResults(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          <div className="border-b p-4">
+            <DialogTitle className="text-base font-semibold">Reenviar audio</DialogTitle>
+            <input
+              autoFocus
+              value={forwardSearch}
+              onChange={(e) => setForwardSearch(e.target.value)}
+              placeholder="Buscar conversación…"
+              className="mt-3 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+          <div className="max-h-[55vh] overflow-y-auto p-2">
+            {(() => {
+              const list = forwardSearch.trim()
+                ? forwardResults ?? []
+                : conversations.slice(0, 50);
+              if (forwardSearch.trim() && forwardResults === null) {
+                return (
+                  <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Buscando…
+                  </div>
+                );
+              }
+              if (list.length === 0) {
+                return (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    {forwardSearch.trim() ? "Sin resultados" : "No hay conversaciones"}
+                  </div>
+                );
+              }
+              return list.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={forwardSending}
+                  onClick={() => handleForwardAudioToConversation(c)}
+                  className="flex w-full items-center gap-3 rounded-lg p-2.5 text-left hover:bg-muted/60 disabled:opacity-60"
+                >
+                  <ChannelAvatar
+                    name={c.participant?.name ?? "Contacto"}
+                    src={c.participant?.avatar}
+                    className="h-9 w-9 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {c.participant?.name ?? "Contacto"}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {c.recipientNumber || c.participant?.phone || ""}
+                    </div>
+                  </div>
+                </button>
+              ));
+            })()}
+          </div>
+          {forwardSending && (
+            <div className="flex items-center justify-center gap-2 border-t p-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Reenviando audio…
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
