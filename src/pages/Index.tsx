@@ -6,6 +6,8 @@ import {
   pathToNav,
   tabToPath,
   viewIdToPath,
+  conversationToPath,
+  isConversationView,
 } from "@/lib/chattingRoutes";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { TaskList } from "@/components/chat/TaskList";
@@ -617,10 +619,11 @@ export default function Index() {
   // links round-trip.
   const location = useLocation();
   const navigate = useNavigate();
-  const { tab: activeMainTab, viewId: activeViewId } = useMemo(
-    () => pathToNav(location.pathname),
-    [location.pathname]
-  );
+  const {
+    tab: activeMainTab,
+    viewId: activeViewId,
+    conversationId: urlConversationId,
+  } = useMemo(() => pathToNav(location.pathname), [location.pathname]);
 
   // When the kanban (oportunidades) opens, fetch the enriched opportunity
   // listing once so its conversation-level filters (canal / dirección /
@@ -1045,13 +1048,28 @@ export default function Index() {
     [setActiveViewId]
   );
 
-  // Wraps `setActiveId` so that picking a row in the mobile lead-list drawer
-  // also dismisses the drawer — otherwise the user has to tap outside the
-  // sheet after every selection.
-  const handleSelectConversationMobile = useCallback((id: string) => {
-    setActiveId(id);
-    setIsChatListSheetOpen(false);
-  }, []);
+  // Selecting a conversation navigates to its own URL
+  // (/chatting/<tab>/<conversationId>) so every conversation is deep-linkable
+  // and survives a refresh / share. The URL→activeId effect below mirrors it
+  // back into state; we also set it eagerly so the UI responds instantly.
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      navigate(conversationToPath(activeMainTab, activeViewId, id));
+    },
+    [navigate, activeMainTab, activeViewId]
+  );
+
+  // Wraps `handleSelectConversation` so that picking a row in the mobile
+  // lead-list drawer also dismisses the drawer — otherwise the user has to tap
+  // outside the sheet after every selection.
+  const handleSelectConversationMobile = useCallback(
+    (id: string) => {
+      handleSelectConversation(id);
+      setIsChatListSheetOpen(false);
+    },
+    [handleSelectConversation]
+  );
 
   const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
   const [loadingOlderFor, setLoadingOlderFor] = useState<string | null>(null);
@@ -1108,13 +1126,29 @@ export default function Index() {
     activeIdRef.current = activeId;
   }, [activeId]);
 
-  // Auto-select the first conversation once the bootstrap arrives (only when
-  // the user hasn't already picked one).
+  // Keep `activeId` in sync with the conversation id in the URL — handles deep
+  // links, refresh, and browser back/forward (each conversation has its own
+  // route now). A null URL conversation clears the selection.
   useEffect(() => {
-    if (data && activeId === null && data.conversations.length > 0) {
-      setActiveId(data.conversations[0].id);
+    setActiveId(urlConversationId ?? null);
+  }, [urlConversationId]);
+
+  // Auto-open the first conversation once the bootstrap arrives, but only on a
+  // conversation-list view and only when the URL doesn't already point at one —
+  // navigate (replace) so it gets its own deep-linkable URL too.
+  useEffect(() => {
+    if (
+      data &&
+      !urlConversationId &&
+      isConversationView(activeMainTab, activeViewId) &&
+      data.conversations.length > 0
+    ) {
+      navigate(
+        conversationToPath(activeMainTab, activeViewId, data.conversations[0].id),
+        { replace: true }
+      );
     }
-  }, [data, activeId]);
+  }, [data, urlConversationId, activeMainTab, activeViewId, navigate]);
 
   // ---- WebSocket subscription ----
   // The WS listener is the only place that mutates the cache for live updates.
@@ -3374,8 +3408,12 @@ export default function Index() {
       cursorForBackfill = prev.conversationsNextCursor;
       return { ...prev, conversations: filtered };
     });
-    // If the row being deleted is currently open, navigate away from it.
-    setActiveId((current) => (current && current === (target?.id ?? null) ? null : current));
+    // If the row being deleted is currently open, navigate away from it (drop
+    // the conversation segment from the URL so it doesn't point at a dead lead).
+    if (target?.id && target.id === activeIdRef.current) {
+      setActiveId(null);
+      navigate(activeViewId ? viewIdToPath(activeViewId) : tabToPath(activeMainTab || DEFAULT_TAB));
+    }
     toast({ title: "Lead eliminado", description: "El contacto ha sido eliminado correctamente." });
 
     // Pull `removedCount` older conversations from GHL using the existing
@@ -3400,7 +3438,7 @@ export default function Index() {
         console.error("backfill after delete failed", err);
       }
     }
-  }, [activeConversation, queryClient, updateBootstrap, toast]);
+  }, [activeConversation, queryClient, updateBootstrap, toast, navigate, activeViewId, activeMainTab]);
 
   const setStages = useCallback(
     (next: BootstrapPayload["stages"]) => {
@@ -3637,7 +3675,7 @@ export default function Index() {
               onToggleTask={handleToggleTask}
               filterType={activeMainTab}
               selectedUsers={taskUserFilters}
-              onSelectConversation={setActiveId}
+              onSelectConversation={handleSelectConversation}
               activeConversationId={activeId || ""}
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
             />
@@ -3649,7 +3687,7 @@ export default function Index() {
               conversations={displayConversations}
               tasks={tasks}
               activeConversationId={activeId || ""}
-              onSelectConversation={setActiveId}
+              onSelectConversation={handleSelectConversation}
               onToggleFavorite={handleToggleFavorite}
               onArchiveConversation={handleToggleArchive}
               onMarkAsRead={handleMarkAsRead}

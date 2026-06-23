@@ -33,6 +33,23 @@ export interface ChattingNav {
   tab: string;
   /** Saved-view id when the URL points at /chatting/vistas/:id, else null. */
   viewId: string | null;
+  /**
+   * Active conversation id, deep-linked as the trailing path segment:
+   *   /chatting/<tab>/<conversationId>
+   *   /chatting/vistas/<viewId>/<conversationId>
+   * null when no conversation is open in the URL. Task slots (/tareas/...) and
+   * the kanban (/oportunidades) don't carry a conversation.
+   */
+  conversationId: string | null;
+}
+
+// Tabs whose pages render the conversation list (and therefore can deep-link an
+// open conversation). The kanban and task slots are excluded.
+export function isConversationView(tab: string, viewId: string | null): boolean {
+  if (viewId) return true;
+  if (!tab || tab === "oportunidades") return false;
+  if (tab.startsWith("tareas-")) return false;
+  return true;
 }
 
 // Top-level tabs that map 1:1 to /chatting/<tab>.
@@ -45,38 +62,42 @@ const TOP_LEVEL_TABS = new Set([
   "archivados",
 ]);
 
-/** Parse a router pathname into the (tab, viewId) pair Index.tsx consumes. */
+/** Parse a router pathname into the (tab, viewId, conversationId) Index consumes. */
 export function pathToNav(pathname: string): ChattingNav {
   if (!pathname.startsWith(CHATTING_PREFIX)) {
-    return { tab: DEFAULT_TAB, viewId: null };
+    return { tab: DEFAULT_TAB, viewId: null, conversationId: null };
   }
   const rest = pathname.slice(CHATTING_PREFIX.length).replace(/^\/+|\/+$/g, "");
-  if (rest === "") return { tab: DEFAULT_TAB, viewId: null };
+  if (rest === "") return { tab: DEFAULT_TAB, viewId: null, conversationId: null };
 
   const segments = rest.split("/").map(decodeURIComponent);
   const [head, ...tail] = segments;
 
   if (head === "vistas") {
     const viewId = tail[0] ?? "";
+    // /chatting/vistas/<viewId>/<conversationId>
+    const conversationId = tail[1] || null;
     return viewId
-      ? { tab: "", viewId }
+      ? { tab: "", viewId, conversationId }
       : // Bare /chatting/vistas with no id — degrade to default.
-        { tab: DEFAULT_TAB, viewId: null };
+        { tab: DEFAULT_TAB, viewId: null, conversationId: null };
   }
 
   if (head === "tareas") {
     const slot = tail[0];
-    if (!slot) return { tab: "tareas-hoy", viewId: null };
-    return { tab: `tareas-${slot}`, viewId: null };
+    if (!slot) return { tab: "tareas-hoy", viewId: null, conversationId: null };
+    return { tab: `tareas-${slot}`, viewId: null, conversationId: null };
   }
 
   if (TOP_LEVEL_TABS.has(head)) {
-    return { tab: head, viewId: null };
+    // /chatting/<tab>/<conversationId>
+    const conversationId = tail[0] || null;
+    return { tab: head, viewId: null, conversationId };
   }
 
   // Unknown segment — fall back to the default so the SPA doesn't get
   // stuck on a tab id no component recognises.
-  return { tab: DEFAULT_TAB, viewId: null };
+  return { tab: DEFAULT_TAB, viewId: null, conversationId: null };
 }
 
 /** Build a /chatting/* path that round-trips to the given tab. */
@@ -95,4 +116,23 @@ export function tabToPath(tab: string): string {
 /** Build the canonical path for a saved view. */
 export function viewIdToPath(viewId: string): string {
   return `${CHATTING_PREFIX}/vistas/${encodeURIComponent(viewId)}`;
+}
+
+/**
+ * Build the path that opens `conversationId` within the current tab / saved
+ * view, so each conversation has its own deep-linkable URL. Task/kanban views
+ * don't host conversations, so a conversation there falls back to the default
+ * conversation tab.
+ */
+export function conversationToPath(
+  tab: string,
+  viewId: string | null,
+  conversationId: string
+): string {
+  const enc = encodeURIComponent(conversationId);
+  if (viewId) return `${viewIdToPath(viewId)}/${enc}`;
+  if (TOP_LEVEL_TABS.has(tab) && tab !== "oportunidades") {
+    return `${CHATTING_PREFIX}/${tab}/${enc}`;
+  }
+  return `${CHATTING_PREFIX}/${DEFAULT_TAB}/${enc}`;
 }
