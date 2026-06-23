@@ -1106,13 +1106,19 @@ export default function Index() {
   const [isSearching, setIsSearching] = useState(false);
 
   const hydratedConversations = useRef<Set<string>>(new Set());
-  // A deep-linked conversation that isn't in the loaded list window (e.g. you
-  // reloaded on a lead past the first page). It's held in a SEPARATE slot — NOT
-  // injected into `conversations` — so the inbox list stays exactly as the
-  // bootstrap/paginated set (no row added, no reorder), and scrolling can still
-  // reveal the real row at its natural position. The chat area falls back to
-  // this slot for the active conversation until pagination loads the real row.
-  const [routedConversation, setRoutedConversation] = useState<Conversation | null>(null);
+  // Deep-linked conversations that aren't in the loaded list window (e.g. you
+  // reloaded on a lead past the first page, or clicked a task whose lead is far
+  // down the list). They're held in a SEPARATE map — NOT injected into
+  // `conversations` — so the inbox list stays exactly as the bootstrap/paginated
+  // set (no row added, no reorder) and scrolling still reveals the real row at
+  // its natural position. The chat area falls back to this map for the active
+  // conversation until pagination loads the real row. A MAP (not a single slot)
+  // so switching between several routed conversations keeps each one — otherwise
+  // re-opening an earlier one would find an empty chat (its fetch is guarded as
+  // already-done, but the slot was overwritten).
+  const [routedConversations, setRoutedConversations] = useState<
+    Record<string, Conversation>
+  >({});
   // Conversation whose full history is currently being fetched on select —
   // drives the loading spinner in the message area.
   const [hydratingId, setHydratingId] = useState<string | null>(null);
@@ -1167,21 +1173,25 @@ export default function Index() {
       // Query cache. Helpful for debugging the live pipeline.
       console.log("[ws] incoming", event.type, event);
       if (event.type === "message.created") {
-        // Mirror the message into the routed slot when it's the deep-linked
+        // Mirror the message into the routed map when it's a deep-linked
         // conversation not in the list (so its chat updates live too).
-        setRoutedConversation((rc) => {
-          if (!rc || rc.id !== event.conversationId) return rc;
+        setRoutedConversations((prev) => {
+          const rc = prev[event.conversationId];
+          if (!rc) return prev;
           const merged = mergeIncomingMessage(
             rc.messages,
             event.message,
             currentUserIdRef.current
           );
-          if (merged === rc.messages) return rc;
+          if (merged === rc.messages) return prev;
           return {
-            ...rc,
-            messages: merged,
-            lastMessage: event.message.text || rc.lastMessage,
-            timestamp: event.message.timestamp || rc.timestamp,
+            ...prev,
+            [event.conversationId]: {
+              ...rc,
+              messages: merged,
+              lastMessage: event.message.text || rc.lastMessage,
+              timestamp: event.message.timestamp || rc.timestamp,
+            },
           };
         });
         updateBootstrap((prev) => {
@@ -1509,15 +1519,15 @@ export default function Index() {
           BOOTSTRAP_QUERY_KEY
         );
         if (!currentCache?.conversations.some((c) => c.id === full.id)) {
-          setRoutedConversation(full);
+          setRoutedConversations((prev) => ({ ...prev, [full.id]: full }));
           return;
         }
         updateBootstrap((prev) => {
           const idx = prev.conversations.findIndex((c) => c.id === full.id);
           if (idx === -1) {
             // Raced out of the window between the check and here — fall back to
-            // the routed slot rather than injecting a row.
-            setRoutedConversation(full);
+            // the routed map rather than injecting a row.
+            setRoutedConversations((rc) => ({ ...rc, [full.id]: full }));
             return prev;
           }
           const next = prev.conversations.slice();
@@ -1971,20 +1981,21 @@ export default function Index() {
   // it without injecting a row into the list).
   const activeConversation =
     conversations.find((c) => c.id === activeId) ??
-    (routedConversation && routedConversation.id === activeId
-      ? routedConversation
-      : undefined);
+    (activeId ? routedConversations[activeId] : undefined);
 
-  // Once the real list row exists (pagination scrolled to it, or a WS event
-  // added it), drop the routed slot so we read the live list row instead.
+  // Drop any routed conversation whose real list row now exists (pagination
+  // scrolled to it, or a WS event added it) so we read the live row instead.
   useEffect(() => {
-    if (
-      routedConversation &&
-      conversations.some((c) => c.id === routedConversation.id)
-    ) {
-      setRoutedConversation(null);
-    }
-  }, [conversations, routedConversation]);
+    setRoutedConversations((prev) => {
+      const ids = Object.keys(prev);
+      if (ids.length === 0) return prev;
+      const keep = ids.filter((id) => !conversations.some((c) => c.id === id));
+      if (keep.length === ids.length) return prev; // nothing to drop
+      const next: Record<string, Conversation> = {};
+      for (const id of keep) next[id] = prev[id];
+      return next;
+    });
+  }, [conversations]);
 
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
   const handleSendMessage = useCallback(
@@ -2028,18 +2039,22 @@ export default function Index() {
         status: "sent",
       };
 
-      // Mirror the optimistic message into the routed slot when we're sending in
+      // Mirror the optimistic message into the routed map when we're sending in
       // a deep-linked conversation that isn't in the list yet (so it appears
       // immediately; the WS echo reconciles it by clientId).
-      setRoutedConversation((rc) => {
-        if (!rc || rc.id !== convId) return rc;
+      setRoutedConversations((prev) => {
+        const rc = prev[convId];
+        if (!rc) return prev;
         return {
-          ...rc,
-          messages: [...rc.messages, optimistic],
-          ...(channel === "internal"
-            ? {}
-            : { lastMessage: text || rc.lastMessage, timestamp: optimistic.timestamp }),
-          ...(reminder ? { activeReminder: reminder } : {}),
+          ...prev,
+          [convId]: {
+            ...rc,
+            messages: [...rc.messages, optimistic],
+            ...(channel === "internal"
+              ? {}
+              : { lastMessage: text || rc.lastMessage, timestamp: optimistic.timestamp }),
+            ...(reminder ? { activeReminder: reminder } : {}),
+          },
         };
       });
 
