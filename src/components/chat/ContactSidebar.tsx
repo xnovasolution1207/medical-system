@@ -256,6 +256,8 @@ export function ContactSidebar({
     contact.familyMembers ?? []
   );
   const [isFamilyDialogOpen, setIsFamilyDialogOpen] = useState(false);
+  // null = the dialog is in "add" mode; a relation id = editing that member.
+  const [editingFamilyId, setEditingFamilyId] = useState<string | null>(null);
   const [familyName, setFamilyName] = useState("");
   const [familyPhone, setFamilyPhone] = useState("");
   const [familyRelationship, setFamilyRelationship] =
@@ -347,10 +349,62 @@ export function ContactSidebar({
   }, [conversation?.messages]);
 
   const resetFamilyDialog = () => {
+    setEditingFamilyId(null);
     setFamilyName("");
     setFamilyPhone("");
     setFamilyRelationship("");
     setFamilySaving(false);
+  };
+
+  // Open the dialog pre-filled to edit an existing family member.
+  const openEditFamilyDialog = (m: FamilyMember) => {
+    setEditingFamilyId(m.id);
+    setFamilyName(m.name);
+    setFamilyPhone(m.phone ?? "");
+    setFamilyRelationship(m.relationship);
+    setFamilySaving(false);
+    setIsFamilyDialogOpen(true);
+  };
+
+  const handleSaveFamilyMember = async () => {
+    if (editingFamilyId) {
+      await handleEditFamilyMember();
+    } else {
+      await handleAddFamilyMember();
+    }
+  };
+
+  const handleEditFamilyMember = async () => {
+    const name = familyName.trim();
+    const phone = familyPhone.trim();
+    if (!name || !familyRelationship || !editingFamilyId) return;
+    setFamilySaving(true);
+    try {
+      const updated = await api.contacts.updateFamily(
+        contact.id,
+        editingFamilyId,
+        { name, phone: phone || undefined, relationship: familyRelationship }
+      );
+      setFamilyMembers((prev) =>
+        prev.map((m) => (m.id === updated.id ? updated : m))
+      );
+      setIsFamilyDialogOpen(false);
+      resetFamilyDialog();
+      toast({
+        title: "Familiar actualizado",
+        description: `${updated.name} ahora aparece como ${
+          FAMILY_RELATIONSHIP_LABELS[updated.relationship]
+        }.`,
+      });
+    } catch (err) {
+      toast({
+        title: "No se pudo actualizar el familiar",
+        description:
+          (err as Error)?.message || "Verifica los datos e inténtalo de nuevo.",
+        variant: "destructive",
+      });
+      setFamilySaving(false);
+    }
   };
 
   const handleAddFamilyMember = async () => {
@@ -1163,14 +1217,24 @@ export function ContactSidebar({
                       {m.phone && <> · {m.phone}</>}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveFamilyMember(m.id)}
-                    className="h-5 w-5 shrink-0 rounded-full opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground transition-opacity"
-                    aria-label={`Eliminar ${m.name}`}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={() => openEditFamilyDialog(m)}
+                      className="h-5 w-5 rounded-full hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground"
+                      aria-label={`Editar ${m.name}`}
+                    >
+                      <Edit2 className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFamilyMember(m.id)}
+                      className="h-5 w-5 rounded-full hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground"
+                      aria-label={`Eliminar ${m.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1186,7 +1250,9 @@ export function ContactSidebar({
         >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Agregar familiar</DialogTitle>
+              <DialogTitle>
+                {editingFamilyId ? "Editar familiar" : "Agregar familiar"}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
@@ -1241,14 +1307,20 @@ export function ContactSidebar({
                 Cancelar
               </Button>
               <Button
-                onClick={handleAddFamilyMember}
+                onClick={handleSaveFamilyMember}
                 disabled={
                   familySaving ||
                   !familyName.trim() ||
                   !familyRelationship
                 }
               >
-                {familySaving ? "Agregando…" : "Agregar"}
+                {familySaving
+                  ? editingFamilyId
+                    ? "Guardando…"
+                    : "Agregando…"
+                  : editingFamilyId
+                    ? "Guardar"
+                    : "Agregar"}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -713,6 +713,20 @@ export const api = {
         relationship: FamilyMember["relationship"];
       }
     ) => request<FamilyMember>("POST", `/contacts/${id}/family`, payload),
+    updateFamily: (
+      id: string,
+      relationId: string,
+      payload: {
+        name: string;
+        phone?: string;
+        relationship: FamilyMember["relationship"];
+      }
+    ) =>
+      request<FamilyMember>(
+        "PATCH",
+        `/contacts/${id}/family/${relationId}`,
+        payload
+      ),
     removeFamily: (id: string, relationId: string) =>
       request<void>("DELETE", `/contacts/${id}/family/${relationId}`),
     listFamily: (id: string) =>
