@@ -73,6 +73,15 @@ import type {
 import { FilterBuilder } from "./FilterBuilder";
 import { Calendar } from "@/components/ui/calendar";
 
+// Initials for an avatar fallback: first letter of the first + last word
+// ("Migsel Campos" → "MC"); single word → its first two letters.
+function oppAvatarInitials(name: string): string {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 interface OpportunitiesViewProps {
   opportunities: Opportunity[];
   pipeline?: Pipeline;
@@ -503,6 +512,29 @@ export function OpportunitiesView({
     }
     return map;
   }, [conversations]);
+
+  // Roster lookup by user id — used to show the ASSIGNED user's avatar on each
+  // opportunity card (not the lead's avatar).
+  const usersById = useMemo(() => {
+    const map = new Map<string, AgentUser>();
+    for (const u of users ?? []) map.set(u.id, u);
+    return map;
+  }, [users]);
+
+  // Resolve the avatar + display name of the user assigned to an opportunity,
+  // falling back to the linked conversation's assignee when the opp itself
+  // doesn't carry one. Returns the lead name only as a last-resort label.
+  const assigneeOf = useCallback(
+    (opp: Opportunity, conv?: Conversation) => {
+      const id = opp.assignedTo ?? conv?.participant?.assignedTo;
+      const user = id ? usersById.get(id) : undefined;
+      return {
+        avatar: user?.avatar,
+        name: user?.name ?? "",
+      };
+    },
+    [usersById]
+  );
 
   // ---- "Mención" filter support ----
   // Mentions live in message bodies, not on the opportunity, so we can't
@@ -1340,7 +1372,10 @@ export function OpportunitiesView({
                         // the loaded window.
                         const tags = participant?.tags ?? opp.tags ?? [];
                         const phone = participant?.phone ?? opp.phone;
-                        const avatar = participant?.avatar;
+                        // Show the ASSIGNED user's avatar (not the lead's).
+                        const assignee = assigneeOf(opp, conv);
+                        const avatar = assignee.avatar;
+                        const avatarLabel = assignee.name || opp.name;
                         const reminderCount = conv?.activeReminder ? 1 : 0;
                         const scheduledCount = conv?.scheduledMessages?.length ?? 0;
                         const taskCount = conv?.id
@@ -1473,8 +1508,8 @@ export function OpportunitiesView({
                                   />
                                 </div>
                                 <Avatar className="h-6 w-6">
-                                  {avatar && <AvatarImage src={avatar} alt={opp.name} />}
-                                  <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
+                                  {avatar && <AvatarImage src={avatar} alt={avatarLabel} />}
+                                  <AvatarFallback>{oppAvatarInitials(avatarLabel)}</AvatarFallback>
                                 </Avatar>
                               </div>
                             </div>
@@ -1610,7 +1645,10 @@ export function OpportunitiesView({
                   const participant = conv?.participant;
                   const tags = participant?.tags ?? opp.tags ?? [];
                   const phone = participant?.phone ?? opp.phone;
-                  const avatar = participant?.avatar;
+                  // Show the ASSIGNED user's avatar (not the lead's).
+                  const assignee = assigneeOf(opp, conv);
+                  const avatar = assignee.avatar;
+                  const avatarLabel = assignee.name || opp.name;
                   const stage = stages.find((s) => s.id === opp.stageId);
                   const stageLabel = stage?.label ?? opp.stageId;
                   return (
@@ -1673,8 +1711,8 @@ export function OpportunitiesView({
                       </TableCell>
                       <TableCell className="text-right">
                         <Avatar className="h-6 w-6 ml-auto">
-                          {avatar && <AvatarImage src={avatar} alt={opp.name} />}
-                          <AvatarFallback>{opp.name.charAt(0)}</AvatarFallback>
+                          {avatar && <AvatarImage src={avatar} alt={avatarLabel} />}
+                          <AvatarFallback>{oppAvatarInitials(avatarLabel)}</AvatarFallback>
                         </Avatar>
                       </TableCell>
                     </TableRow>
