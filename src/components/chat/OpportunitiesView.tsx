@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
@@ -85,6 +86,9 @@ function oppAvatarInitials(name: string): string {
 interface OpportunitiesViewProps {
   opportunities: Opportunity[];
   pipeline?: Pipeline;
+  // True while the full opportunity set is still loading — shows a skeleton
+  // board instead of an empty/partial one.
+  isLoading?: boolean;
   // Source for the "Crear oportunidad" contact picker. We pull contacts from
   // the conversations the SPA has already loaded — without `users.readonly`
   // (and without a separate /contacts/search endpoint exposed to the SPA),
@@ -328,6 +332,7 @@ function formatOppValue(value: number | undefined): string {
 export function OpportunitiesView({
   opportunities,
   pipeline,
+  isLoading = false,
   conversations,
   tasks,
   users = [],
@@ -1278,7 +1283,47 @@ export function OpportunitiesView({
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
-        {stages.length === 0 ? (
+        {isLoading ? (
+          // Skeleton board while the full opportunity set loads. Mirror the real
+          // stage columns when known; otherwise show a few placeholder columns.
+          <div className="flex gap-4 h-full pb-4 w-max">
+            {(stages.length > 0
+              ? stages
+              : Array.from({ length: 4 }, (_, i) => ({ id: `sk-${i}`, label: "" }))
+            ).map((stage, i) => (
+              <div
+                key={stage.id}
+                className="flex w-72 shrink-0 flex-col rounded-lg bg-muted/30 p-3"
+              >
+                {/* Column header */}
+                <div className="mb-3 flex items-center justify-between">
+                  <Skeleton className="h-4 w-28 rounded" />
+                  <Skeleton className="h-5 w-10 rounded-full" />
+                </div>
+                {/* Card placeholders — a few per column, slightly varied count */}
+                <div className="space-y-3">
+                  {Array.from({ length: 3 + (i % 3) }).map((_, j) => (
+                    <div
+                      key={j}
+                      className="rounded-lg border bg-card p-3 space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <Skeleton className="h-4 w-32 rounded" />
+                        <Skeleton className="h-6 w-6 rounded-full shrink-0" />
+                      </div>
+                      <Skeleton className="h-3 w-20 rounded" />
+                      <div className="flex gap-1.5">
+                        <Skeleton className="h-4 w-12 rounded-full" />
+                        <Skeleton className="h-4 w-16 rounded-full" />
+                      </div>
+                      <Skeleton className="h-3 w-24 rounded" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : stages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             No se encontró un pipeline en GoHighLevel.
           </div>

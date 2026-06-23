@@ -627,6 +627,9 @@ export default function Index() {
   // enriched fields, keyed by id, and overlay them onto the live
   // `opportunities` below — so WS stage moves still apply while filters work.
   const oppsPrefetchedRef = useRef(false);
+  // True while the full opportunity set is being fetched for the kanban — drives
+  // the skeleton placeholder on the Oportunidades page.
+  const [isLoadingOpportunities, setIsLoadingOpportunities] = useState(true);
   useEffect(() => {
     // Prefetch the full opportunity set in the BACKGROUND as soon as the
     // bootstrap has loaded — so the kanban is ready instantly when opened,
@@ -673,6 +676,9 @@ export default function Index() {
       })
       .catch((err) => {
         console.warn("[opportunities] enrich fetch failed", err);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingOpportunities(false);
       });
     return () => {
       cancelled = true;
@@ -3635,6 +3641,7 @@ export default function Index() {
           <OpportunitiesView
             opportunities={opportunitiesForKanban}
             pipeline={opportunitiesPipeline}
+            isLoading={isLoadingOpportunities}
             conversations={conversations}
             tasks={tasks}
             users={users}
