@@ -1106,6 +1106,11 @@ export default function Index() {
   const [isSearching, setIsSearching] = useState(false);
 
   const hydratedConversations = useRef<Set<string>>(new Set());
+  // Conversations fetched ONLY to satisfy a deep-linked URL (they were outside
+  // the loaded list window). They're kept in `conversations` state so the chat
+  // area + send/WS handlers work, but excluded from the displayed list so a
+  // reload doesn't inject an out-of-window row that reorders the inbox.
+  const routedOnlyIds = useRef<Set<string>>(new Set());
   // Conversation whose full history is currently being fetched on select —
   // drives the loading spinner in the message area.
   const [hydratingId, setHydratingId] = useState<string | null>(null);
@@ -1459,6 +1464,13 @@ export default function Index() {
   // ---- Lazy-hydrate full message list when a conversation is selected ----
   useEffect(() => {
     if (!activeId) return;
+    // Wait until the bootstrap cache exists. On a refresh of a deep-linked
+    // conversation URL, `activeId` is set from the URL before the bootstrap
+    // query resolves — if we hydrated now, our inserted conversation would be
+    // discarded when the bootstrap result replaces the cache, and the
+    // `hydratedConversations` guard would then block a retry (empty chat). Wait
+    // for `data`, then this re-runs (Boolean(data) dep) and the insert sticks.
+    if (!data) return;
     // Stub rows (id="pending-<contactId>") are placeholders we synthesize for
     // ContactCreate webhooks that arrive before any conversation exists in
     // GHL. They have no real GHL conversation to fetch — skip until the row
@@ -1472,7 +1484,16 @@ export default function Index() {
       .then((full) => {
         updateBootstrap((prev) => {
           const idx = prev.conversations.findIndex((c) => c.id === full.id);
-          if (idx === -1) return { ...prev, conversations: [full, ...prev.conversations] };
+          if (idx === -1) {
+            // This conversation isn't in the loaded list window — it was opened
+            // via a deep-linked URL. Keep it in state (so the chat + handlers
+            // work) but flag it routed-only so it's hidden from the displayed
+            // list (no extra row, no reorder on reload).
+            routedOnlyIds.current.add(full.id);
+            return { ...prev, conversations: [full, ...prev.conversations] };
+          }
+          // It IS in the window now → it's a normal list member, not routed-only.
+          routedOnlyIds.current.delete(full.id);
           const next = prev.conversations.slice();
           const existing = next[idx];
           // The detail endpoint can't always tell us the channel (GHL omits
@@ -1531,7 +1552,9 @@ export default function Index() {
       .finally(() => {
         setHydratingId((cur) => (cur === activeId ? null : cur));
       });
-  }, [activeId, updateBootstrap]);
+    // `Boolean(data)` so this re-runs once the bootstrap cache is ready (see the
+    // !data guard above) without re-firing on every cache mutation.
+  }, [activeId, updateBootstrap, Boolean(data)]);
 
   // Translate the SPA's FilterCondition[] into the native GHL conversation-
   // search params our /api/conversations endpoint forwards. Only equality
@@ -1901,9 +1924,21 @@ export default function Index() {
   // they don't pollute the working inbox. The flag is patched
   // optimistically by handleToggleArchive, so a row vanishes the
   // moment the operator clicks "Archivar".
-  const displayConversations = archivedFilterActive
-    ? displayConversationsBase
-    : displayConversationsBase.filter((c) => !c.isArchived);
+  // The routed-only exclusion (hiding a deep-link-injected conversation) applies
+  // ONLY to the default inbox list. Search/unread/assigned/followed views render
+  // their own curated result sets — a lead you searched for and clicked
+  // legitimately belongs there and must NOT be filtered out.
+  const isDefaultListView =
+    !archivedFilterActive &&
+    !isSearchActive &&
+    !unreadFilterActive &&
+    !assignedFilterActive &&
+    !followedFilterActive;
+  const displayConversations = (
+    archivedFilterActive
+      ? displayConversationsBase
+      : displayConversationsBase.filter((c) => !c.isArchived)
+  ).filter((c) => (isDefaultListView ? !routedOnlyIds.current.has(c.id) : true));
   // True while the active tab's scoped fetch (assignedTo / followers /
   // status=unread) is still in flight. The corresponding result state
   // is `null` before the first fetch resolves, then an array (possibly
