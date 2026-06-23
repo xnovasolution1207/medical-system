@@ -85,8 +85,11 @@ export function pathToNav(pathname: string): ChattingNav {
 
   if (head === "tareas") {
     const slot = tail[0];
+    // /chatting/tareas/<slot>/<conversationId> — clicking a task opens its
+    // conversation without leaving the task page.
+    const conversationId = tail[1] || null;
     if (!slot) return { tab: "tareas-hoy", viewId: null, conversationId: null };
-    return { tab: `tareas-${slot}`, viewId: null, conversationId: null };
+    return { tab: `tareas-${slot}`, viewId: null, conversationId };
   }
 
   if (TOP_LEVEL_TABS.has(head)) {
@@ -131,6 +134,12 @@ export function conversationToPath(
 ): string {
   const enc = encodeURIComponent(conversationId);
   if (viewId) return `${viewIdToPath(viewId)}/${enc}`;
+  // Task slots host conversations too (clicking a task opens its chat) — keep
+  // the user on the task page instead of bouncing them to /todos.
+  if (tab.startsWith("tareas-")) {
+    const slot = tab.slice("tareas-".length) || "hoy";
+    return `${CHATTING_PREFIX}/tareas/${encodeURIComponent(slot)}/${enc}`;
+  }
   if (TOP_LEVEL_TABS.has(tab) && tab !== "oportunidades") {
     return `${CHATTING_PREFIX}/${tab}/${enc}`;
   }
