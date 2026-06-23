@@ -2497,10 +2497,12 @@ export function ChatMessageArea({
           }
         }}
       >
-        {isLoadingHistory && conversation.messages.length === 0 && (
-          // Skeleton chat bubbles while the message history hydrates. Each bubble
-          // is a real bubble-shaped container with shimmer text lines + a
-          // timestamp, tinted like inbound (left) / outbound (right) messages.
+        {isLoadingHistory && (
+          // Skeleton chat bubbles while the message history hydrates (shown for
+          // every lead, even ones that already have a few WS messages — the
+          // partial thread is hidden below until the full history arrives). Each
+          // bubble mimics a real message: shimmer text lines + a timestamp,
+          // tinted like inbound (left) / outbound (right) messages.
           <div className="space-y-2 py-2">
             {[
               { me: false, lines: ["w-40", "w-52"] },
@@ -2547,14 +2549,6 @@ export function ChatMessageArea({
             ))}
           </div>
         )}
-        {isLoadingHistory && conversation.messages.length > 0 && (
-          <div className="sticky top-0 z-10 flex justify-center py-2">
-            <span className="flex items-center gap-2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Cargando historial…
-            </span>
-          </div>
-        )}
         {isLoadingOlderMessages && (
           // Skeleton bubbles prepended while older history loads on scroll-up.
           <div className="space-y-2 py-2">
@@ -2597,12 +2591,14 @@ export function ChatMessageArea({
             ))}
           </div>
         )}
-        {!hasOlderMessages && conversation.messages.length > 0 && (
+        {!isLoadingHistory && !hasOlderMessages && conversation.messages.length > 0 && (
           <div className="flex justify-center py-2 text-[11px] text-muted-foreground/40">
             Inicio del historial
           </div>
         )}
-        <div className="flex flex-col gap-4 py-4">
+        {/* Hidden while history loads so only the skeleton shows (the partial
+            thread reappears once the full history arrives). */}
+        <div className={cn("flex flex-col gap-4 py-4", isLoadingHistory && "hidden")}>
           {visibleMessages.length === 0 && conversation.messages.length > 0 && (
             <div className="flex justify-center py-6 text-xs text-muted-foreground/70">
               Ningún mensaje coincide con los filtros seleccionados
