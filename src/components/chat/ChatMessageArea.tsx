@@ -2531,8 +2531,25 @@ export function ChatMessageArea({
           </div>
         )}
         {isLoadingOlderMessages && (
-          <div className="flex justify-center py-3 text-xs text-muted-foreground">
-            Cargando mensajes anteriores…
+          // Skeleton bubbles prepended while older history loads on scroll-up.
+          <div className="space-y-4 py-2">
+            {[
+              { me: false, w: "w-44" },
+              { me: true, w: "w-56" },
+              { me: false, w: "w-52" },
+            ].map((b, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "flex items-end gap-2",
+                  b.me ? "justify-end" : "justify-start"
+                )}
+              >
+                {!b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+                <Skeleton className={cn("h-10 rounded-2xl", b.w)} />
+                {b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+              </div>
+            ))}
           </div>
         )}
         {!hasOlderMessages && conversation.messages.length > 0 && (
