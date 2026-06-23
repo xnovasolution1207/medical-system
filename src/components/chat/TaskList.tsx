@@ -106,6 +106,24 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
   const visibleTasks = filteredTasks.slice(0, visibleCount);
   const hasMore = filteredTasks.length > visibleTasks.length;
 
+  // Auto-open the FIRST task's conversation when entering a task filter — as if
+  // it were clicked — so the chat area isn't empty on arrival. Only fires when
+  // nothing is already open (never overrides a manual selection) and once per
+  // filter, picking the first task that actually has a conversation.
+  const firstTaskConvId = filteredTasks.find((t) => t.conversationId)?.conversationId;
+  const autoSelectedFilterRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeConversationId) {
+      autoSelectedFilterRef.current = filterType;
+      return;
+    }
+    if (autoSelectedFilterRef.current === filterType) return;
+    if (firstTaskConvId) {
+      autoSelectedFilterRef.current = filterType;
+      onSelectConversation(firstTaskConvId);
+    }
+  }, [filterType, firstTaskConvId, activeConversationId, onSelectConversation]);
+
   // Reveal the next page when the (Radix) scroll viewport nears its bottom.
   useEffect(() => {
     const root = scrollRef.current;
