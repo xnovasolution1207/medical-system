@@ -3900,6 +3900,48 @@ export default function Index() {
               onOpenMobileNav={() => setIsMobileNavOpen(true)}
               onOpenChatList={() => setIsChatListSheetOpen(true)}
             />
+          ) : activeId && hydratingId === activeId ? (
+            // A conversation is selected and its data is still being fetched
+            // (e.g. a deep-linked / out-of-window lead). The message-area
+            // skeleton lives INSIDE ChatMessageArea, which isn't mounted yet, so
+            // render a standalone chat skeleton here instead of the empty inbox.
+            <div className="flex h-full w-full flex-col bg-background">
+              <div className="flex h-[68px] items-center gap-3 border-b px-4">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-40 rounded" />
+                  <Skeleton className="h-3 w-24 rounded" />
+                </div>
+              </div>
+              <div className="flex-1 space-y-2 p-6">
+                {[
+                  { me: false, lines: ["w-40", "w-52"] },
+                  { me: true, lines: ["w-56", "w-28"] },
+                  { me: false, lines: ["w-44"] },
+                  { me: true, lines: ["w-60", "w-48", "w-24"] },
+                  { me: false, lines: ["w-36", "w-52"] },
+                ].map((b, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-end gap-2 ${b.me ? "justify-end" : "justify-start"}`}
+                  >
+                    {!b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+                    <div
+                      className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 ${
+                        b.me ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        {b.lines.map((w, j) => (
+                          <Skeleton key={j} className={`h-3 rounded bg-foreground/10 ${w}`} />
+                        ))}
+                      </div>
+                    </div>
+                    {b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center bg-muted/30 p-8 text-center">
               <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
