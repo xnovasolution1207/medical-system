@@ -113,11 +113,14 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
   const firstTaskConvId = filteredTasks.find((t) => t.conversationId)?.conversationId;
   const autoSelectedFilterRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeConversationId) {
-      autoSelectedFilterRef.current = filterType;
-      return;
-    }
+    // Already auto-selected for this filter → don't fight a later manual pick.
     if (autoSelectedFilterRef.current === filterType) return;
+    // Something is already open (a manual click, or briefly the previous
+    // filter's conversation during a tab switch) — wait. Crucially we DON'T mark
+    // the filter as handled here: doing so with a stale conversation (left over
+    // from the filter we just left) would block the auto-select once it clears,
+    // which is exactly why switching into "Realizadas" didn't auto-open.
+    if (activeConversationId) return;
     if (firstTaskConvId) {
       autoSelectedFilterRef.current = filterType;
       onSelectConversation(firstTaskConvId);
