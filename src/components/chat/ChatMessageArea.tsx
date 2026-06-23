@@ -2498,15 +2498,17 @@ export function ChatMessageArea({
         }}
       >
         {isLoadingHistory && conversation.messages.length === 0 && (
-          // Skeleton chat bubbles while the message history hydrates.
-          <div className="space-y-4 py-2">
+          // Skeleton chat bubbles while the message history hydrates. Each bubble
+          // is a real bubble-shaped container with shimmer text lines + a
+          // timestamp, tinted like inbound (left) / outbound (right) messages.
+          <div className="space-y-2 py-2">
             {[
-              { me: false, w: "w-52" },
-              { me: true, w: "w-64" },
-              { me: false, w: "w-40" },
-              { me: true, w: "w-56" },
-              { me: false, w: "w-60" },
-              { me: true, w: "w-44" },
+              { me: false, lines: ["w-40", "w-52"] },
+              { me: true, lines: ["w-56", "w-28"] },
+              { me: false, lines: ["w-44"] },
+              { me: true, lines: ["w-60", "w-48", "w-24"] },
+              { me: false, lines: ["w-36", "w-52"] },
+              { me: true, lines: ["w-44"] },
             ].map((b, i) => (
               <div
                 key={i}
@@ -2515,9 +2517,32 @@ export function ChatMessageArea({
                   b.me ? "justify-end" : "justify-start"
                 )}
               >
-                {!b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
-                <Skeleton className={cn("h-12 rounded-2xl", b.w)} />
-                {b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+                {!b.me && (
+                  <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                )}
+                <div
+                  className={cn(
+                    "max-w-[70%] rounded-2xl px-3.5 py-2.5",
+                    b.me
+                      ? "bg-primary/10 rounded-br-md"
+                      : "bg-muted rounded-bl-md"
+                  )}
+                >
+                  <div className="space-y-2">
+                    {b.lines.map((w, j) => (
+                      <Skeleton
+                        key={j}
+                        className={cn("h-3 rounded bg-foreground/10", w)}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-2 flex justify-end">
+                    <Skeleton className="h-2 w-8 rounded bg-foreground/10" />
+                  </div>
+                </div>
+                {b.me && (
+                  <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                )}
               </div>
             ))}
           </div>
@@ -2532,11 +2557,11 @@ export function ChatMessageArea({
         )}
         {isLoadingOlderMessages && (
           // Skeleton bubbles prepended while older history loads on scroll-up.
-          <div className="space-y-4 py-2">
+          <div className="space-y-2 py-2">
             {[
-              { me: false, w: "w-44" },
-              { me: true, w: "w-56" },
-              { me: false, w: "w-52" },
+              { me: false, lines: ["w-44"] },
+              { me: true, lines: ["w-56", "w-24"] },
+              { me: false, lines: ["w-36", "w-48"] },
             ].map((b, i) => (
               <div
                 key={i}
@@ -2545,9 +2570,29 @@ export function ChatMessageArea({
                   b.me ? "justify-end" : "justify-start"
                 )}
               >
-                {!b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
-                <Skeleton className={cn("h-10 rounded-2xl", b.w)} />
-                {b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+                {!b.me && (
+                  <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                )}
+                <div
+                  className={cn(
+                    "max-w-[70%] rounded-2xl px-3.5 py-2.5",
+                    b.me
+                      ? "bg-primary/10 rounded-br-md"
+                      : "bg-muted rounded-bl-md"
+                  )}
+                >
+                  <div className="space-y-2">
+                    {b.lines.map((w, j) => (
+                      <Skeleton
+                        key={j}
+                        className={cn("h-3 rounded bg-foreground/10", w)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {b.me && (
+                  <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                )}
               </div>
             ))}
           </div>
