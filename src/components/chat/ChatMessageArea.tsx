@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -2496,7 +2497,32 @@ export function ChatMessageArea({
           }
         }}
       >
-        {isLoadingHistory && (
+        {isLoadingHistory && conversation.messages.length === 0 && (
+          // Skeleton chat bubbles while the message history hydrates.
+          <div className="space-y-4 py-2">
+            {[
+              { me: false, w: "w-52" },
+              { me: true, w: "w-64" },
+              { me: false, w: "w-40" },
+              { me: true, w: "w-56" },
+              { me: false, w: "w-60" },
+              { me: true, w: "w-44" },
+            ].map((b, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "flex items-end gap-2",
+                  b.me ? "justify-end" : "justify-start"
+                )}
+              >
+                {!b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+                <Skeleton className={cn("h-12 rounded-2xl", b.w)} />
+                {b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+              </div>
+            ))}
+          </div>
+        )}
+        {isLoadingHistory && conversation.messages.length > 0 && (
           <div className="sticky top-0 z-10 flex justify-center py-2">
             <span className="flex items-center gap-2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
               <Loader2 className="h-4 w-4 animate-spin" />

@@ -13,6 +13,7 @@ import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ContactSidebar } from "@/components/chat/ContactSidebar";
 import { MainSidebar } from "@/components/chat/MainSidebar";
 import { OpportunitiesView } from "@/components/chat/OpportunitiesView";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   FilterCondition,
   Message,
@@ -3411,9 +3412,66 @@ export default function Index() {
   const opportunitiesPipeline = pipelines[0];
 
   if (isLoading) {
+    // Full-app layout skeleton: left rail + conversation list + chat pane,
+    // mirroring the real shell so the initial load doesn't flash a blank screen.
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background text-muted-foreground">
-        Cargando datos de GoHighLevel…
+      <div className="flex h-screen w-full overflow-hidden bg-background">
+        {/* Left icon rail */}
+        <div className="hidden w-14 shrink-0 flex-col items-center gap-4 border-r bg-card py-4 md:flex">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-8 rounded-lg" />
+          ))}
+        </div>
+        {/* Conversation list */}
+        <div className="hidden w-80 shrink-0 flex-col border-r bg-card md:flex">
+          <div className="border-b p-4">
+            <Skeleton className="h-7 w-40 rounded" />
+            <Skeleton className="mt-3 h-9 w-full rounded-md" />
+          </div>
+          <div className="flex flex-col gap-0.5 p-2">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-lg p-3">
+                <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Skeleton className="h-3.5 w-32 rounded" />
+                    <Skeleton className="h-3 w-10 rounded" />
+                  </div>
+                  <Skeleton className="h-3 w-48 rounded" />
+                  <Skeleton className="h-4 w-20 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Chat pane */}
+        <div className="flex flex-1 flex-col">
+          <div className="flex h-[68px] items-center gap-3 border-b px-4">
+            <Skeleton className="h-10 w-10 rounded-full" />
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-40 rounded" />
+              <Skeleton className="h-3 w-24 rounded" />
+            </div>
+          </div>
+          <div className="flex-1 space-y-4 p-6">
+            {[
+              { me: false, w: "w-52" },
+              { me: true, w: "w-64" },
+              { me: false, w: "w-40" },
+              { me: true, w: "w-56" },
+              { me: false, w: "w-60" },
+            ].map((b, i) => (
+              <div
+                key={i}
+                className={`flex items-end gap-2 ${b.me ? "justify-end" : "justify-start"}`}
+              >
+                {!b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+                <Skeleton className={`h-12 rounded-2xl ${b.w}`} />
+                {b.me && <Skeleton className="h-8 w-8 shrink-0 rounded-full" />}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
