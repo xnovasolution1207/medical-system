@@ -684,6 +684,15 @@ function bubbleHasNoVisibleContent(m: Message): boolean {
 // Set to `true` to re-enable it.
 const SHOW_CALL_BUTTON = false;
 
+// Initials for an avatar fallback: first letter of the first + last word
+// (e.g. "Migselle Rossello" → "MR"). Single word → its first two letters.
+function nameInitials(name: string): string {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export function ChatMessageArea({
   conversation,
   currentUser,
@@ -2710,12 +2719,13 @@ export function ChatMessageArea({
             // who sent it isn't the contact's owner and isn't the logged-in
             // viewer. Prefer the sender's GHL photo; if the backend resolved the
             // sender (senderName present) but they have no photo, leave `src`
-            // undefined so ChannelAvatar deterministically generates an avatar
-            // from the sender's NAME (unique per agent). Only fall back to the
-            // current user's own avatar for our own just-sent message that the
+            // undefined so the fallback shows the sender's INITIALS (not a
+            // generated avatar, and never the viewer's photo). Only fall back to
+            // the current user's own avatar for our own just-sent message the
             // backend hasn't echoed/resolved yet (no senderName).
             const outboundAvatar = message.senderAvatar
               ?? (message.senderName ? undefined : currentUser.avatar);
+            const outboundInitials = nameInitials(outboundName);
 
             return (
               <React.Fragment key={message.id}>
@@ -3038,15 +3048,15 @@ export function ChatMessageArea({
                           // of any human profile photo.
                           <AiBotAvatar className="h-8 w-8 cursor-default" />
                         ) : (
-                          // ChannelAvatar generates a deterministic avatar from
-                          // `name` when `src` is empty, so an agent without a GHL
-                          // photo still gets their OWN consistent avatar (keyed
-                          // on the sender's name), never the viewer's.
-                          <ChannelAvatar
-                            name={outboundName}
-                            src={outboundAvatar}
-                            className="h-8 w-8 cursor-default"
-                          />
+                          // Real sender photo when available; otherwise the
+                          // sender's initials (first letters of first + last
+                          // name) — never a generated avatar, never the viewer's.
+                          <Avatar className="h-8 w-8 cursor-default">
+                            <AvatarImage src={outboundAvatar} alt={outboundName} />
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                              {outboundInitials}
+                            </AvatarFallback>
+                          </Avatar>
                         )}
                       </TooltipTrigger>
                       <TooltipContent side="left" className="text-xs font-medium">
