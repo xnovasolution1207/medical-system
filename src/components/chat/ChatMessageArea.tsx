@@ -855,6 +855,8 @@ export function ChatMessageArea({
   }, [taskPresets]);
   const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
   const [editingPresetValue, setEditingPresetValue] = useState("");
+  // Controlled so selecting a template closes the dropdown.
+  const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
   const [isStagesOpen, setIsStagesOpen] = useState(false);
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
   const [editingStageName, setEditingStageName] = useState("");
@@ -1866,7 +1868,7 @@ export function ChatMessageArea({
                     description input below). */}
                 <div className="grid gap-2">
                   <Label className="text-sm font-semibold">Plantilla de tarea</Label>
-                  <Popover>
+                  <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
                     <PopoverTrigger asChild>
                       <Button
                         type="button"
@@ -1945,7 +1947,11 @@ export function ChatMessageArea({
                               ) : (
                                 <div
                                   className="flex flex-1 items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent cursor-pointer group"
-                                  onClick={() => setNewTaskTitle(preset)}
+                                  onClick={() => {
+                                    setNewTaskTitle(preset);
+                                    // Close the dropdown after picking a template.
+                                    setTemplatePopoverOpen(false);
+                                  }}
                                 >
                                   <span className="truncate pr-2">{preset}</span>
                                   <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
