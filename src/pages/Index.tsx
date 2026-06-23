@@ -4017,7 +4017,11 @@ export default function Index() {
                     onSetReminder={handleSetReminder}
                     onToggleFavorite={handleToggleFavorite}
                     onSetBotStatus={handleSetBotStatus}
-              isLoadingHistory={hydratingId === activeId}
+                    // The preview has its own "Cargando contacto…" state; this
+                    // flag tracks the INBOX's background hydration (hydratingId
+                    // vs activeId), so it would show a spurious "Cargando
+                    // historial…" pill over the preview. Keep it off here.
+                    isLoadingHistory={false}
                     onPinMessage={handlePinMessage}
                     onUnpinMessage={handleUnpinMessage}
                     hasOlderMessages={Boolean(conv.messagesHasMore)}
