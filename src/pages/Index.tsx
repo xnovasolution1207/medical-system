@@ -1106,11 +1106,13 @@ export default function Index() {
   const [isSearching, setIsSearching] = useState(false);
 
   const hydratedConversations = useRef<Set<string>>(new Set());
-  // Conversations fetched ONLY to satisfy a deep-linked URL (they were outside
-  // the loaded list window). They're kept in `conversations` state so the chat
-  // area + send/WS handlers work, but excluded from the displayed list so a
-  // reload doesn't inject an out-of-window row that reorders the inbox.
-  const routedOnlyIds = useRef<Set<string>>(new Set());
+  // A deep-linked conversation that isn't in the loaded list window (e.g. you
+  // reloaded on a lead past the first page). It's held in a SEPARATE slot — NOT
+  // injected into `conversations` — so the inbox list stays exactly as the
+  // bootstrap/paginated set (no row added, no reorder), and scrolling can still
+  // reveal the real row at its natural position. The chat area falls back to
+  // this slot for the active conversation until pagination loads the real row.
+  const [routedConversation, setRoutedConversation] = useState<Conversation | null>(null);
   // Conversation whose full history is currently being fetched on select —
   // drives the loading spinner in the message area.
   const [hydratingId, setHydratingId] = useState<string | null>(null);
@@ -1165,6 +1167,23 @@ export default function Index() {
       // Query cache. Helpful for debugging the live pipeline.
       console.log("[ws] incoming", event.type, event);
       if (event.type === "message.created") {
+        // Mirror the message into the routed slot when it's the deep-linked
+        // conversation not in the list (so its chat updates live too).
+        setRoutedConversation((rc) => {
+          if (!rc || rc.id !== event.conversationId) return rc;
+          const merged = mergeIncomingMessage(
+            rc.messages,
+            event.message,
+            currentUserIdRef.current
+          );
+          if (merged === rc.messages) return rc;
+          return {
+            ...rc,
+            messages: merged,
+            lastMessage: event.message.text || rc.lastMessage,
+            timestamp: event.message.timestamp || rc.timestamp,
+          };
+        });
         updateBootstrap((prev) => {
           const idx = prev.conversations.findIndex((c) => c.id === event.conversationId);
           if (idx === -1) return prev; // wait for the conversation.updated companion event
@@ -1482,18 +1501,25 @@ export default function Index() {
     api.conversations
       .get(activeId)
       .then((full) => {
+        // Not in the loaded list window (deep-linked beyond the first page):
+        // keep it ONLY in the separate routed slot — never inject it into the
+        // list — so the inbox stays put and pagination can still surface the
+        // real row at its natural position. The chat reads it from this slot.
+        const currentCache = queryClient.getQueryData<BootstrapPayload>(
+          BOOTSTRAP_QUERY_KEY
+        );
+        if (!currentCache?.conversations.some((c) => c.id === full.id)) {
+          setRoutedConversation(full);
+          return;
+        }
         updateBootstrap((prev) => {
           const idx = prev.conversations.findIndex((c) => c.id === full.id);
           if (idx === -1) {
-            // This conversation isn't in the loaded list window — it was opened
-            // via a deep-linked URL. Keep it in state (so the chat + handlers
-            // work) but flag it routed-only so it's hidden from the displayed
-            // list (no extra row, no reorder on reload).
-            routedOnlyIds.current.add(full.id);
-            return { ...prev, conversations: [full, ...prev.conversations] };
+            // Raced out of the window between the check and here — fall back to
+            // the routed slot rather than injecting a row.
+            setRoutedConversation(full);
+            return prev;
           }
-          // It IS in the window now → it's a normal list member, not routed-only.
-          routedOnlyIds.current.delete(full.id);
           const next = prev.conversations.slice();
           const existing = next[idx];
           // The detail endpoint can't always tell us the channel (GHL omits
@@ -1554,7 +1580,7 @@ export default function Index() {
       });
     // `Boolean(data)` so this re-runs once the bootstrap cache is ready (see the
     // !data guard above) without re-firing on every cache mutation.
-  }, [activeId, updateBootstrap, Boolean(data)]);
+  }, [activeId, updateBootstrap, queryClient, Boolean(data)]);
 
   // Translate the SPA's FilterCondition[] into the native GHL conversation-
   // search params our /api/conversations endpoint forwards. Only equality
@@ -1923,22 +1949,12 @@ export default function Index() {
   // Everywhere except the Archivados tab, archived rows are hidden so
   // they don't pollute the working inbox. The flag is patched
   // optimistically by handleToggleArchive, so a row vanishes the
-  // moment the operator clicks "Archivar".
-  // The routed-only exclusion (hiding a deep-link-injected conversation) applies
-  // ONLY to the default inbox list. Search/unread/assigned/followed views render
-  // their own curated result sets — a lead you searched for and clicked
-  // legitimately belongs there and must NOT be filtered out.
-  const isDefaultListView =
-    !archivedFilterActive &&
-    !isSearchActive &&
-    !unreadFilterActive &&
-    !assignedFilterActive &&
-    !followedFilterActive;
-  const displayConversations = (
-    archivedFilterActive
-      ? displayConversationsBase
-      : displayConversationsBase.filter((c) => !c.isArchived)
-  ).filter((c) => (isDefaultListView ? !routedOnlyIds.current.has(c.id) : true));
+  // moment the operator clicks "Archivar". The deep-linked conversation is NOT
+  // in this list — it lives in `routedConversation` and shows only in the chat
+  // — so the inbox stays exactly as loaded and pagination reveals the real row.
+  const displayConversations = archivedFilterActive
+    ? displayConversationsBase
+    : displayConversationsBase.filter((c) => !c.isArchived);
   // True while the active tab's scoped fetch (assignedTo / followers /
   // status=unread) is still in flight. The corresponding result state
   // is `null` before the first fetch resolves, then an array (possibly
@@ -1950,7 +1966,25 @@ export default function Index() {
     (assignedFilterActive && Boolean(myUserId) && assignedResults === null) ||
     (followedFilterActive && Boolean(myUserId) && followedResults === null);
   // (No-leídos is derived locally and synchronously — never "loading".)
-  const activeConversation = conversations.find((c) => c.id === activeId);
+  // Prefer the real list row; fall back to the routed slot for a deep-linked
+  // conversation that isn't in the loaded window yet (so the chat still shows
+  // it without injecting a row into the list).
+  const activeConversation =
+    conversations.find((c) => c.id === activeId) ??
+    (routedConversation && routedConversation.id === activeId
+      ? routedConversation
+      : undefined);
+
+  // Once the real list row exists (pagination scrolled to it, or a WS event
+  // added it), drop the routed slot so we read the live list row instead.
+  useEffect(() => {
+    if (
+      routedConversation &&
+      conversations.some((c) => c.id === routedConversation.id)
+    ) {
+      setRoutedConversation(null);
+    }
+  }, [conversations, routedConversation]);
 
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
   const handleSendMessage = useCallback(
@@ -1993,6 +2027,21 @@ export default function Index() {
         replyTo,
         status: "sent",
       };
+
+      // Mirror the optimistic message into the routed slot when we're sending in
+      // a deep-linked conversation that isn't in the list yet (so it appears
+      // immediately; the WS echo reconciles it by clientId).
+      setRoutedConversation((rc) => {
+        if (!rc || rc.id !== convId) return rc;
+        return {
+          ...rc,
+          messages: [...rc.messages, optimistic],
+          ...(channel === "internal"
+            ? {}
+            : { lastMessage: text || rc.lastMessage, timestamp: optimistic.timestamp }),
+          ...(reminder ? { activeReminder: reminder } : {}),
+        };
+      });
 
       updateBootstrap((prev) => {
         const idx = prev.conversations.findIndex((c) => c.id === convId);
