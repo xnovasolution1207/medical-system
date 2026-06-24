@@ -1844,15 +1844,41 @@ export default function Index() {
     advancedFilterServerInfo.hasServerParam ||
     dateFilterActive;
 
-  // The "No leídos" list is derived locally (see `unreadConversations`) — we
-  // no longer fetch GHL's status=unread search, which is unreliable for this
-  // location (it returns an empty list even when leads have unread messages,
-  // and its aggregate count won't drop on mark-read). Keep the result slot
-  // null so any legacy `unreadResults ?? <local>` fallbacks resolve to local.
+  // "No leídos": fetch the GHL-wide unread set so the filter spans the WHOLE
+  // location (not just the loaded window). The backend walks conversations and
+  // filters by each one's unreadCount (GHL's status=unread search is unreliable,
+  // so it filters itself). Paginated 25-at-a-time; WS keeps it live afterward.
   useEffect(() => {
+    if (!unreadFilterActive) {
+      setUnreadResults(null);
+      setUnreadNextCursor(null);
+      return;
+    }
+    let cancelled = false;
     setUnreadResults(null);
     setUnreadNextCursor(null);
-  }, [unreadFilterActive]);
+    api.conversations
+      .list({
+        limit: 25,
+        status: "unread",
+        ...(assignedFilterActive && myUserId ? { assignedTo: myUserId } : {}),
+        ...(followedFilterActive && myUserId ? { followers: myUserId } : {}),
+      })
+      .then((result) => {
+        if (cancelled) return;
+        setUnreadResults(result.conversations);
+        setUnreadNextCursor(result.nextCursor);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("unread fetch failed", err);
+        setUnreadResults([]);
+        setUnreadNextCursor(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unreadFilterActive, assignedFilterActive, followedFilterActive, myUserId]);
 
   // Server-side fetch for "Asignados a mí". Hits GHL's native
   // assignedTo search, returning every conversation in the location
@@ -1982,7 +2008,9 @@ export default function Index() {
     : isSearchActive
       ? withCachedStage(searchResults ?? [])
       : unreadFilterActive
-        ? withCachedStage(unreadConversations)
+        ? // Server-wide unread set when loaded; local-derived as a fast
+          // first-paint fallback until it arrives.
+          withCachedStage(unreadResults ?? unreadConversations)
         : assignedFilterActive
           ? withCachedStage(assignedResults ?? [])
           : followedFilterActive
