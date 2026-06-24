@@ -3294,7 +3294,7 @@ export function ChatMessageArea({
                       type="button"
                       onClick={() => removeFileAt(idx)}
                       aria-label={`Quitar ${file.name}`}
-                      className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground shadow ring-1 ring-border hover:bg-destructive hover:text-destructive-foreground"
+                      className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow ring-1 ring-border backdrop-blur-sm hover:bg-destructive hover:text-destructive-foreground"
                     >
                       <X className="h-3 w-3" />
                     </button>
