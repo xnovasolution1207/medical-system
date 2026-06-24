@@ -404,7 +404,7 @@ export const api = {
       if (params?.assignedTo) qs.set("assignedTo", params.assignedTo);
       if (params?.followers) qs.set("followers", params.followers);
       const query = qs.toString();
-      return request<{ total: number }>(
+      return request<{ total: number; pending?: boolean }>(
         "GET",
         `/conversations/unread-count${query ? `?${query}` : ""}`
       );
