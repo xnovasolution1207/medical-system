@@ -1292,6 +1292,30 @@ export default function Index() {
               : c
           ),
         }));
+      } else if (event.type === "contact.deleted") {
+        // Another agent deleted this lead — drop its conversation(s) from every
+        // list so it disappears live, no refresh needed.
+        const cid = event.contactId;
+        const isThisContact = (c: Conversation) =>
+          c.contactId === cid || c.participant?.id === cid;
+        updateBootstrap((prev) => ({
+          ...prev,
+          conversations: prev.conversations.filter((c) => !isThisContact(c)),
+          opportunities: prev.opportunities.filter((o) => o.contactId !== cid),
+        }));
+        setSearchResults((prev) => (prev ? prev.filter((c) => !isThisContact(c)) : prev));
+        setUnreadResults((prev) => (prev ? prev.filter((c) => !isThisContact(c)) : prev));
+        setAssignedResults((prev) => (prev ? prev.filter((c) => !isThisContact(c)) : prev));
+        setFollowedResults((prev) => (prev ? prev.filter((c) => !isThisContact(c)) : prev));
+        // Drop any routed (deep-linked) copy too, so the chat area doesn't keep
+        // showing the deleted lead.
+        setRoutedConversations((prev) => {
+          const ids = Object.keys(prev).filter((id) => !isThisContact(prev[id]));
+          if (ids.length === Object.keys(prev).length) return prev;
+          const next: Record<string, Conversation> = {};
+          for (const id of ids) next[id] = prev[id];
+          return next;
+        });
       } else if (event.type === "opportunity.updated") {
         updateBootstrap((prev) => {
           const idx = prev.opportunities.findIndex((o) => o.id === event.opportunity.id);

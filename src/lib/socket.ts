@@ -9,6 +9,7 @@ export type WsEvent =
   | { type: "conversation.updated"; conversation: Conversation }
   | { type: "conversation.read"; conversationId: string; readAt: number }
   | { type: "contact.updated"; contactId: string; patch: Partial<User> }
+  | { type: "contact.deleted"; contactId: string }
   | { type: "opportunity.updated"; opportunity: Opportunity }
   | { type: "task.created"; task: Task }
   | { type: "task.updated"; task: Task }
