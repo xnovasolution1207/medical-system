@@ -2077,6 +2077,77 @@ export default function Index() {
     });
   }, [conversations]);
 
+  // Find a conversation by id across EVERY store, not just the loaded list:
+  // the bootstrap window, the active server-fetched result lists, and the
+  // routed map (deep-linked leads beyond page 1). Handlers that only looked at
+  // the bootstrap cache silently no-op'd on a refreshed deep link / search hit.
+  const findConversationAnywhere = useCallback(
+    (id: string): Conversation | undefined => {
+      const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
+      return (
+        cache?.conversations.find((c) => c.id === id) ??
+        searchResults?.find((c) => c.id === id) ??
+        unreadResults?.find((c) => c.id === id) ??
+        assignedResults?.find((c) => c.id === id) ??
+        followedResults?.find((c) => c.id === id) ??
+        routedConversations[id]
+      );
+    },
+    [
+      queryClient,
+      searchResults,
+      unreadResults,
+      assignedResults,
+      followedResults,
+      routedConversations,
+    ]
+  );
+
+  // Apply a patch to a conversation in EVERY store that might hold it, so a
+  // mutation (schedule, stage, …) reflects immediately whether the lead is in
+  // the loaded list, a search/tab result, or the routed (deep-linked) map.
+  const patchConversationEverywhere = useCallback(
+    (id: string, patch: (c: Conversation) => Conversation) => {
+      const apply = (c: Conversation) => (c.id === id ? patch(c) : c);
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map(apply),
+      }));
+      setSearchResults((prev) => (prev ? prev.map(apply) : prev));
+      setUnreadResults((prev) => (prev ? prev.map(apply) : prev));
+      setAssignedResults((prev) => (prev ? prev.map(apply) : prev));
+      setFollowedResults((prev) => (prev ? prev.map(apply) : prev));
+      setRoutedConversations((prev) =>
+        prev[id] ? { ...prev, [id]: patch(prev[id]) } : prev
+      );
+    },
+    [updateBootstrap]
+  );
+
+  // Remove a conversation (by contactId) from EVERY store at once.
+  const removeConversationEverywhere = useCallback(
+    (contactId: string) => {
+      const keep = (c: Conversation) =>
+        c.contactId !== contactId && c.participant?.id !== contactId;
+      updateBootstrap((prev) => ({
+        ...prev,
+        conversations: prev.conversations.filter(keep),
+      }));
+      setSearchResults((prev) => (prev ? prev.filter(keep) : prev));
+      setUnreadResults((prev) => (prev ? prev.filter(keep) : prev));
+      setAssignedResults((prev) => (prev ? prev.filter(keep) : prev));
+      setFollowedResults((prev) => (prev ? prev.filter(keep) : prev));
+      setRoutedConversations((prev) => {
+        const ids = Object.keys(prev).filter((id) => keep(prev[id]));
+        if (ids.length === Object.keys(prev).length) return prev;
+        const next: Record<string, Conversation> = {};
+        for (const id of ids) next[id] = prev[id];
+        return next;
+      });
+    },
+    [updateBootstrap]
+  );
+
   // ---- Handlers — all mutate the React Query cache via updateBootstrap ----
   const handleSendMessage = useCallback(
     (
@@ -2350,26 +2421,22 @@ export default function Index() {
       }
       const localChannel = (channel as "sms" | "email" | "whatsapp" | "internal") ?? "sms";
       const optimisticId = `sch-tmp-${Date.now()}`;
-      updateBootstrap((prev) => ({
-        ...prev,
-        conversations: prev.conversations.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                scheduledMessages: [
-                  ...(c.scheduledMessages ?? []),
-                  {
-                    id: optimisticId,
-                    text,
-                    scheduledFor: date,
-                    channel: localChannel,
-                    templateId: template?.id,
-                    templateName: template?.name,
-                  },
-                ],
-              }
-            : c
-        ),
+      // Patch every store (incl. the routed map) so the scheduled template — and
+      // its banner/icon — appears at once even on a deep-linked lead that isn't
+      // in the loaded list (e.g. after a refresh on the 26th+ conversation).
+      patchConversationEverywhere(conversationId, (c) => ({
+        ...c,
+        scheduledMessages: [
+          ...(c.scheduledMessages ?? []),
+          {
+            id: optimisticId,
+            text,
+            scheduledFor: date,
+            channel: localChannel,
+            templateId: template?.id,
+            templateName: template?.name,
+          },
+        ],
       }));
       api.conversations
         .schedule(conversationId, {
@@ -2381,23 +2448,16 @@ export default function Index() {
           templateLanguage: template?.language,
         })
         .then((saved) => {
-          updateBootstrap((prev) => ({
-            ...prev,
-            conversations: prev.conversations.map((c) =>
-              c.id === conversationId
-                ? {
-                    ...c,
-                    scheduledMessages: (c.scheduledMessages ?? []).map((m) =>
-                      m.id === optimisticId ? { ...m, id: saved.id } : m
-                    ),
-                  }
-                : c
+          patchConversationEverywhere(conversationId, (c) => ({
+            ...c,
+            scheduledMessages: (c.scheduledMessages ?? []).map((m) =>
+              m.id === optimisticId ? { ...m, id: saved.id } : m
             ),
           }));
         })
         .catch((err) => console.error("schedule failed", err));
     },
-    [toast, updateBootstrap]
+    [toast, patchConversationEverywhere]
   );
 
   // "Enviar ahora" path from the WhatsApp template dialog. Mirrors the
@@ -2533,43 +2593,43 @@ export default function Index() {
 
   const handleCancelScheduledMessage = useCallback(
     (conversationId: string, messageId: string) => {
-      updateBootstrap((prev) => ({
-        ...prev,
-        conversations: prev.conversations.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                scheduledMessages: (c.scheduledMessages ?? []).filter((m) => m.id !== messageId),
-              }
-            : c
-        ),
+      patchConversationEverywhere(conversationId, (c) => ({
+        ...c,
+        scheduledMessages: (c.scheduledMessages ?? []).filter((m) => m.id !== messageId),
       }));
       if (isStubConvId(conversationId)) return;
       api.conversations
         .cancelScheduled(conversationId, messageId)
         .catch((err) => console.error("cancel scheduled failed", err));
     },
-    [updateBootstrap]
+    [patchConversationEverywhere]
   );
 
   const handleUpdateStage = useCallback(
     (id: string, stage: Conversation["stage"]) => {
       if (!stage) return;
       const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
-      const conv = cache?.conversations.find((c) => c.id === id);
+      // Resolve the conversation from ANY store — a deep-linked / searched lead
+      // isn't in the bootstrap window, so looking only there left its contactId
+      // unresolved and the embudo (stage) never moved.
+      const conv = findConversationAnywhere(id);
       const contactId = conv?.contactId ?? conv?.participant.id;
       const opp = contactId
         ? cache?.opportunities.find((o) => o.contactId === contactId)
         : undefined;
       const pipeline = cache?.pipelines[0];
 
-      updateBootstrap((prev) => ({
-        ...prev,
-        conversations: prev.conversations.map((c) => (c.id === id ? { ...c, stage } : c)),
-        opportunities: opp
-          ? prev.opportunities.map((o) => (o.id === opp.id ? { ...o, stageId: stage } : o))
-          : prev.opportunities,
-      }));
+      // Reflect the new stage everywhere the row may live (list, search/tab
+      // results, routed map) so it updates instantly even off the loaded list.
+      patchConversationEverywhere(id, (c) => ({ ...c, stage }));
+      if (opp) {
+        updateBootstrap((prev) => ({
+          ...prev,
+          opportunities: prev.opportunities.map((o) =>
+            o.id === opp.id ? { ...o, stageId: stage } : o
+          ),
+        }));
+      }
 
       // GHL flag-store endpoints are conversation-keyed; stub rows have no
       // backing GHL conversation, so skip the patch. Local state still
@@ -2620,7 +2680,13 @@ export default function Index() {
           });
       }
     },
-    [queryClient, toast, updateBootstrap]
+    [
+      queryClient,
+      toast,
+      updateBootstrap,
+      findConversationAnywhere,
+      patchConversationEverywhere,
+    ]
   );
 
   const handleClearReminder = useCallback(
@@ -3665,17 +3731,20 @@ export default function Index() {
     // Resolve the target: explicit id when called from the sidebar dropdown,
     // otherwise the currently active conversation (chat header trash icon).
     const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
+    // Resolve the target from ANY store: deleting from a search hit or a
+    // refreshed deep link (lead not in the bootstrap window) used to resolve to
+    // nothing and silently no-op — "no elimina, hay que refrescar".
     const target = conversationId
-      ? cache?.conversations.find((c) => c.id === conversationId)
+      ? findConversationAnywhere(conversationId)
       : activeConversation;
     const contactId = target?.contactId ?? target?.participant.id;
     if (!contactId) return;
 
     await api.contacts.delete(contactId);
 
-    // Drop the deleted contact's conversations and remember how many slots
-    // opened up — we'll backfill the same number from the next page so the
-    // sidebar window stays the same size after delete.
+    // Drop the deleted contact's conversations from every store and remember how
+    // many list slots opened up — we'll backfill the same number from the next
+    // page so the sidebar window stays the same size after delete.
     let removedCount = 0;
     let cursorForBackfill: number | null = null;
     updateBootstrap((prev) => {
@@ -3686,6 +3755,9 @@ export default function Index() {
       cursorForBackfill = prev.conversationsNextCursor;
       return { ...prev, conversations: filtered };
     });
+    // Also purge the search/tab result lists and the routed (deep-linked) map so
+    // the row vanishes immediately regardless of which view surfaced it.
+    removeConversationEverywhere(contactId);
     // If the row being deleted is currently open, navigate away from it (drop
     // the conversation segment from the URL so it doesn't point at a dead lead).
     if (target?.id && target.id === activeIdRef.current) {
@@ -3716,7 +3788,17 @@ export default function Index() {
         console.error("backfill after delete failed", err);
       }
     }
-  }, [activeConversation, queryClient, updateBootstrap, toast, navigate, activeViewId, activeMainTab]);
+  }, [
+    activeConversation,
+    queryClient,
+    updateBootstrap,
+    toast,
+    navigate,
+    activeViewId,
+    activeMainTab,
+    findConversationAnywhere,
+    removeConversationEverywhere,
+  ]);
 
   const setStages = useCallback(
     (next: BootstrapPayload["stages"]) => {
