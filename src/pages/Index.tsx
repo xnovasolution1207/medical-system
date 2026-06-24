@@ -1154,6 +1154,23 @@ export default function Index() {
     unreadIdsRef.current = s;
   }, [conversations, unreadResults]);
 
+  // Ids of conversations currently assigned to the logged-in agent. Lets the
+  // long-lived WS handler tell whether a `lead.updated` actually CHANGED this
+  // lead's assignment relative to me — so we refetch the "Asignados a mí" count
+  // only on real (re)assignments, not on every message from an already-assigned
+  // lead (which never changes the count).
+  const assignedToMeIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const me = currentUser.id;
+    const s = new Set<string>();
+    for (const c of conversations)
+      if (c.participant?.assignedTo === me) s.add(c.id);
+    if (assignedResults)
+      for (const c of assignedResults)
+        if (c.participant?.assignedTo === me) s.add(c.id);
+    assignedToMeIdsRef.current = s;
+  }, [conversations, assignedResults, currentUser.id]);
+
   // Optimistically nudge the cached "No leídos" badge for every active scope
   // variant. `delta` is +1 (new unread) or -1 (read); floored at 0.
   const bumpUnreadBadge = useCallback(
@@ -1397,12 +1414,13 @@ export default function Index() {
         // messages in the same chat bump only once; the 60s staleTime + scope
         // changes reconcile any drift against GHL.
         const incConv = event.lead.conversation;
+        const leadCache = queryClient.getQueryData<BootstrapPayload>(
+          BOOTSTRAP_QUERY_KEY
+        );
+        const me = currentUserIdRef.current;
         if (incConv) {
           const convId = incConv.id;
-          const cache = queryClient.getQueryData<BootstrapPayload>(
-            BOOTSTRAP_QUERY_KEY
-          );
-          const existing = cache?.conversations.find((c) => c.id === convId);
+          const existing = leadCache?.conversations.find((c) => c.id === convId);
           const newInbound = countNewInboundMessages(
             existing?.messages ?? [],
             incConv.messages ?? []
@@ -1429,9 +1447,34 @@ export default function Index() {
             }
           }
         }
-        // Assigned-count badge still refetches (cheap GHL `total`, and an
-        // inbound can mean a brand-new assigned lead).
-        queryClient.invalidateQueries({ queryKey: ["conversations", "assigned-count"] });
+        // "Asignados a mí" count: refetch ONLY when this lead's assignment to ME
+        // actually changed. A message from an already-assigned lead doesn't move
+        // the count, so re-counting on every message was wasted — recompute just
+        // on the (rare) transitions: a lead becoming mine, or leaving me.
+        {
+          const convId =
+            incConv?.id ??
+            leadCache?.conversations.find(
+              (c) =>
+                c.contactId === event.contactId ||
+                c.participant?.id === event.contactId
+            )?.id;
+          const newAssigned =
+            event.lead.contact?.assignedTo ?? incConv?.participant?.assignedTo;
+          const wasMine = convId
+            ? assignedToMeIdsRef.current.has(convId)
+            : false;
+          const isMine = !!me && newAssigned === me;
+          if (isMine !== wasMine) {
+            if (convId) {
+              if (isMine) assignedToMeIdsRef.current.add(convId);
+              else assignedToMeIdsRef.current.delete(convId);
+            }
+            queryClient.invalidateQueries({
+              queryKey: ["conversations", "assigned-count"],
+            });
+          }
+        }
         // Stub id used for contact-only ContactCreate events that arrive
         // before any conversation exists in GHL. We use a deterministic
         // prefix so the row can be replaced when the real conversation
@@ -3848,9 +3891,6 @@ export default function Index() {
   );
 
   const handleDeleteLead = useCallback(async (conversationId?: string) => {
-    // Resolve the target: explicit id when called from the sidebar dropdown,
-    // otherwise the currently active conversation (chat header trash icon).
-    const cache = queryClient.getQueryData<BootstrapPayload>(BOOTSTRAP_QUERY_KEY);
     // Resolve the target from ANY store: deleting from a search hit or a
     // refreshed deep link (lead not in the bootstrap window) used to resolve to
     // nothing and silently no-op — "no elimina, hay que refrescar".
