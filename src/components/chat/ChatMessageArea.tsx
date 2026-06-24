@@ -2990,6 +2990,47 @@ export function ChatMessageArea({
                             variant={isMe ? "light" : "dark"}
                             fallbackDuration={message.attachment.duration}
                           />
+                        ) : (message.attachment.type === "file" || message.attachment.type === "document") &&
+                          /\.pdf(\?|#|$)/i.test(message.attachment.name || message.attachment.url || "") ? (
+                          // PDF preview: first page via the browser's viewer,
+                          // click to open the full document. A footer shows the
+                          // name + download.
+                          <div
+                            className={cn(
+                              "overflow-hidden rounded-lg border",
+                              isMe ? "border-primary-foreground/20" : "border-border"
+                            )}
+                          >
+                            <a
+                              href={proxyMediaUrl(message.attachment.url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`Abrir ${message.attachment.name}`}
+                              className="relative block h-64 w-full bg-white"
+                            >
+                              <iframe
+                                src={`${proxyMediaUrl(message.attachment.url)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                                title={message.attachment.name}
+                                className="pointer-events-none h-full w-full border-0"
+                              />
+                            </a>
+                            <a
+                              href={proxyMediaUrl(message.attachment.url)}
+                              download={message.attachment.name}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={cn(
+                                "flex items-center gap-2 p-2.5 text-sm transition-colors",
+                                isMe
+                                  ? "bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/20"
+                                  : "bg-background text-foreground hover:bg-accent/60"
+                              )}
+                            >
+                              <FileIcon className="h-4 w-4 shrink-0" />
+                              <span className="truncate flex-1 font-medium">{message.attachment.name}</span>
+                              <Download className="h-4 w-4 shrink-0 opacity-70" />
+                            </a>
+                          </div>
                         ) : (message.attachment.type === "file" || message.attachment.type === "document") ? (
                           <a
                             href={proxyMediaUrl(message.attachment.url)}
