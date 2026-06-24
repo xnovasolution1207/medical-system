@@ -732,8 +732,22 @@ export function ChatMessageArea({
   onOpenChatList,
 }: ChatMessageAreaProps) {
   const [inputText, setInputText] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Multiple staged attachments — the agent can select/queue several files and
+  // send them all at once (each goes out as its own message).
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // Object URLs for image thumbnails of the staged files (null for non-images).
+  // Revoked when the staged set changes to avoid leaks.
+  const filePreviews = useMemo(
+    () =>
+      selectedFiles.map((f) =>
+        f.type.startsWith("image/") ? URL.createObjectURL(f) : null
+      ),
+    [selectedFiles]
+  );
+  useEffect(
+    () => () => filePreviews.forEach((u) => u && URL.revokeObjectURL(u)),
+    [filePreviews]
+  );
   // Files baked into a picked GHL template (snippet "attach files"). These
   // are already-hosted URLs — no upload step — staged so they're sent
   // alongside the template body. Cleared after send or manual removal.
@@ -1153,14 +1167,11 @@ export function ChatMessageArea({
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      if (file.type.startsWith("image/")) {
-        setPreviewUrl(URL.createObjectURL(file));
-      } else {
-        setPreviewUrl(null);
-      }
+    // Append ALL chosen files so the agent can pick several at once (and add
+    // more in a second pick before sending).
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...files]);
     }
     // Reset input value so the same file can be selected again if removed
     if (e.target) {
@@ -1169,12 +1180,12 @@ export function ChatMessageArea({
   };
 
   const handleRemoveFile = () => {
-    setSelectedFile(null);
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
+    setSelectedFiles([]);
     setReplyingToMessage(null);
+  };
+  // Remove a single staged file by index.
+  const removeFileAt = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const stopRecordingCleanup = useCallback(() => {
@@ -1293,19 +1304,20 @@ export function ChatMessageArea({
       audioChunksRef.current = [];
       stopRecordingCleanup();
       pendingVoiceNoteRef.current = true;
-      setSelectedFile(file);
+      // Voice note replaces the staged set (sent immediately on its own).
+      setSelectedFiles([file]);
     };
     recorder.stop();
   }, [stopRecordingCleanup]);
 
   // Auto-submit when a voice note file is staged
   useEffect(() => {
-    if (pendingVoiceNoteRef.current && selectedFile) {
+    if (pendingVoiceNoteRef.current && selectedFiles.length > 0) {
       pendingVoiceNoteRef.current = false;
       const form = document.querySelector<HTMLFormElement>("[data-chat-form]");
       form?.requestSubmit();
     }
-  }, [selectedFile]);
+  }, [selectedFiles]);
 
   // Cleanup on unmount (e.g. switching conversations)
   useEffect(() => {
@@ -1322,19 +1334,18 @@ export function ChatMessageArea({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!(inputText.trim() || selectedFile || templateAttachments.length > 0)) return;
+    if (!(inputText.trim() || selectedFiles.length > 0 || templateAttachments.length > 0)) return;
     if (isUploading) return;
 
-    // Pre-flight against the channel's media matrix (Twilio MMS for SMS,
-    // Meta/WhatsApp's supported types for whatsapp). The downstream
-    // provider rejections are opaque ("Twilio Error - ERR_BAD_REQUEST",
-    // "Meta Error"), so catching the violation locally is the only way
-    // to tell the agent WHY the file won't go through.
-    if (selectedFile) {
-      const reason = await validateAttachmentForChannel(selectedFile, activeChannel);
+    // Pre-flight EVERY staged file against the channel's media matrix (Twilio
+    // MMS for SMS, Meta/WhatsApp's supported types for whatsapp). The
+    // downstream provider rejections are opaque, so catching violations locally
+    // is the only way to tell the agent WHY a file won't go through.
+    for (const file of selectedFiles) {
+      const reason = await validateAttachmentForChannel(file, activeChannel);
       if (reason) {
         toast({
-          title: "Archivo no compatible con el canal",
+          title: `Archivo no compatible con el canal: ${file.name}`,
           description: reason,
           variant: "destructive",
         });
@@ -1342,25 +1353,28 @@ export function ChatMessageArea({
       }
     }
 
-    let attachment: Message["attachment"] | undefined;
-    if (selectedFile) {
+    // Upload all staged files (in order) so each can be sent as its own message.
+    const uploadedAttachments: NonNullable<Message["attachment"]>[] = [];
+    if (selectedFiles.length > 0) {
       setIsUploading(true);
       try {
-        // Upload to GHL's conversation-attachment endpoint first. Pass
-        // the active conversation id so the resulting URL is one GHL's
-        // send-message handler recognises as proper media — library
-        // URLs make GHL fall through to a text-only Meta payload and
-        // get 400'd with "text.body is required".
-        const uploaded = await api.uploads.create(selectedFile, conversation.id);
-        const mime = uploaded.mimeType || selectedFile.type || "";
-        const type: NonNullable<Message["attachment"]>["type"] = mime.startsWith("image/")
-          ? "image"
-          : mime.startsWith("video/")
-            ? "video"
-            : mime.startsWith("audio/")
-              ? "audio"
-              : "file";
-        attachment = { type, url: uploaded.url, name: uploaded.name };
+        for (const file of selectedFiles) {
+          // Upload to GHL's conversation-attachment endpoint first. Pass
+          // the active conversation id so the resulting URL is one GHL's
+          // send-message handler recognises as proper media — library
+          // URLs make GHL fall through to a text-only Meta payload and
+          // get 400'd with "text.body is required".
+          const uploaded = await api.uploads.create(file, conversation.id);
+          const mime = uploaded.mimeType || file.type || "";
+          const type: NonNullable<Message["attachment"]>["type"] = mime.startsWith("image/")
+            ? "image"
+            : mime.startsWith("video/")
+              ? "video"
+              : mime.startsWith("audio/")
+                ? "audio"
+                : "file";
+          uploadedAttachments.push({ type, url: uploaded.url, name: uploaded.name });
+        }
       } catch (err) {
         toast({
           title: "No se pudo subir el archivo",
@@ -1415,15 +1429,13 @@ export function ChatMessageArea({
               : conversation.participant.name,
         }
       : undefined;
-    // A picked template may carry files (GHL snippet "attach files"). They
-    // ride along with the body: the first attachment goes out with the text;
-    // any remaining files are sent as their own messages so each renders in
+    // All attachments to send: the agent's staged files first, then any files a
+    // picked template carries (GHL snippet "attach files"). The first goes out
+    // with the text; the rest are sent as their own messages so each renders in
     // its own bubble (mirrors how multi-file sends arrive on the wire).
-    const extraAttachments = [...templateAttachments];
-    let primaryAttachment = attachment;
-    if (!primaryAttachment && extraAttachments.length > 0) {
-      primaryAttachment = extraAttachments.shift();
-    }
+    const allAttachments = [...uploadedAttachments, ...templateAttachments];
+    let primaryAttachment = allAttachments.shift();
+    const extraAttachments = allAttachments;
 
     // Agent is sending — scroll the thread to their new message once it lands.
     forceScrollOnSendRef.current = true;
@@ -3255,32 +3267,53 @@ export function ChatMessageArea({
             </div>
           )}
 
-          {selectedFile && (
-            <div className="mb-3 flex items-center gap-3 rounded-xl border bg-background p-2 pr-4 shadow-sm animate-in slide-in-from-bottom-2">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                {previewUrl ? (
-                  <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
-                ) : (
-                  <FileIcon className="h-6 w-6 text-muted-foreground" />
-                )}
-              </div>
-              <div className="flex flex-1 flex-col overflow-hidden">
-                <span className="truncate text-sm font-medium text-foreground">
-                  {selectedFile.name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {(selectedFile.size / 1024).toFixed(1)} KB
-                </span>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0"
-                onClick={handleRemoveFile}
-              >
-                <X className="h-4 w-4" />
-              </Button>
+          {selectedFiles.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {selectedFiles.length > 1 && (
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {selectedFiles.length} archivos
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveFile}
+                    className="text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    Quitar todos
+                  </button>
+                </div>
+              )}
+              {selectedFiles.map((file, idx) => (
+                <div
+                  key={`${file.name}-${idx}`}
+                  className="flex items-center gap-3 rounded-xl border bg-background p-2 pr-4 shadow-sm animate-in slide-in-from-bottom-2"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                    {filePreviews[idx] ? (
+                      <img src={filePreviews[idx]!} alt="Preview" className="h-full w-full object-cover" />
+                    ) : (
+                      <FileIcon className="h-6 w-6 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-col overflow-hidden">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {file.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {(file.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0"
+                    onClick={() => removeFileAt(idx)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -3654,6 +3687,7 @@ export function ChatMessageArea({
                 
                 <input
                   type="file"
+                  multiple
                   ref={fileInputRef}
                   onChange={handleFileChange}
                   className="hidden"
@@ -3934,7 +3968,7 @@ export function ChatMessageArea({
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={!inputText.trim() && !selectedFile && templateAttachments.length === 0}
+                  disabled={!inputText.trim() && selectedFiles.length === 0 && templateAttachments.length === 0}
                   className="h-9 px-5 gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-none disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
