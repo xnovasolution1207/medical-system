@@ -735,12 +735,14 @@ export function ChatMessageArea({
   // Multiple staged attachments — the agent can select/queue several files and
   // send them all at once (each goes out as its own message).
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  // Object URLs for image thumbnails of the staged files (null for non-images).
-  // Revoked when the staged set changes to avoid leaks.
+  // Object URLs for image/video thumbnails of the staged files (null for other
+  // types). Revoked when the staged set changes to avoid leaks.
   const filePreviews = useMemo(
     () =>
       selectedFiles.map((f) =>
-        f.type.startsWith("image/") ? URL.createObjectURL(f) : null
+        f.type.startsWith("image/") || f.type.startsWith("video/")
+          ? URL.createObjectURL(f)
+          : null
       ),
     [selectedFiles]
   );
@@ -3308,7 +3310,24 @@ export function ChatMessageArea({
                       <X className="h-3 w-3" />
                     </button>
                     <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
-                      {filePreviews[idx] ? (
+                      {filePreviews[idx] && file.type.startsWith("video/") ? (
+                        <>
+                          {/* `#t=0.1` seeks to the first frame so the browser
+                              shows a real preview instead of a black poster. */}
+                          <video
+                            src={`${filePreviews[idx]}#t=0.1`}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="h-full w-full object-cover"
+                          />
+                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/55">
+                              <Play className="h-3 w-3 fill-white text-white" />
+                            </span>
+                          </span>
+                        </>
+                      ) : filePreviews[idx] ? (
                         <img
                           src={filePreviews[idx]!}
                           alt={file.name}
