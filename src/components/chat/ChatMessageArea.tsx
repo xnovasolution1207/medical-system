@@ -1368,6 +1368,22 @@ export function ChatMessageArea({
   }, []);
 
   const [isUploading, setIsUploading] = useState(false);
+  // File shown in the full-screen viewer modal — used for both staged (blob URL)
+  // and sent (proxied URL) attachments. `url` is already final (not re-proxied).
+  const [viewerFile, setViewerFile] = useState<
+    { url: string; name: string; mime?: string } | null
+  >(null);
+  // Open the viewer for a staged file (reusing its preview blob URL, or making
+  // one on demand for non-previewable types so the modal can still offer it).
+  const openStagedViewer = (idx: number) => {
+    const f = selectedFiles[idx];
+    if (!f) return;
+    setViewerFile({
+      url: filePreviews[idx] ?? URL.createObjectURL(f),
+      name: f.name,
+      mime: f.type,
+    });
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3001,11 +3017,15 @@ export function ChatMessageArea({
                               isMe ? "border-primary-foreground/20" : "border-border"
                             )}
                           >
-                            <a
-                              href={proxyMediaUrl(message.attachment.url)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              aria-label={`Abrir ${message.attachment.name}`}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setViewerFile({
+                                  url: proxyMediaUrl(message.attachment!.url),
+                                  name: message.attachment!.name,
+                                })
+                              }
+                              aria-label={`Ver ${message.attachment.name}`}
                               className="relative block h-64 w-full bg-white"
                             >
                               <iframe
@@ -3013,47 +3033,53 @@ export function ChatMessageArea({
                                 title={message.attachment.name}
                                 className="pointer-events-none h-full w-full border-0"
                               />
-                            </a>
-                            <a
-                              href={proxyMediaUrl(message.attachment.url)}
-                              download={message.attachment.name}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setViewerFile({
+                                  url: proxyMediaUrl(message.attachment!.url),
+                                  name: message.attachment!.name,
+                                })
+                              }
                               className={cn(
-                                "flex items-center gap-2 p-2.5 text-sm transition-colors",
+                                "flex w-full items-center gap-2 p-2.5 text-sm transition-colors",
                                 isMe
                                   ? "bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/20"
                                   : "bg-background text-foreground hover:bg-accent/60"
                               )}
                             >
                               <FileIcon className="h-4 w-4 shrink-0" />
-                              <span className="truncate flex-1 font-medium">{message.attachment.name}</span>
-                              <Download className="h-4 w-4 shrink-0 opacity-70" />
-                            </a>
+                              <span className="truncate flex-1 text-left font-medium">{message.attachment.name}</span>
+                              <Search className="h-4 w-4 shrink-0 opacity-70" />
+                            </button>
                           </div>
                         ) : (message.attachment.type === "file" || message.attachment.type === "document") ? (
-                          <a
-                            href={proxyMediaUrl(message.attachment.url)}
-                            download={message.attachment.name}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`Descargar ${message.attachment.name}`}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setViewerFile({
+                                url: proxyMediaUrl(message.attachment!.url),
+                                name: message.attachment!.name,
+                              })
+                            }
+                            aria-label={`Ver ${message.attachment.name}`}
                             className={cn(
-                              "flex items-center gap-2 rounded-lg border p-3 transition-colors",
+                              "flex w-full items-center gap-2 rounded-lg border p-3 transition-colors",
                               isMe
                                 ? "bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/20"
                                 : "bg-background border-border text-foreground hover:bg-accent/60"
                             )}
                           >
                             <FileIcon className="h-5 w-5 shrink-0" />
-                            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                            <div className="flex min-w-0 flex-1 flex-col overflow-hidden text-left">
                               <span className="truncate text-sm font-medium">{message.attachment.name}</span>
                               {message.attachment.size && (
                                 <span className="text-[10px] opacity-70">{message.attachment.size}</span>
                               )}
                             </div>
-                            <Download className="h-4 w-4 shrink-0 opacity-70" />
-                          </a>
+                            <Search className="h-4 w-4 shrink-0 opacity-70" />
+                          </button>
                         ) : message.attachment.type === "link" ? (
                           <a href={message.attachment.url} target="_blank" rel="noopener noreferrer" className={cn(
                             "flex flex-col overflow-hidden rounded-lg border bg-background text-foreground hover:bg-accent/80 transition-colors max-w-xs sm:max-w-sm",
@@ -3390,7 +3416,14 @@ export function ChatMessageArea({
                     >
                       <X className="h-3 w-3" />
                     </button>
-                    <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
+                    <div
+                      className={cn(
+                        "relative flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-muted",
+                        !isAudio && "cursor-pointer"
+                      )}
+                      onClick={!isAudio ? () => openStagedViewer(idx) : undefined}
+                      title={!isAudio ? "Ver archivo" : undefined}
+                    >
                       {filePreviews[idx] && isVideo ? (
                         <>
                           {/* `#t=0.1` seeks to the first frame so the browser
@@ -4163,6 +4196,74 @@ export function ChatMessageArea({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* File viewer modal — opens when a staged or sent file is clicked. */}
+      <Dialog
+        open={viewerFile !== null}
+        onOpenChange={(open) => !open && setViewerFile(null)}
+      >
+        <DialogContent className="max-w-4xl w-[95vw] h-[90vh] p-0 gap-0 overflow-hidden flex flex-col">
+          {viewerFile && (() => {
+            const { url, name, mime } = viewerFile;
+            const lower = (name || url || "").toLowerCase();
+            const m = (mime || "").toLowerCase();
+            const isPdf = m === "application/pdf" || /\.pdf(\?|#|$)/.test(lower);
+            const isImage =
+              m.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/.test(lower);
+            const isVideo =
+              m.startsWith("video/") || /\.(mp4|webm|ogg|mov|3gp)(\?|#|$)/.test(lower);
+            const isAudio =
+              m.startsWith("audio/") || /\.(mp3|ogg|m4a|aac|amr|wav)(\?|#|$)/.test(lower);
+            return (
+              <>
+                <DialogHeader className="flex flex-row items-center justify-between gap-3 border-b px-4 py-3 space-y-0">
+                  <DialogTitle className="truncate text-sm font-medium">{name}</DialogTitle>
+                  <a
+                    href={url}
+                    download={name}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mr-6 flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Descargar
+                  </a>
+                </DialogHeader>
+                <div className="flex-1 min-h-0 bg-muted/30">
+                  {isPdf ? (
+                    <iframe src={url} title={name} className="h-full w-full border-0 bg-white" />
+                  ) : isImage ? (
+                    <div className="flex h-full w-full items-center justify-center p-4">
+                      <img src={url} alt={name} className="max-h-full max-w-full object-contain" />
+                    </div>
+                  ) : isVideo ? (
+                    <div className="flex h-full w-full items-center justify-center bg-black p-2">
+                      <video src={url} controls autoPlay className="max-h-full max-w-full" />
+                    </div>
+                  ) : isAudio ? (
+                    <div className="flex h-full w-full items-center justify-center p-6">
+                      <audio src={url} controls autoPlay className="w-full max-w-md" />
+                    </div>
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-8 text-center text-muted-foreground">
+                      <FileIcon className="h-12 w-12" />
+                      <p className="text-sm">No se puede previsualizar este tipo de archivo.</p>
+                      <a
+                        href={url}
+                        download={name}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                      >
+                        <Download className="h-4 w-4" /> Descargar archivo
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
