@@ -3283,37 +3283,41 @@ export function ChatMessageArea({
                   </button>
                 </div>
               )}
-              {selectedFiles.map((file, idx) => (
-                <div
-                  key={`${file.name}-${idx}`}
-                  className="flex items-center gap-3 rounded-xl border bg-background p-2 pr-4 shadow-sm animate-in slide-in-from-bottom-2"
-                >
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                    {filePreviews[idx] ? (
-                      <img src={filePreviews[idx]!} alt="Preview" className="h-full w-full object-cover" />
-                    ) : (
-                      <FileIcon className="h-6 w-6 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="flex flex-1 flex-col overflow-hidden">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {file.name}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {(file.size / 1024).toFixed(1)} KB
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0"
-                    onClick={() => removeFileAt(idx)}
+              {/* Horizontal, scrollable row of compact file cards. */}
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {selectedFiles.map((file, idx) => (
+                  <div
+                    key={`${file.name}-${idx}`}
+                    className="relative w-28 shrink-0 rounded-xl border bg-background p-2 shadow-sm animate-in slide-in-from-bottom-2"
                   >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      onClick={() => removeFileAt(idx)}
+                      aria-label={`Quitar ${file.name}`}
+                      className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground shadow ring-1 ring-border hover:bg-destructive hover:text-destructive-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                    <div className="flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
+                      {filePreviews[idx] ? (
+                        <img
+                          src={filePreviews[idx]!}
+                          alt={file.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <FileIcon className="h-7 w-7 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="mt-1.5 truncate text-[11px] font-medium text-foreground">
+                      {file.name}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {(file.size / 1024).toFixed(1)} KB
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
