@@ -735,15 +735,19 @@ export function ChatMessageArea({
   // Multiple staged attachments — the agent can select/queue several files and
   // send them all at once (each goes out as its own message).
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  // Object URLs for image/video thumbnails of the staged files (null for other
-  // types). Revoked when the staged set changes to avoid leaks.
+  // Object URLs for image/video/PDF thumbnails of the staged files (null for
+  // other types). Revoked when the staged set changes to avoid leaks.
   const filePreviews = useMemo(
     () =>
-      selectedFiles.map((f) =>
-        f.type.startsWith("image/") || f.type.startsWith("video/")
+      selectedFiles.map((f) => {
+        const isPdf =
+          f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+        return f.type.startsWith("image/") ||
+          f.type.startsWith("video/") ||
+          isPdf
           ? URL.createObjectURL(f)
-          : null
-      ),
+          : null;
+      }),
     [selectedFiles]
   );
   useEffect(
@@ -3296,6 +3300,10 @@ export function ChatMessageArea({
                       ? file.name.split(".").pop() || ""
                       : (file.type.split("/")[1] || "file")
                   ).toUpperCase();
+                  const isVideo = file.type.startsWith("video/");
+                  const isPdf =
+                    file.type === "application/pdf" ||
+                    file.name.toLowerCase().endsWith(".pdf");
                   return (
                   <div
                     key={`${file.name}-${idx}`}
@@ -3310,7 +3318,7 @@ export function ChatMessageArea({
                       <X className="h-3 w-3" />
                     </button>
                     <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
-                      {filePreviews[idx] && file.type.startsWith("video/") ? (
+                      {filePreviews[idx] && isVideo ? (
                         <>
                           {/* `#t=0.1` seeks to the first frame so the browser
                               shows a real preview instead of a black poster. */}
@@ -3327,6 +3335,17 @@ export function ChatMessageArea({
                             </span>
                           </span>
                         </>
+                      ) : filePreviews[idx] && isPdf ? (
+                        // First-page PDF preview via the browser's built-in
+                        // viewer (chrome). pointer-events-none so the card's
+                        // scroll / remove button still work; toolbar hidden.
+                        <div className="pointer-events-none h-full w-full overflow-hidden bg-white">
+                          <iframe
+                            src={`${filePreviews[idx]}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                            title={file.name}
+                            className="h-[200%] w-[200%] origin-top-left scale-50 border-0"
+                          />
+                        </div>
                       ) : filePreviews[idx] ? (
                         <img
                           src={filePreviews[idx]!}
