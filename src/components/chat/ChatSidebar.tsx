@@ -1115,9 +1115,12 @@ export function ChatSidebar({
       {/* Conversation List */}
       <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="flex flex-col gap-0.5 p-2">
-          {filteredConversations.length === 0 &&
-          (isLoadingList || (search.trim() && isSearching)) ? (
-            // Skeleton conversation rows while the list / search loads.
+          {isLoadingList ||
+          (filteredConversations.length === 0 && search.trim() && isSearching) ? (
+            // Skeleton conversation rows while a scoped tab fetch (No leídos /
+            // Asignados / Seguidos) is in flight, or while a search loads. For
+            // No leídos this overrides the instant local fallback so the
+            // skeleton shows until the GHL-wide unread set arrives.
             <div className="flex flex-col gap-0.5">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-3 rounded-lg p-3">

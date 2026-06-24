@@ -2016,8 +2016,10 @@ export default function Index() {
   // state is the truthful answer, not a loading one.
   const isLoadingConversationList =
     (assignedFilterActive && Boolean(myUserId) && assignedResults === null) ||
-    (followedFilterActive && Boolean(myUserId) && followedResults === null);
-  // (No-leídos is derived locally and synchronously — never "loading".)
+    (followedFilterActive && Boolean(myUserId) && followedResults === null) ||
+    // "No leídos" fetches the GHL-wide unread set server-side — show the
+    // skeleton while that first page is in flight (results === null).
+    (unreadFilterActive && unreadResults === null);
   // Prefer the real list row; fall back to the routed slot for a deep-linked
   // conversation that isn't in the loaded window yet (so the chat still shows
   // it without injecting a row into the list).
