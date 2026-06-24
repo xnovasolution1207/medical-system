@@ -1121,6 +1121,16 @@ export default function Index() {
   // every selection change).
   const activeIdRef = useRef<string | null>(null);
 
+  // Ids of conversations currently considered unread (across the loaded list
+  // and the server-fetched "No leídos" set). The "No leídos" badge is GHL's
+  // raw count, which is eventually-consistent and doesn't drop the instant a
+  // lead is read — so when a read happens (locally OR via another agent's
+  // `conversation.read`) we optimistically decrement the badge. This ref both
+  // tells us the conversation WAS unread (so we don't decrement on a no-op
+  // read) and dedupes the local action against its own WS echo: whoever
+  // decrements first deletes the id, so the second pass is a no-op.
+  const unreadIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     currentUserIdRef.current = currentUser.id;
   }, [currentUser.id]);
@@ -1128,6 +1138,26 @@ export default function Index() {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
+
+  useEffect(() => {
+    const s = new Set<string>();
+    for (const c of conversations) if ((c.unreadCount ?? 0) > 0) s.add(c.id);
+    if (unreadResults) for (const c of unreadResults) s.add(c.id);
+    unreadIdsRef.current = s;
+  }, [conversations, unreadResults]);
+
+  // Optimistically nudge the cached "No leídos" badge for every active scope
+  // variant. `delta` is +1 (new unread) or -1 (read); floored at 0.
+  const bumpUnreadBadge = useCallback(
+    (delta: number) => {
+      queryClient.setQueriesData<{ total: number }>(
+        { queryKey: UNREAD_COUNT_QUERY_KEY },
+        (old) =>
+          old ? { ...old, total: Math.max(0, old.total + delta) } : old
+      );
+    },
+    [queryClient]
+  );
 
   // Keep `activeId` in sync with the conversation id in the URL — handles deep
   // links, refresh, and browser back/forward (each conversation has its own
@@ -1248,6 +1278,14 @@ export default function Index() {
         // session — this is what stops colleagues from seeing a high unread
         // count after someone else already handled the lead.
         const cid = event.conversationId;
+        // Decrement the badge once, only if this conversation was actually
+        // unread. The ref dedupes against our own optimistic decrement (when
+        // WE triggered the read) — whoever ran first already deleted the id.
+        // GHL's raw count lags the read, so we can't just refetch it here.
+        if (unreadIdsRef.current.has(cid)) {
+          unreadIdsRef.current.delete(cid);
+          bumpUnreadBadge(-1);
+        }
         const clearUnread = (c: Conversation) =>
           c.id === cid && (c.unreadCount ?? 0) > 0 ? { ...c, unreadCount: 0 } : c;
         updateBootstrap((prev) => ({
@@ -1259,8 +1297,6 @@ export default function Index() {
         setAssignedResults((prev) => (prev ? prev.map(clearUnread) : prev));
         setFollowedResults((prev) => (prev ? prev.map(clearUnread) : prev));
         setSearchResults((prev) => (prev ? prev.map(clearUnread) : prev));
-        // Keep the GHL-wide aggregate badge in sync.
-        queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       } else if (event.type === "contact.updated") {
         // GHL contact create / update / tag webhook → patch the participant
         // on every conversation whose contact id matches. New contacts with
@@ -2815,6 +2851,12 @@ export default function Index() {
   // Optimistic; the backend stamps a read time so it persists on refresh.
   const handleMarkAsRead = useCallback(
     (id: string) => {
+      // Drop the badge by one now (GHL's raw count lags). Guard with the ref so
+      // the WS `conversation.read` echo of our own action doesn't double-count.
+      if (unreadIdsRef.current.has(id)) {
+        unreadIdsRef.current.delete(id);
+        bumpUnreadBadge(-1);
+      }
       updateBootstrap((prev) => ({
         ...prev,
         conversations: prev.conversations.map((c) =>
@@ -2852,14 +2894,12 @@ export default function Index() {
       if (isStubConvId(id)) return;
       api.conversations
         .patch(id, { markRead: true })
-        .then(() => {
-          // The backend has now zeroed GHL's unread count for this lead, so
-          // refresh the GHL-wide badge so it matches the list immediately.
-          queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
-        })
+        // Badge already decremented optimistically above; the backend echo
+        // (conversation.read) is deduped via unreadIdsRef. GHL's raw count
+        // reconciles on the next natural refetch (scope change / staleTime).
         .catch((err) => console.error("mark as read failed", err));
     },
-    [updateBootstrap]
+    [updateBootstrap, bumpUnreadBadge]
   );
 
   // "Marcar como no leído" — flag a conversation as unread again. The inverse
@@ -2870,6 +2910,12 @@ export default function Index() {
   // per session — a full refresh reseeds counts from GHL.
   const handleMarkAsUnread = useCallback(
     (id: string) => {
+      // Inverse of handleMarkAsRead: nudge the badge up by one if this
+      // conversation wasn't already counted as unread.
+      if (!unreadIdsRef.current.has(id)) {
+        unreadIdsRef.current.add(id);
+        bumpUnreadBadge(1);
+      }
       const bump = (c: Conversation) =>
         c.id === id && (c.unreadCount ?? 0) === 0 ? { ...c, unreadCount: 1 } : c;
       updateBootstrap((prev) => ({
@@ -2882,7 +2928,7 @@ export default function Index() {
       setAssignedResults((prev) => (prev ? prev.map(bump) : prev));
       setFollowedResults((prev) => (prev ? prev.map(bump) : prev));
     },
-    [updateBootstrap]
+    [updateBootstrap, bumpUnreadBadge]
   );
 
   // Set the AI bot Active/Paused for a conversation. Optimistically flips
