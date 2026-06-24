@@ -1130,6 +1130,10 @@ export default function Index() {
   // read) and dedupes the local action against its own WS echo: whoever
   // decrements first deletes the id, so the second pass is a no-op.
   const unreadIdsRef = useRef<Set<string>>(new Set());
+  // Mirror of `unreadScope` for the WS closure (which is created once and would
+  // otherwise capture a stale scope) so the optimistic badge increment on a new
+  // inbound message respects the active tab (global / asignados / seguidos).
+  const unreadScopeRef = useRef(unreadScope);
 
   useEffect(() => {
     currentUserIdRef.current = currentUser.id;
@@ -1138,6 +1142,10 @@ export default function Index() {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
+
+  useEffect(() => {
+    unreadScopeRef.current = unreadScope;
+  }, [unreadScope]);
 
   useEffect(() => {
     const s = new Set<string>();
@@ -1380,11 +1388,49 @@ export default function Index() {
           tasks: prev.tasks.map((t) => (t.id === event.task.id ? event.task : t)),
         }));
       } else if (event.type === "lead.updated") {
-        // Inbound or read-state-changing events bump the GHL-wide unread
-        // count. Drop the cached value so the badge refetches against
-        // GHL on the next render — cheap (limit=1) and keeps the badge
-        // accurate without us having to mirror GHL's unread bookkeeping.
-        queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
+        // Bump the "No leídos" badge OPTIMISTICALLY instead of refetching
+        // /unread-count on every inbound (that recount walks GHL's status=unread
+        // set — too expensive to run per message). We increment by one only when
+        // this event brings a genuinely-new inbound message to a conversation
+        // that wasn't already counted as unread, isn't the one being viewed, and
+        // matches the active tab's scope. unreadIdsRef dedupes so multiple
+        // messages in the same chat bump only once; the 60s staleTime + scope
+        // changes reconcile any drift against GHL.
+        const incConv = event.lead.conversation;
+        if (incConv) {
+          const convId = incConv.id;
+          const cache = queryClient.getQueryData<BootstrapPayload>(
+            BOOTSTRAP_QUERY_KEY
+          );
+          const existing = cache?.conversations.find((c) => c.id === convId);
+          const newInbound = countNewInboundMessages(
+            existing?.messages ?? [],
+            incConv.messages ?? []
+          );
+          const isActiveChat = activeIdRef.current === convId;
+          if (
+            newInbound > 0 &&
+            !isActiveChat &&
+            !unreadIdsRef.current.has(convId)
+          ) {
+            const scope = unreadScopeRef.current;
+            const contact = event.lead.contact;
+            const assignedTo =
+              contact?.assignedTo ?? incConv.participant?.assignedTo;
+            const followers =
+              contact?.followers ?? incConv.participant?.followers ?? [];
+            const inScope =
+              scope.kind === "global" ||
+              (scope.kind === "assignedTo" && assignedTo === scope.userId) ||
+              (scope.kind === "followers" && followers.includes(scope.userId));
+            if (inScope) {
+              unreadIdsRef.current.add(convId);
+              bumpUnreadBadge(1);
+            }
+          }
+        }
+        // Assigned-count badge still refetches (cheap GHL `total`, and an
+        // inbound can mean a brand-new assigned lead).
         queryClient.invalidateQueries({ queryKey: ["conversations", "assigned-count"] });
         // Stub id used for contact-only ContactCreate events that arrive
         // before any conversation exists in GHL. We use a deterministic
