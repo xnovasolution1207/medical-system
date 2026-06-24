@@ -1,10 +1,15 @@
-import { forwardRef } from "react";
+import { forwardRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
-// Avatar for GHL's Conversation AI bot. A self-contained SVG so it stays
-// crisp at any size: a violet→indigo→cyan gradient orb (the robot's head)
-// with a glossy highlight, an antenna, a dark "visor" screen and two glowing
-// cyan eyes plus a small smile. Rendered wherever an `aiBot` message /
+// Custom AI-bot avatar image (medical robot mascot). Lives in /public, so it's
+// served at the site root. Swap this constant to change the bot's avatar.
+const AI_BOT_IMAGE_SRC = "/bot_image_1.jpg";
+
+// Avatar for GHL's Conversation AI bot. Renders the custom mascot image,
+// cropped to a circle with a soft glow so the bot reads as "special" against
+// the thread. If the image ever fails to load, it falls back to a
+// self-contained SVG (a violet→indigo→cyan gradient orb with a visor face) so
+// the avatar never renders broken. Rendered wherever an `aiBot` message /
 // conversation needs to be visually distinguished from a human agent.
 //
 // forwardRef + prop spread so it can be used directly as a Radix
@@ -13,18 +18,29 @@ export const AiBotAvatar = forwardRef<
   HTMLSpanElement,
   React.HTMLAttributes<HTMLSpanElement>
 >(function AiBotAvatar({ className, ...props }, ref) {
+  const [imgFailed, setImgFailed] = useState(false);
   return (
     <span
       ref={ref}
       {...props}
       className={cn(
         "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full",
-        // Soft outer glow so the bot reads as "special" against the thread.
-        "shadow-[0_0_0_1px_rgba(255,255,255,0.25),0_2px_8px_rgba(124,58,237,0.45)]",
         className
       )}
       aria-label="Asistente IA"
     >
+      {!imgFailed ? (
+        <img
+          src={AI_BOT_IMAGE_SRC}
+          alt="Asistente IA"
+          // Nudge the scale up a touch so the robot fills the circle and the
+          // empty blue margins of the source art don't dominate the crop.
+          className="h-full w-full scale-110 object-cover"
+          loading="lazy"
+          draggable={false}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
       <svg viewBox="0 0 40 40" className="h-full w-full" role="img">
         <defs>
           <linearGradient id="aiBotGrad" x1="0" y1="0" x2="1" y2="1">
@@ -61,6 +77,7 @@ export const AiBotAvatar = forwardRef<
         <rect x="6.4" y="17.5" width="2.4" height="5" rx="1.2" fill="rgba(255,255,255,0.85)" />
         <rect x="31.2" y="17.5" width="2.4" height="5" rx="1.2" fill="rgba(255,255,255,0.85)" />
       </svg>
+      )}
     </span>
   );
 });
