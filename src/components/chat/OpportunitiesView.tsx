@@ -1474,7 +1474,11 @@ export function OpportunitiesView({
                         // Show the ASSIGNED user's avatar (not the lead's).
                         const assignee = assigneeOf(opp, conv);
                         const avatar = assignee.avatar;
-                        const avatarLabel = assignee.name || opp.name;
+                        // Only the ASSIGNED user fills the avatar slot. When the
+                        // opportunity has no assignee, leave it empty instead of
+                        // falling back to the lead's initials.
+                        const hasAssignee = Boolean(assignee.name);
+                        const avatarLabel = assignee.name;
                         const reminderCount = conv?.activeReminder ? 1 : 0;
                         const scheduledCount = conv?.scheduledMessages?.length ?? 0;
                         const taskCount = conv?.id
@@ -1606,10 +1610,14 @@ export function OpportunitiesView({
                                     onCheckedChange={() => toggleOppSelected(opp.id)}
                                   />
                                 </div>
-                                <Avatar className="h-6 w-6">
-                                  {avatar && <AvatarImage src={avatar} alt={avatarLabel} />}
-                                  <AvatarFallback>{oppAvatarInitials(avatarLabel)}</AvatarFallback>
-                                </Avatar>
+                                {hasAssignee ? (
+                                  <Avatar className="h-6 w-6">
+                                    {avatar && <AvatarImage src={avatar} alt={avatarLabel} />}
+                                    <AvatarFallback>{oppAvatarInitials(avatarLabel)}</AvatarFallback>
+                                  </Avatar>
+                                ) : (
+                                  <span className="h-6 w-6 shrink-0" aria-hidden />
+                                )}
                               </div>
                             </div>
                             <div className="space-y-1.5 mt-3">
@@ -1747,7 +1755,9 @@ export function OpportunitiesView({
                   // Show the ASSIGNED user's avatar (not the lead's).
                   const assignee = assigneeOf(opp, conv);
                   const avatar = assignee.avatar;
-                  const avatarLabel = assignee.name || opp.name;
+                  // Only the ASSIGNED user fills the avatar slot; empty when none.
+                  const hasAssignee = Boolean(assignee.name);
+                  const avatarLabel = assignee.name;
                   const stage = stages.find((s) => s.id === opp.stageId);
                   const stageLabel = stage?.label ?? opp.stageId;
                   return (
@@ -1809,10 +1819,14 @@ export function OpportunitiesView({
                         {opp.date}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Avatar className="h-6 w-6 ml-auto">
-                          {avatar && <AvatarImage src={avatar} alt={avatarLabel} />}
-                          <AvatarFallback>{oppAvatarInitials(avatarLabel)}</AvatarFallback>
-                        </Avatar>
+                        {hasAssignee ? (
+                          <Avatar className="h-6 w-6 ml-auto">
+                            {avatar && <AvatarImage src={avatar} alt={avatarLabel} />}
+                            <AvatarFallback>{oppAvatarInitials(avatarLabel)}</AvatarFallback>
+                          </Avatar>
+                        ) : (
+                          <span className="h-6 w-6 shrink-0 ml-auto" aria-hidden />
+                        )}
                       </TableCell>
                     </TableRow>
                   );
