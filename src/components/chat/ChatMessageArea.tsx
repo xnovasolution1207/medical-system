@@ -1370,8 +1370,11 @@ export function ChatMessageArea({
   const [isUploading, setIsUploading] = useState(false);
   // File shown in the full-screen viewer modal — used for both staged (blob URL)
   // and sent (proxied URL) attachments. `url` is already final (not re-proxied).
+  // `rawUrl` is the original public URL (sent attachments only) — needed by the
+  // Office Online viewer, which fetches the document from its own servers and
+  // can't read our auth-gated proxy or local blob URLs.
   const [viewerFile, setViewerFile] = useState<
-    { url: string; name: string; mime?: string } | null
+    { url: string; name: string; mime?: string; rawUrl?: string } | null
   >(null);
   // Open the viewer for a staged file (reusing its preview blob URL, or making
   // one on demand for non-previewable types so the modal can still offer it).
@@ -3023,6 +3026,7 @@ export function ChatMessageArea({
                                 setViewerFile({
                                   url: proxyMediaUrl(message.attachment!.url),
                                   name: message.attachment!.name,
+                                  rawUrl: message.attachment!.url,
                                 })
                               }
                               aria-label={`Ver ${message.attachment.name}`}
@@ -3040,6 +3044,7 @@ export function ChatMessageArea({
                                 setViewerFile({
                                   url: proxyMediaUrl(message.attachment!.url),
                                   name: message.attachment!.name,
+                                  rawUrl: message.attachment!.url,
                                 })
                               }
                               className={cn(
@@ -3061,6 +3066,7 @@ export function ChatMessageArea({
                               setViewerFile({
                                 url: proxyMediaUrl(message.attachment!.url),
                                 name: message.attachment!.name,
+                                  rawUrl: message.attachment!.url,
                               })
                             }
                             aria-label={`Ver ${message.attachment.name}`}
@@ -4204,7 +4210,7 @@ export function ChatMessageArea({
       >
         <DialogContent className="max-w-4xl w-[95vw] h-[90vh] p-0 gap-0 overflow-hidden flex flex-col">
           {viewerFile && (() => {
-            const { url, name, mime } = viewerFile;
+            const { url, name, mime, rawUrl } = viewerFile;
             const lower = (name || url || "").toLowerCase();
             const m = (mime || "").toLowerCase();
             const isPdf = m === "application/pdf" || /\.pdf(\?|#|$)/.test(lower);
@@ -4214,6 +4220,14 @@ export function ChatMessageArea({
               m.startsWith("video/") || /\.(mp4|webm|ogg|mov|3gp)(\?|#|$)/.test(lower);
             const isAudio =
               m.startsWith("audio/") || /\.(mp3|ogg|m4a|aac|amr|wav)(\?|#|$)/.test(lower);
+            // Office docs (Word/Excel/PowerPoint) can't render in-browser, but
+            // Microsoft's hosted viewer can — it needs a PUBLIC url (rawUrl),
+            // which we only have for SENT attachments, not staged blobs.
+            const isOffice = /\.(docx?|xlsx?|pptx?)(\?|#|$)/.test(lower);
+            const officeViewerUrl =
+              isOffice && rawUrl
+                ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(rawUrl)}`
+                : null;
             return (
               <>
                 <DialogHeader className="flex flex-row items-center justify-between gap-3 border-b px-4 py-3 space-y-0">
@@ -4243,6 +4257,12 @@ export function ChatMessageArea({
                     <div className="flex h-full w-full items-center justify-center p-6">
                       <audio src={url} controls autoPlay className="w-full max-w-md" />
                     </div>
+                  ) : officeViewerUrl ? (
+                    <iframe
+                      src={officeViewerUrl}
+                      title={name}
+                      className="h-full w-full border-0 bg-white"
+                    />
                   ) : (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-8 text-center text-muted-foreground">
                       <FileIcon className="h-12 w-12" />
