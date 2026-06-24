@@ -787,7 +787,7 @@ export default function Index() {
       return { kind: "followers", userId: myUserId };
     return { kind: "global" };
   }, [activeMainTab, myUserId]);
-  const { data: unreadCountData } = useQuery<{ total: number; pending?: boolean }>({
+  const { data: unreadCountData } = useQuery<{ total: number }>({
     queryKey: [
       ...UNREAD_COUNT_QUERY_KEY,
       unreadScope.kind,
@@ -800,37 +800,16 @@ export default function Index() {
         return api.conversations.unreadCount({ followers: unreadScope.userId });
       return api.conversations.unreadCount();
     },
-    // The server walks the whole location to count effective-unread and caches
-    // it (background). Cached/deduped here; WS-driven invalidation refreshes the
-    // active scope. While the server is still computing it returns pending:true,
-    // so we poll briefly until the real total lands.
+    // Inexpensive (limit=1 against GHL for the global / assignedTo
+    // variants; capped per-contact fan-out for followers). Cached so
+    // React Query dedupes parallel mounts. WS-driven invalidation
+    // refreshes whatever scope is currently active.
     staleTime: 60_000,
     gcTime: Infinity,
     refetchOnWindowFocus: false,
     retry: 1,
-    refetchInterval: (query) => (query.state.data?.pending ? 4000 : false),
   });
-  // Local first-paint fallback for the "No leídos" badge — derived from the
-  // loaded window (scoped to the active tab). The authoritative count is the
-  // server-walked `unreadCountData.total`; this shows instantly until it lands.
-  const localUnreadCount = useMemo(() => {
-    let base = conversations.filter(
-      (c) => !c.isArchived && (c.unreadCount ?? 0) > 0
-    );
-    if (unreadScope.kind === "assignedTo")
-      base = base.filter((c) => c.participant?.assignedTo === unreadScope.userId);
-    else if (unreadScope.kind === "followers")
-      base = base.filter((c) =>
-        (c.participant?.followers ?? []).includes(unreadScope.userId)
-      );
-    return base.length;
-  }, [conversations, unreadScope]);
-  // Prefer the accurate whole-location count once it's computed; fall back to
-  // the local count while the server total is still pending/unavailable.
-  const totalUnread =
-    unreadCountData && !unreadCountData.pending
-      ? unreadCountData.total
-      : localUnreadCount;
+  const totalUnread = unreadCountData?.total ?? 0;
   // Count of conversations assigned to the logged-in agent across the
   // whole tenant — not just the locally-loaded window. Drives the
   // badge next to "Asignados a mí" in MainSidebar. Re-runs on
@@ -1280,12 +1259,8 @@ export default function Index() {
         setAssignedResults((prev) => (prev ? prev.map(clearUnread) : prev));
         setFollowedResults((prev) => (prev ? prev.map(clearUnread) : prev));
         setSearchResults((prev) => (prev ? prev.map(clearUnread) : prev));
-        // Optimistically drop the GHL-wide badge by one (the server-cached
-        // count is corrected on its next background recompute).
-        queryClient.setQueriesData<{ total: number; pending?: boolean }>(
-          { queryKey: UNREAD_COUNT_QUERY_KEY },
-          (old) => (old ? { ...old, total: Math.max(0, old.total - 1) } : old)
-        );
+        // Keep the GHL-wide aggregate badge in sync.
+        queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       } else if (event.type === "contact.updated") {
         // GHL contact create / update / tag webhook → patch the participant
         // on every conversation whose contact id matches. New contacts with
@@ -2876,13 +2851,9 @@ export default function Index() {
       api.conversations
         .patch(id, { markRead: true })
         .then(() => {
-          // The backend has now zeroed this lead's unread count. Optimistically
-          // drop the GHL-wide badge by one so it reacts instantly; the
-          // server-cached count corrects any drift on its next recompute.
-          queryClient.setQueriesData<{ total: number; pending?: boolean }>(
-            { queryKey: UNREAD_COUNT_QUERY_KEY },
-            (old) => (old ? { ...old, total: Math.max(0, old.total - 1) } : old)
-          );
+          // The backend has now zeroed GHL's unread count for this lead, so
+          // refresh the GHL-wide badge so it matches the list immediately.
+          queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
         })
         .catch((err) => console.error("mark as read failed", err));
     },
@@ -2908,11 +2879,6 @@ export default function Index() {
       setSearchResults((prev) => (prev ? prev.map(bump) : prev));
       setAssignedResults((prev) => (prev ? prev.map(bump) : prev));
       setFollowedResults((prev) => (prev ? prev.map(bump) : prev));
-      // Keep the GHL-wide badge in step with the manual unread bump.
-      queryClient.setQueriesData<{ total: number; pending?: boolean }>(
-        { queryKey: UNREAD_COUNT_QUERY_KEY },
-        (old) => (old ? { ...old, total: old.total + 1 } : old)
-      );
     },
     [updateBootstrap]
   );
