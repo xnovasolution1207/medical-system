@@ -3285,7 +3285,16 @@ export function ChatMessageArea({
               )}
               {/* Horizontal, scrollable row of compact file cards. */}
               <div className="flex gap-2 overflow-x-auto pb-1">
-                {selectedFiles.map((file, idx) => (
+                {selectedFiles.map((file, idx) => {
+                  // File format/extension — from the name, falling back to the
+                  // MIME subtype — so it's always visible even when the name is
+                  // truncated.
+                  const ext = (
+                    file.name.includes(".")
+                      ? file.name.split(".").pop() || ""
+                      : (file.type.split("/")[1] || "file")
+                  ).toUpperCase();
+                  return (
                   <div
                     key={`${file.name}-${idx}`}
                     className="relative w-28 shrink-0 rounded-xl border bg-background p-2 shadow-sm animate-in slide-in-from-bottom-2"
@@ -3298,7 +3307,7 @@ export function ChatMessageArea({
                     >
                       <X className="h-3 w-3" />
                     </button>
-                    <div className="flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
+                    <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
                       {filePreviews[idx] ? (
                         <img
                           src={filePreviews[idx]!}
@@ -3308,15 +3317,20 @@ export function ChatMessageArea({
                       ) : (
                         <FileIcon className="h-7 w-7 text-muted-foreground" />
                       )}
+                      {/* Format badge on the thumbnail. */}
+                      <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1 text-[9px] font-bold uppercase leading-tight tracking-wide text-white">
+                        {ext}
+                      </span>
                     </div>
-                    <div className="mt-1.5 truncate text-[11px] font-medium text-foreground">
+                    <div className="mt-1.5 truncate text-[11px] font-medium text-foreground" title={file.name}>
                       {file.name}
                     </div>
                     <div className="text-[10px] text-muted-foreground">
-                      {(file.size / 1024).toFixed(1)} KB
+                      {ext} · {(file.size / 1024).toFixed(1)} KB
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
