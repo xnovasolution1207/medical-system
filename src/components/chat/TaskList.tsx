@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { Task } from "./types";
+import { AgentUser, Task } from "./types";
 
 interface TaskListProps {
   tasks: Task[];
@@ -15,10 +15,21 @@ interface TaskListProps {
   selectedUsers: string[];
   onSelectConversation: (id: string) => void;
   activeConversationId: string;
+  // Agent roster — used to resolve the assignee's avatar (the task itself only
+  // carries the assignee name/id).
+  users?: AgentUser[];
   onOpenMobileNav?: () => void;
 }
 
-export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSelectConversation, activeConversationId, onOpenMobileNav }: TaskListProps) {
+// Initials for an avatar fallback: first letter of first + last word.
+function assigneeInitials(name: string): string {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSelectConversation, activeConversationId, users = [], onOpenMobileNav }: TaskListProps) {
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
   // Infinite scroll: render 25 tasks at a time and reveal 25 more as the list is
   // scrolled near its bottom, so a large filtered set stays fast to render.
@@ -297,21 +308,36 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
                           {task.dueDate}
                         </div>
                         
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className={cn(
-                              "flex items-center justify-center rounded-full bg-slate-100/80 text-slate-600 dark:bg-slate-800 dark:text-slate-400 shrink-0 border border-border/50",
-                              viewMode === "normal" ? "h-7 w-7" : "h-6 w-6"
-                            )}>
-                              {task.assignee.avatar ? (
-                                <img src={task.assignee.avatar} alt={task.assignee.name} className="h-full w-full rounded-full object-cover" />
-                              ) : (
-                                <UserIcon className={viewMode === "normal" ? "h-3.5 w-3.5" : "h-3 w-3"} />
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>{task.assignee.name}</TooltipContent>
-                        </Tooltip>
+                        {(() => {
+                          // Resolve the assignee's avatar from the roster (the
+                          // task only carries the name/id); fall back to initials.
+                          const rosterUser = users.find(
+                            (u) => u.id === task.assignee.id || u.name === task.assignee.name
+                          );
+                          const avatar = task.assignee.avatar || rosterUser?.avatar;
+                          const hasName = Boolean(task.assignee.name && task.assignee.name !== "Agente");
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className={cn(
+                                  "flex items-center justify-center overflow-hidden rounded-full bg-slate-100/80 text-slate-600 dark:bg-slate-800 dark:text-slate-400 shrink-0 border border-border/50",
+                                  viewMode === "normal" ? "h-7 w-7" : "h-6 w-6"
+                                )}>
+                                  {avatar ? (
+                                    <img src={avatar} alt={task.assignee.name} className="h-full w-full rounded-full object-cover" />
+                                  ) : hasName ? (
+                                    <span className={cn("font-semibold", viewMode === "normal" ? "text-[10px]" : "text-[9px]")}>
+                                      {assigneeInitials(task.assignee.name)}
+                                    </span>
+                                  ) : (
+                                    <UserIcon className={viewMode === "normal" ? "h-3.5 w-3.5" : "h-3 w-3"} />
+                                  )}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>{task.assignee.name}</TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                       </div>
                     )}
                     

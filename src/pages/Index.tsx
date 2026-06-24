@@ -3784,6 +3784,7 @@ export default function Index() {
           {activeMainTab.startsWith("tareas-") ? (
             <TaskList
               tasks={tasks}
+              users={users}
               onToggleTask={handleToggleTask}
               filterType={activeMainTab}
               selectedUsers={taskUserFilters}
@@ -3868,6 +3869,7 @@ export default function Index() {
           {activeMainTab.startsWith("tareas-") ? (
             <TaskList
               tasks={tasks}
+              users={users}
               onToggleTask={handleToggleTask}
               filterType={activeMainTab}
               selectedUsers={taskUserFilters}
