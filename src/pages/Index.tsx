@@ -1944,6 +1944,37 @@ export default function Index() {
     };
   }, [unreadFilterActive, assignedFilterActive, followedFilterActive, myUserId]);
 
+  // Reconcile the "No leídos" badge to the EXACT visible unread set once the
+  // list is fully loaded. The badge is otherwise maintained optimistically
+  // (+1 on a new inbound, -1 on read) so we don't recount against GHL on every
+  // message — but those nudges can drift by one (e.g. a lead read by answering,
+  // or counted while it was the active chat). When the unread list has no more
+  // pages, its filtered length IS the true total for the active scope, so snap
+  // the cached count to it. (When more pages remain, the server count stays the
+  // source of truth, so we leave it alone.)
+  useEffect(() => {
+    if (!unreadFilterActive) return;
+    if (unreadResults == null) return;
+    if (unreadNextCursor !== null) return;
+    const visible = unreadResults.filter(
+      (c) => !c.isArchived && (c.unreadCount ?? 0) > 0
+    ).length;
+    const key = [
+      ...UNREAD_COUNT_QUERY_KEY,
+      unreadScope.kind,
+      unreadScope.kind === "global" ? null : unreadScope.userId,
+    ];
+    queryClient.setQueryData<{ total: number }>(key, (old) =>
+      old && old.total === visible ? old : { total: visible }
+    );
+  }, [
+    unreadFilterActive,
+    unreadResults,
+    unreadNextCursor,
+    unreadScope,
+    queryClient,
+  ]);
+
   // Server-side fetch for "Asignados a mí". Hits GHL's native
   // assignedTo search, returning every conversation in the location
   // whose contact is assigned to the logged-in agent — not just the
