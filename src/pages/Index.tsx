@@ -1908,6 +1908,16 @@ export default function Index() {
     advancedFilterServerInfo.hasServerParam ||
     dateFilterActive;
 
+  // While a search / filter is active the sidebar shows the search results, so
+  // the "No leídos" badge should count the unread leads WITHIN those results
+  // (same filter the list uses: not archived, unreadCount > 0) instead of the
+  // whole-location unread total. Falls back to the normal badge otherwise.
+  const badgeUnread = isSearchActive
+    ? (searchResults ?? []).filter(
+        (c) => !c.isArchived && (c.unreadCount ?? 0) > 0
+      ).length
+    : totalUnread;
+
   // "No leídos": fetch the GHL-wide unread set so the filter spans the WHOLE
   // location (not just the loaded window). The backend walks conversations and
   // filters by each one's unreadCount (GHL's status=unread search is unreliable,
@@ -4047,7 +4057,7 @@ export default function Index() {
             />
           ) : (
             <ChatSidebar
-              totalUnread={totalUnread}
+              totalUnread={badgeUnread}
               onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
               myUserId={myUserId}
               conversations={displayConversations}
@@ -4129,7 +4139,7 @@ export default function Index() {
             />
           ) : (
             <ChatSidebar
-              totalUnread={totalUnread}
+              totalUnread={badgeUnread}
               onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
               myUserId={myUserId}
               conversations={displayConversations}
