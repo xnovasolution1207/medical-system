@@ -2621,7 +2621,38 @@ export default function Index() {
 
       // Reflect the new stage everywhere the row may live (list, search/tab
       // results, routed map) so it updates instantly even off the loaded list.
-      patchConversationEverywhere(id, (c) => ({ ...c, stage }));
+      // Also append an optimistic "actualizada en <stage>" activity pill to the
+      // thread — the backend only surfaces these as opportunity_activity events
+      // on the next full load, so without this the chat history showed nothing
+      // until a refresh.
+      const stageLabel = stages.find((s) => s.id === stage)?.label ?? stage;
+      const optimisticEvent: Message = {
+        id: `sys-stage-${Date.now()}`,
+        senderId: "system",
+        text: "",
+        timestamp: new Date().toLocaleTimeString("es-PE", {
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+          timeZone: "America/Lima",
+        }),
+        date: new Date().toISOString(),
+        isRead: true,
+        channel: "internal",
+        systemEvent: {
+          type: "opportunity_activity",
+          action: "updated",
+          opportunityName: conv?.participant?.name,
+          stageId: stage,
+          stageName: stageLabel,
+          user: currentUser.name,
+        },
+      };
+      patchConversationEverywhere(id, (c) => ({
+        ...c,
+        stage,
+        messages: c.messages ? [...c.messages, optimisticEvent] : c.messages,
+      }));
       if (opp) {
         updateBootstrap((prev) => ({
           ...prev,
@@ -2686,6 +2717,8 @@ export default function Index() {
       updateBootstrap,
       findConversationAnywhere,
       patchConversationEverywhere,
+      stages,
+      currentUser.name,
     ]
   );
 
