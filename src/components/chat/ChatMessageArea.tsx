@@ -735,7 +735,7 @@ export function ChatMessageArea({
   // Multiple staged attachments — the agent can select/queue several files and
   // send them all at once (each goes out as its own message).
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  // Object URLs for image/video/PDF thumbnails of the staged files (null for
+  // Object URLs for image/video/PDF/audio previews of the staged files (null for
   // other types). Revoked when the staged set changes to avoid leaks.
   const filePreviews = useMemo(
     () =>
@@ -744,12 +744,43 @@ export function ChatMessageArea({
           f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
         return f.type.startsWith("image/") ||
           f.type.startsWith("video/") ||
+          f.type.startsWith("audio/") ||
           isPdf
           ? URL.createObjectURL(f)
           : null;
       }),
     [selectedFiles]
   );
+  // Inline audio preview: one shared <audio>; track which card is playing.
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [playingAudioIdx, setPlayingAudioIdx] = useState<number | null>(null);
+  const togglePreviewAudio = (idx: number) => {
+    const url = filePreviews[idx];
+    if (!url) return;
+    let el = previewAudioRef.current;
+    if (!el) {
+      el = new Audio();
+      el.onended = () => setPlayingAudioIdx(null);
+      el.onpause = () => setPlayingAudioIdx((cur) => (el!.ended ? null : cur));
+      previewAudioRef.current = el;
+    }
+    if (playingAudioIdx === idx) {
+      el.pause();
+      setPlayingAudioIdx(null);
+      return;
+    }
+    el.src = url;
+    el.currentTime = 0;
+    el.play()
+      .then(() => setPlayingAudioIdx(idx))
+      .catch(() => setPlayingAudioIdx(null));
+  };
+  // Stop preview playback whenever the staged set changes (or on unmount).
+  useEffect(() => {
+    return () => {
+      previewAudioRef.current?.pause();
+    };
+  }, [selectedFiles]);
   useEffect(
     () => () => filePreviews.forEach((u) => u && URL.revokeObjectURL(u)),
     [filePreviews]
@@ -3301,6 +3332,7 @@ export function ChatMessageArea({
                       : (file.type.split("/")[1] || "file")
                   ).toUpperCase();
                   const isVideo = file.type.startsWith("video/");
+                  const isAudio = file.type.startsWith("audio/");
                   const isPdf =
                     file.type === "application/pdf" ||
                     file.name.toLowerCase().endsWith(".pdf");
@@ -3346,6 +3378,24 @@ export function ChatMessageArea({
                             className="h-[200%] w-[200%] origin-top-left scale-50 border-0"
                           />
                         </div>
+                      ) : isAudio ? (
+                        // Audio preview: tap to play/pause the staged note.
+                        <button
+                          type="button"
+                          onClick={() => togglePreviewAudio(idx)}
+                          aria-label={
+                            playingAudioIdx === idx ? "Pausar audio" : "Reproducir audio"
+                          }
+                          className="flex h-full w-full flex-col items-center justify-center gap-1 bg-primary/10 text-primary transition-colors hover:bg-primary/15"
+                        >
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                            {playingAudioIdx === idx ? (
+                              <Pause className="h-4 w-4 fill-current" />
+                            ) : (
+                              <Play className="ml-0.5 h-4 w-4 fill-current" />
+                            )}
+                          </span>
+                        </button>
                       ) : filePreviews[idx] ? (
                         <img
                           src={filePreviews[idx]!}
