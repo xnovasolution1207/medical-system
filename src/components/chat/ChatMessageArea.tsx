@@ -2741,7 +2741,7 @@ export function ChatMessageArea({
         )}
         {/* Hidden while history loads so only the skeleton shows (the partial
             thread reappears once the full history arrives). */}
-        <div ref={contentRef} className={cn("flex flex-col gap-4 py-4", isLoadingHistory && "hidden")}>
+        <div ref={contentRef} className={cn("flex flex-col gap-2 py-4", isLoadingHistory && "hidden")}>
           {visibleMessages.length === 0 && conversation.messages.length > 0 && (
             <div className="flex justify-center py-6 text-xs text-muted-foreground/70">
               Ningún mensaje coincide con los filtros seleccionados
@@ -2994,10 +2994,10 @@ export function ChatMessageArea({
                     className={cn(
                       "shadow-sm transition-all animate-in fade-in slide-in-from-bottom-2",
                       message.channel === "internal"
-                        ? "bg-[#FFF4CC] text-[#78350F] dark:bg-amber-900/40 dark:text-amber-200 rounded-[20px] px-4 py-2 text-[15px] font-medium inline-block"
+                        ? "bg-[#FFF4CC] text-[#78350F] dark:bg-amber-900/40 dark:text-amber-200 rounded-[18px] px-3.5 py-1.5 text-[15px] font-medium inline-block"
                         : isMe
-                        ? "bg-primary text-primary-foreground rounded-[20px] px-4 py-2 text-[15px]"
-                        : "bg-muted text-foreground rounded-[20px] px-4 py-2 text-[15px]",
+                        ? "bg-primary text-primary-foreground rounded-[18px] px-3.5 py-1.5 text-[15px]"
+                        : "bg-muted text-foreground rounded-[18px] px-3.5 py-1.5 text-[15px]",
                       !message.text && message.attachment && (message.attachment.type === "image" || message.attachment.type === "video") ? "bg-transparent p-0 shadow-none" : ""
                     )}
                   >
@@ -3148,7 +3148,7 @@ export function ChatMessageArea({
                       </div>
                     )}
                     {message.text && (
-                      <span className="whitespace-pre-wrap leading-relaxed">
+                      <span className="whitespace-pre-wrap leading-snug">
                         {message.channel === "internal" && message.mentions && message.mentions.length > 0
                           ? renderTextWithMentions(message.text, message.mentions)
                           : linkifyText(
@@ -3194,7 +3194,7 @@ export function ChatMessageArea({
                         bottom-right — for both inbound and outbound. */}
                     <div
                       className={cn(
-                        "flex items-center justify-end gap-1 -mt-0.5 select-none",
+                        "flex items-center justify-end gap-1 -mt-1 select-none",
                         // Internal notes sit on a yellow bubble, so the
                         // white "isMe" time would be invisible — use the
                         // bubble's dark amber instead.
