@@ -3415,7 +3415,18 @@ export function ChatMessageArea({
           )}
 
           {selectedFiles.length > 0 && (
-            <div className="mb-3 space-y-2">
+            <div className="relative mb-3 space-y-2">
+              {/* Uploading overlay: while files transfer, dim the staged cards
+                  and show a spinner so the agent sees the send is in progress
+                  (and the cards can't be edited mid-upload). */}
+              {isUploading && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-lg bg-background/70 backdrop-blur-[1px]">
+                  <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                  <span className="text-xs font-medium text-foreground/80">
+                    Enviando archivo{selectedFiles.length > 1 ? "s" : ""}…
+                  </span>
+                </div>
+              )}
               {selectedFiles.length > 1 && (
                 <div className="flex items-center justify-between px-1">
                   <span className="text-xs font-medium text-muted-foreground">
@@ -4191,11 +4202,23 @@ export function ChatMessageArea({
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={!inputText.trim() && selectedFiles.length === 0 && templateAttachments.length === 0}
+                  disabled={
+                    isUploading ||
+                    (!inputText.trim() && selectedFiles.length === 0 && templateAttachments.length === 0)
+                  }
                   className="h-9 px-5 gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-none disabled:opacity-50"
                 >
-                  <Send className="h-4 w-4" />
-                  Enviar
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Enviando…
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Enviar
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
