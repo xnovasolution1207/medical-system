@@ -2932,6 +2932,12 @@ export function ChatMessageArea({
             }
 
             const isMe = message.senderId === currentUser.id;
+            // WhatsApp-style inline meta: for plain text bubbles, tuck the time
+            // + options onto the LAST text line (absolute, bottom-right) instead
+            // of giving them their own row — saves a full line of height per
+            // message. Internal notes (extra footer) and attachment-only bubbles
+            // keep the normal stacked layout to avoid overlap.
+            const inlineMeta = Boolean(message.text) && message.channel !== "internal";
             // Consecutive grouping considers the resolved agent identity too,
             // so two back-to-back outbound messages from different agents
             // each get their own avatar header instead of being collapsed.
@@ -2992,7 +2998,7 @@ export function ChatMessageArea({
                 >
                   <div
                     className={cn(
-                      "shadow-sm transition-all animate-in fade-in slide-in-from-bottom-2",
+                      "relative shadow-sm transition-all animate-in fade-in slide-in-from-bottom-2",
                       message.channel === "internal"
                         ? "bg-[#FFF4CC] text-[#78350F] dark:bg-amber-900/40 dark:text-amber-200 rounded-[18px] px-3.5 py-1.5 text-[15px] font-medium inline-block"
                         : isMe
@@ -3158,6 +3164,14 @@ export function ChatMessageArea({
                               ),
                               isMe
                             )}
+                        {/* Reserve room on the last line for the inline time +
+                            options so they don't overlap the final words. */}
+                        {inlineMeta && (
+                          <span
+                            aria-hidden
+                            className="inline-block w-[4.25rem] select-none"
+                          />
+                        )}
                       </span>
                     )}
 
@@ -3194,7 +3208,13 @@ export function ChatMessageArea({
                         bottom-right — for both inbound and outbound. */}
                     <div
                       className={cn(
-                        "flex items-center justify-end gap-1 -mt-1 select-none",
+                        "flex items-center gap-1 select-none",
+                        // Inline (WhatsApp-style) on text bubbles: pin to the
+                        // bottom-right corner over the reserved space. Otherwise
+                        // keep it on its own trailing row.
+                        inlineMeta
+                          ? "absolute bottom-1.5 right-3"
+                          : "justify-end -mt-1",
                         // Internal notes sit on a yellow bubble, so the
                         // white "isMe" time would be invisible — use the
                         // bubble's dark amber instead.
