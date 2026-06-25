@@ -684,6 +684,24 @@ function bubbleHasNoVisibleContent(m: Message): boolean {
   return true;
 }
 
+// Files sent through GHL / Green API are stored under a generated UUID name
+// (e.g. "bbbb6524-bdc4-4753-8fb2-166429a0546e.pdf"), which is meaningless to
+// show. When the name looks auto-generated, show a clean type label instead of
+// the hash; real, human-named files are shown as-is.
+function prettyAttachmentName(name?: string, type?: string): string {
+  const n = (name ?? "").trim();
+  const base = n.replace(/\.[^.]+$/, "");
+  const ext = (n.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase();
+  const looksGenerated =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base) || // UUID
+    /^[0-9a-f]{24,}$/i.test(base) || // long hex blob
+    /^\d{12,}$/.test(base); // long numeric id
+  if (!n || looksGenerated) {
+    return ext ? `Documento ${ext}` : "Documento";
+  }
+  return n;
+}
+
 // Call (phone) button in the chat header is temporarily hidden by request.
 // Set to `true` to re-enable it.
 const SHOW_CALL_BUTTON = false;
@@ -3099,7 +3117,8 @@ export function ChatMessageArea({
                               )}
                             >
                               <FileIcon className="h-4 w-4 shrink-0" />
-                              <span className="truncate flex-1 text-left font-medium">{message.attachment.name}</span>
+                              {/* Filename hidden by request — open via the icon. */}
+                              <span className="flex-1" />
                               <Search className="h-4 w-4 shrink-0 opacity-70" />
                             </button>
                           </div>
@@ -3122,10 +3141,13 @@ export function ChatMessageArea({
                             )}
                           >
                             <FileIcon className="h-5 w-5 shrink-0" />
+                            {/* Filename hidden by request — show only size (if
+                                known) so the bubble isn't empty; open via icon. */}
                             <div className="flex min-w-0 flex-1 flex-col overflow-hidden text-left">
-                              <span className="truncate text-sm font-medium">{message.attachment.name}</span>
-                              {message.attachment.size && (
+                              {message.attachment.size ? (
                                 <span className="text-[10px] opacity-70">{message.attachment.size}</span>
+                              ) : (
+                                <span className="text-sm font-medium">Documento</span>
                               )}
                             </div>
                             <Search className="h-4 w-4 shrink-0 opacity-70" />
