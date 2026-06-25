@@ -2741,7 +2741,7 @@ export function ChatMessageArea({
         )}
         {/* Hidden while history loads so only the skeleton shows (the partial
             thread reappears once the full history arrives). */}
-        <div ref={contentRef} className={cn("flex flex-col gap-2 py-4", isLoadingHistory && "hidden")}>
+        <div ref={contentRef} className={cn("flex flex-col gap-0.5 py-4", isLoadingHistory && "hidden")}>
           {visibleMessages.length === 0 && conversation.messages.length > 0 && (
             <div className="flex justify-center py-6 text-xs text-muted-foreground/70">
               Ningún mensaje coincide con los filtros seleccionados
@@ -2975,8 +2975,9 @@ export function ChatMessageArea({
                   className={cn(
                     "flex w-full items-end gap-2 group scroll-mt-24",
                     isMe ? "justify-end" : "justify-start",
-                    // Tight vertical spacing between messages.
-                    isConsecutive ? "mt-px" : "mt-1"
+                    // Tight vertical spacing: same-sender runs sit nearly flush;
+                    // a sender change gets a touch more breathing room.
+                    isConsecutive ? "mt-0" : "mt-1.5"
                   )}
                 >
                 {!isMe && (
