@@ -684,6 +684,19 @@ function bubbleHasNoVisibleContent(m: Message): boolean {
   return true;
 }
 
+// True when a string is essentially just a filename (a single token ending in a
+// known file extension) — used to suppress a message body that is only the
+// attachment's filename (GHL/Green API frequently put the file name in the body).
+function isFilenameLike(text?: string): boolean {
+  const t = (text ?? "").trim();
+  if (!t || t.includes("\n")) return false;
+  // A single line ending in a known file extension (spaces allowed for names
+  // like "Consuta 3 Curaciones Simples.jpg"); no path separators.
+  return /^[^\n/\\]{1,200}\.(pdf|docx?|xlsx?|pptx?|csv|txt|rtf|odt|png|jpe?g|gif|webp|bmp|heic|svg|mp4|mov|3gpp?|mkv|webm|avi|ogg|oga|mp3|m4a|aac|amr|wav|zip|rar|7z)$/i.test(
+    t
+  );
+}
+
 // Files sent through GHL / Green API are stored under a generated UUID name
 // (e.g. "bbbb6524-bdc4-4753-8fb2-166429a0546e.pdf"), which is meaningless to
 // show. When the name looks auto-generated, show a clean type label instead of
@@ -2950,12 +2963,20 @@ export function ChatMessageArea({
             }
 
             const isMe = message.senderId === currentUser.id;
+            // GHL / Green API often store a file's name as the message BODY, so
+            // it renders as text under the media (e.g. "RFP_...2026.pdf" beneath
+            // an image). Suppress a body that is just a filename when the message
+            // carries an attachment — the file is already shown, the name is
+            // noise (and was explicitly unwanted).
+            const showText =
+              Boolean(message.text) &&
+              !(message.attachment && isFilenameLike(message.text));
             // WhatsApp-style inline meta: for plain text bubbles, tuck the time
             // + options onto the LAST text line (absolute, bottom-right) instead
             // of giving them their own row — saves a full line of height per
             // message. Internal notes (extra footer) and attachment-only bubbles
             // keep the normal stacked layout to avoid overlap.
-            const inlineMeta = Boolean(message.text) && message.channel !== "internal";
+            const inlineMeta = showText && message.channel !== "internal";
             // Consecutive grouping considers the resolved agent identity too,
             // so two back-to-back outbound messages from different agents
             // each get their own avatar header instead of being collapsed.
@@ -3176,7 +3197,7 @@ export function ChatMessageArea({
                         ) : null}
                       </div>
                     )}
-                    {message.text && (
+                    {showText && (
                       <span className="whitespace-pre-wrap leading-snug">
                         {message.channel === "internal" && message.mentions && message.mentions.length > 0
                           ? renderTextWithMentions(message.text, message.mentions)
