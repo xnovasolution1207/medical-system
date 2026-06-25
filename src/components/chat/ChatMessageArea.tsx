@@ -1112,9 +1112,15 @@ export function ChatMessageArea({
   const [isDeleting, setIsDeleting] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // While true, keep the thread pinned to the very bottom as its height grows
+  // (e.g. images/video/audio finish loading AFTER the initial jump, which would
+  // otherwise leave the view stranded above the last message). Turned off as
+  // soon as the agent scrolls up to read history; reset to true per conversation.
+  const pinBottomRef = useRef(true);
   // Scroll management refs — no state needed, mutations happen outside render.
   const initialScrollDoneRef = useRef(false);
   const prevFirstMessageIdRef = useRef<string | undefined>(undefined);
@@ -1136,11 +1142,36 @@ export function ChatMessageArea({
     initialScrollDoneRef.current = false;
     prevFirstMessageIdRef.current = undefined;
     requestedOlderRef.current = false;
+    // New conversation always starts pinned to the bottom.
+    pinBottomRef.current = true;
   }, [conversation.id]);
+
+  // Keep the thread glued to the bottom while its height changes from async
+  // media (images/video/audio loading after the initial jump). Without this the
+  // first jump-to-bottom can land above the last message once those finish
+  // loading. We stop pinning the moment the agent scrolls up (see onScroll).
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (pinBottomRef.current && !isLoadingHistory) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [conversation.id, isLoadingHistory]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el || conversation.messages.length === 0) return;
+    // While history is loading the message list is rendered `hidden` (see the
+    // skeleton branch), so it has zero height — jumping "to bottom" now would
+    // land at the top and never correct itself. Wait until loading finishes;
+    // `isLoadingHistory` is in the deps so this re-runs the moment the real
+    // messages become visible, and the initial jump-to-bottom fires then.
+    if (isLoadingHistory) return;
 
     const firstId = conversation.messages[0]?.id;
 
@@ -1174,7 +1205,7 @@ export function ChatMessageArea({
     if (distanceFromBottom < 150) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [conversation.id, conversation.messages.length]);
+  }, [conversation.id, conversation.messages.length, isLoadingHistory]);
 
   // Reset the guard when the parent signals loading is done.
   useEffect(() => {
@@ -2594,11 +2625,17 @@ export function ChatMessageArea({
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4"
         onScroll={(e) => {
+          const t = e.currentTarget;
+          // Stop auto-pinning to the bottom once the agent scrolls up to read
+          // history; resume when they return near the bottom. (Programmatic
+          // bottom-scrolls leave us near the bottom, so they keep pinning on.)
+          const distanceFromBottom = t.scrollHeight - t.scrollTop - t.clientHeight;
+          pinBottomRef.current = distanceFromBottom < 80;
           if (!hasOlderMessages || isLoadingOlderMessages || !onLoadOlderMessages || requestedOlderRef.current) return;
-          if (e.currentTarget.scrollTop < 100) {
+          if (t.scrollTop < 100) {
             requestedOlderRef.current = true;
-            scrollHeightBeforeRef.current = e.currentTarget.scrollHeight;
-            scrollTopBeforeRef.current = e.currentTarget.scrollTop;
+            scrollHeightBeforeRef.current = t.scrollHeight;
+            scrollTopBeforeRef.current = t.scrollTop;
             onLoadOlderMessages();
           }
         }}
@@ -2704,7 +2741,7 @@ export function ChatMessageArea({
         )}
         {/* Hidden while history loads so only the skeleton shows (the partial
             thread reappears once the full history arrives). */}
-        <div className={cn("flex flex-col gap-4 py-4", isLoadingHistory && "hidden")}>
+        <div ref={contentRef} className={cn("flex flex-col gap-4 py-4", isLoadingHistory && "hidden")}>
           {visibleMessages.length === 0 && conversation.messages.length > 0 && (
             <div className="flex justify-center py-6 text-xs text-muted-foreground/70">
               Ningún mensaje coincide con los filtros seleccionados
