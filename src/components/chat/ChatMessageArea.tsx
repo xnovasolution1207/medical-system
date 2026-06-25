@@ -3165,14 +3165,6 @@ export function ChatMessageArea({
                               ),
                               isMe
                             )}
-                        {/* Reserve room on the last line for the inline time +
-                            options so they don't overlap the final words. */}
-                        {inlineMeta && (
-                          <span
-                            aria-hidden
-                            className="inline-block w-[4.25rem] select-none"
-                          />
-                        )}
                       </span>
                     )}
 
@@ -3209,13 +3201,16 @@ export function ChatMessageArea({
                         bottom-right — for both inbound and outbound. */}
                     <div
                       className={cn(
-                        "flex items-center gap-1 select-none",
-                        // Inline (WhatsApp-style) on text bubbles: pin to the
-                        // bottom-right corner over the reserved space. Otherwise
-                        // keep it on its own trailing row.
+                        "items-center gap-1 select-none",
+                        // Inline (WhatsApp-style) on text bubbles: the time +
+                        // options flow IN the text as a bottom-aligned inline
+                        // element right after the last word, so they can never
+                        // overlap the text (the previous absolute overlay drifted
+                        // onto the text on some platforms/fonts, e.g. macOS).
+                        // Other bubbles keep the time on its own trailing row.
                         inlineMeta
-                          ? "absolute bottom-1.5 right-3"
-                          : "justify-end -mt-1",
+                          ? "inline-flex align-bottom ml-1.5"
+                          : "flex justify-end -mt-1",
                         // Internal notes sit on a yellow bubble, so the
                         // white "isMe" time would be invisible — use the
                         // bubble's dark amber instead.
