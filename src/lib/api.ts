@@ -409,6 +409,19 @@ export const api = {
         `/conversations/unread-count${query ? `?${query}` : ""}`
       );
     },
+    // "Favoritos" (⭐) filter, spanning the WHOLE dataset. Favorites are a local
+    // concept, so this pages the durable favorite-id list and fetches each
+    // conversation. `startAfter` is an OFFSET into that list (not a date cursor).
+    favorites: (params?: { limit?: number; startAfter?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.limit) qs.set("limit", String(params.limit));
+      if (params?.startAfter) qs.set("startAfter", String(params.startAfter));
+      const query = qs.toString();
+      return request<{ conversations: Conversation[]; nextCursor: number | null }>(
+        "GET",
+        `/conversations/favorites${query ? `?${query}` : ""}`
+      );
+    },
     // True total of conversations assigned to a user (GHL's reported count,
     // not a capped page) — drives the "Asignados a mí" badge.
     assignedCount: (assignedTo: string) =>

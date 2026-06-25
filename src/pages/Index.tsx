@@ -1082,6 +1082,11 @@ export default function Index() {
   // (lastMessageDate epoch ms). null = no further pages, undefined = not
   // yet fetched.
   const [unreadNextCursor, setUnreadNextCursor] = useState<number | null>(null);
+  // "Favoritos" (⭐) filter — server-fetched so it spans the WHOLE dataset, not
+  // just the loaded window. Cursor is an OFFSET into the favorite-id list.
+  const [favoriteResults, setFavoriteResults] = useState<Conversation[] | null>(null);
+  const [favoriteFilterActive, setFavoriteFilterActive] = useState(false);
+  const [favoriteNextCursor, setFavoriteNextCursor] = useState<number | null>(null);
   // GHL-wide results for the "Asignados a mí" / "Seguidos por mí"
   // sidebar tabs. The bootstrap only carries the 25 most-recent
   // conversations across the whole inbox, so client-side filtering
@@ -1997,6 +2002,35 @@ export default function Index() {
     };
   }, [unreadFilterActive, assignedFilterActive, followedFilterActive, myUserId]);
 
+  // "Favoritos" (⭐): fetch the favorited set server-side so it spans the WHOLE
+  // dataset, not just the loaded window. Offset-paginated (infinite scroll).
+  useEffect(() => {
+    if (!favoriteFilterActive) {
+      setFavoriteResults(null);
+      setFavoriteNextCursor(null);
+      return;
+    }
+    let cancelled = false;
+    setFavoriteResults(null);
+    setFavoriteNextCursor(null);
+    api.conversations
+      .favorites({ limit: 25 })
+      .then((result) => {
+        if (cancelled) return;
+        setFavoriteResults(result.conversations);
+        setFavoriteNextCursor(result.nextCursor);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("favorites fetch failed", err);
+        setFavoriteResults([]);
+        setFavoriteNextCursor(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [favoriteFilterActive]);
+
   // Reconcile the "No leídos" badge to the EXACT visible unread set once the
   // list is fully loaded. The badge is otherwise maintained optimistically
   // (+1 on a new inbound, -1 on read) so we don't recount against GHL on every
@@ -2159,11 +2193,14 @@ export default function Index() {
         ? // Server-wide unread set when loaded; local-derived as a fast
           // first-paint fallback until it arrives.
           withCachedStage(unreadResults ?? unreadConversations)
-        : assignedFilterActive
-          ? withCachedStage(assignedResults ?? [])
-          : followedFilterActive
-            ? withCachedStage(followedResults ?? [])
-            : conversations;
+        : favoriteFilterActive
+          ? // Server-wide favorites set (spans the whole dataset).
+            withCachedStage(favoriteResults ?? [])
+          : assignedFilterActive
+            ? withCachedStage(assignedResults ?? [])
+            : followedFilterActive
+              ? withCachedStage(followedResults ?? [])
+              : conversations;
   // Everywhere except the Archivados tab, archived rows are hidden so
   // they don't pollute the working inbox. The flag is patched
   // optimistically by handleToggleArchive, so a row vanishes the
@@ -2185,7 +2222,9 @@ export default function Index() {
     (followedFilterActive && Boolean(myUserId) && followedResults === null) ||
     // "No leídos" fetches the GHL-wide unread set server-side — show the
     // skeleton while that first page is in flight (results === null).
-    (unreadFilterActive && unreadResults === null);
+    (unreadFilterActive && unreadResults === null) ||
+    // "Favoritos" likewise fetches server-side.
+    (favoriteFilterActive && favoriteResults === null);
   // Prefer the real list row; fall back to the routed slot for a deep-linked
   // conversation that isn't in the loaded window yet (so the chat still shows
   // it without injecting a row into the list).
@@ -2885,6 +2924,32 @@ export default function Index() {
   );
 
   const handleLoadMoreConversations = useCallback(async () => {
+    // "Favoritos" pages its OWN endpoint (offset cursor), not the conversation
+    // search — handle it first and short-circuit the generic list() path.
+    if (favoriteFilterActive) {
+      if (favoriteNextCursor == null || isLoadingMoreConversationsRef.current) return;
+      isLoadingMoreConversationsRef.current = true;
+      setIsLoadingMoreConversations(true);
+      try {
+        const result = await api.conversations.favorites({
+          limit: 25,
+          startAfter: favoriteNextCursor,
+        });
+        setFavoriteResults((prev) => {
+          const base = prev ?? [];
+          const existingIds = new Set(base.map((c) => c.id));
+          const fresh = result.conversations.filter((c) => !existingIds.has(c.id));
+          return fresh.length ? [...base, ...fresh] : base;
+        });
+        setFavoriteNextCursor(result.nextCursor);
+      } catch (err) {
+        console.error("load more favorites failed", err);
+      } finally {
+        isLoadingMoreConversationsRef.current = false;
+        setIsLoadingMoreConversations(false);
+      }
+      return;
+    }
     const q = searchQuery.trim();
     const { params: filterParams } = buildServerFilterParams(
       advancedFilters,
@@ -3014,6 +3079,8 @@ export default function Index() {
     searchQuery,
     unreadFilterActive,
     unreadNextCursor,
+    favoriteFilterActive,
+    favoriteNextCursor,
     assignedFilterActive,
     assignedNextCursor,
     followedFilterActive,
@@ -4098,7 +4165,10 @@ export default function Index() {
           ) : (
             <ChatSidebar
               totalUnread={badgeUnread}
-              onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
+              onFilterChange={(f) => {
+                setUnreadFilterActive(f === "unread");
+                setFavoriteFilterActive(f === "favorites");
+              }}
               myUserId={myUserId}
               conversations={displayConversations}
               tasks={tasks}
@@ -4123,11 +4193,13 @@ export default function Index() {
                   ? searchNextCursor
                   : unreadFilterActive
                     ? unreadNextCursor
-                    : assignedFilterActive
-                      ? assignedNextCursor
-                      : followedFilterActive
-                        ? followedNextCursor
-                        : conversationsNextCursor) !== null
+                    : favoriteFilterActive
+                      ? favoriteNextCursor
+                      : assignedFilterActive
+                        ? assignedNextCursor
+                        : followedFilterActive
+                          ? followedNextCursor
+                          : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
               isLoadingList={isLoadingConversationList}
@@ -4180,7 +4252,10 @@ export default function Index() {
           ) : (
             <ChatSidebar
               totalUnread={badgeUnread}
-              onFilterChange={(f) => setUnreadFilterActive(f === "unread")}
+              onFilterChange={(f) => {
+                setUnreadFilterActive(f === "unread");
+                setFavoriteFilterActive(f === "favorites");
+              }}
               myUserId={myUserId}
               conversations={displayConversations}
               tasks={tasks}
@@ -4205,11 +4280,13 @@ export default function Index() {
                   ? searchNextCursor
                   : unreadFilterActive
                     ? unreadNextCursor
-                    : assignedFilterActive
-                      ? assignedNextCursor
-                      : followedFilterActive
-                        ? followedNextCursor
-                        : conversationsNextCursor) !== null
+                    : favoriteFilterActive
+                      ? favoriteNextCursor
+                      : assignedFilterActive
+                        ? assignedNextCursor
+                        : followedFilterActive
+                          ? followedNextCursor
+                          : conversationsNextCursor) !== null
               }
               isLoadingMore={isLoadingMoreConversations}
               isLoadingList={isLoadingConversationList}

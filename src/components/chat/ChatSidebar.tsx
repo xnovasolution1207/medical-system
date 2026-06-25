@@ -1137,9 +1137,17 @@ export function ChatSidebar({
               ))}
             </div>
           ) : filteredConversations.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
+            <div className="flex flex-col items-center justify-center gap-1 p-6 text-center text-sm text-muted-foreground">
               {search.trim() ? (
                 <span>{`Sin resultados para "${search.trim()}"`}</span>
+              ) : filter === "favorites" ? (
+                <>
+                  <Star className="h-5 w-5 opacity-40" />
+                  <span>No tienes conversaciones favoritas</span>
+                  <span className="text-xs opacity-70">
+                    Marca una con la estrella (⋯ → Favorito) para verla aquí.
+                  </span>
+                </>
               ) : (
                 <span>No hay conversaciones</span>
               )}
