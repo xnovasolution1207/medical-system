@@ -676,6 +676,11 @@ export const api = {
     // conversation for the picked opportunity yet — the modal still
     // wants to render the right-rail contact panel.
     get: (id: string) => request<User>("GET", `/contacts/${id}`),
+    // Per-contact free-form "Nota" (right panel). Durable, location-wide.
+    getNote: (id: string) =>
+      request<{ note: string }>("GET", `/contacts/${id}/note`),
+    saveNote: (id: string, note: string) =>
+      request<{ note: string }>("PUT", `/contacts/${id}/note`, { note }),
     // Full lead bundle for a contact (contact + most-recent
     // conversation + messages + tasks). Same shape the WS
     // `lead.updated` event ships. Used by the opportunity chat

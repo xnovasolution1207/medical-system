@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
+import { ContactNote } from "./ContactNote";
 import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play } from "lucide-react";
 
 interface ContactSidebarProps {
@@ -1334,6 +1335,12 @@ export function ContactSidebar({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Separator />
+
+        <div className="p-4">
+          <ContactNote contactId={contact.id} />
+        </div>
 
         <Separator />
 
