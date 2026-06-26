@@ -4645,13 +4645,63 @@ export default function Index() {
                 c.contactId === opportunityChatContactId ||
                 c.participant.id === opportunityChatContactId
             );
-            // Loading state — fetching the contact for a new
-            // opportunity that doesn't have a conversation cached yet.
+            // Loading state — fetching the contact + conversation. Show a
+            // skeleton mirroring the modal's two panes (chat + contact) instead
+            // of a bare "Cargando…" line.
             if (!realConv && isLoadingOpportunityChat) {
               return (
-                <div className="flex-1 flex items-center justify-center p-8 text-sm text-muted-foreground">
-                  Cargando contacto…
-                </div>
+                <>
+                  {/* Chat pane skeleton */}
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    <div className="flex h-[68px] items-center gap-3 border-b px-4">
+                      <Skeleton className="h-10 w-10 rounded-full" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-40 rounded" />
+                        <Skeleton className="h-3 w-24 rounded" />
+                      </div>
+                    </div>
+                    <div className="flex-1 space-y-4 overflow-hidden p-4">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className={cn("flex", i % 2 ? "justify-end" : "justify-start")}
+                        >
+                          <Skeleton
+                            className={cn(
+                              "h-12 rounded-2xl",
+                              i % 2 ? "w-1/2" : "w-2/5"
+                            )}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t p-4">
+                      <Skeleton className="h-10 w-full rounded-full" />
+                    </div>
+                  </div>
+                  {/* Contact pane skeleton */}
+                  <div className="hidden lg:block w-80 shrink-0 border-l p-4 space-y-5">
+                    <div className="flex flex-col items-center gap-3 pt-2">
+                      <Skeleton className="h-20 w-20 rounded-full" />
+                      <Skeleton className="h-5 w-40 rounded" />
+                      <div className="flex gap-2">
+                        <Skeleton className="h-7 w-24 rounded-full" />
+                        <Skeleton className="h-7 w-16 rounded-full" />
+                      </div>
+                    </div>
+                    <div className="h-px bg-border" />
+                    <div className="space-y-2.5">
+                      <Skeleton className="h-4 w-24 rounded" />
+                      <Skeleton className="h-4 w-full rounded" />
+                      <Skeleton className="h-4 w-3/4 rounded" />
+                    </div>
+                    <div className="h-px bg-border" />
+                    <div className="space-y-2.5">
+                      <Skeleton className="h-4 w-28 rounded" />
+                      <Skeleton className="h-24 w-full rounded-lg" />
+                    </div>
+                  </div>
+                </>
               );
             }
             // No real conversation AND no fallback contact loaded —
