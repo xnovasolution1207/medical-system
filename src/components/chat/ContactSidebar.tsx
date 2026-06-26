@@ -171,18 +171,11 @@ function composeDocument(docType: string, value: string): string {
 // GHL-native address1; the document number is parsed out of the custom-
 // field string.
 function buildContactFields(contact: User): ContactField[] {
-  const doc = parseDocument(contact.documentNumber);
+  // "Dirección" and "Num de documento" removed from the panel by request —
+  // form/campaign fields now surface under "Datos del formulario" instead.
   return [
     { id: "phone", label: "Teléfono", value: contact.phone || "", type: "phone" },
     { id: "email", label: "Email", value: contact.email || "", type: "email" },
-    { id: "address", label: "Dirección", value: contact.address || "", type: "address" },
-    {
-      id: "document",
-      label: "Num de documento",
-      value: doc.value,
-      type: "document",
-      docType: doc.docType,
-    },
   ];
 }
 
