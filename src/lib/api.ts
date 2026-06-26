@@ -481,7 +481,10 @@ export const api = {
         // Display label of the target stage + the staff user making the move,
         // sent so the backend can persist WHO changed the stage and re-attach
         // it to the timeline pill on refresh (GHL doesn't record the actor).
+        // `fromStageName` is the origin stage label so the matcher can pair the
+        // record to the exact "from → to" pill (GHL emits several per move).
         stageName: string;
+        fromStageName: string;
         actorName: string;
         // Add a snapshot to the conversation's pinned-message stack
         // (each pin renders as a banner above the chat). Pass `null`

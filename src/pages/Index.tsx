@@ -2954,10 +2954,15 @@ export default function Index() {
       // once the real conversation arrives.
       if (!isStubConvId(id)) {
         api.conversations
-          // Send the actor + stage label so the backend can persist WHO moved
-          // the stage and re-attach it to the timeline pill after a refresh
-          // (GHL's activity message doesn't record the user).
-          .patch(id, { stage, stageName: stageLabel, actorName: currentUser.name })
+          // Send the actor + from/to stage labels so the backend can persist
+          // WHO moved the stage and re-attach it to the exact timeline pill
+          // after a refresh (GHL's activity message doesn't record the user).
+          .patch(id, {
+            stage,
+            stageName: stageLabel,
+            fromStageName: fromStageLabel,
+            actorName: currentUser.name,
+          })
           .catch((err) => console.error("stage update failed", err));
       }
 
@@ -3908,6 +3913,11 @@ export default function Index() {
       const opp = opportunities.find((o) => o.id === id);
       const pipelineId = opp?.pipelineId;
       const contactId = opp?.contactId;
+      // Origin stage label (before this move) so the timeline pill can show and
+      // persist the full "from → to" transition with the correct actor.
+      const fromStageLabel = opp?.stageId
+        ? stages.find((s) => s.id === opp.stageId)?.label ?? opp.stageId
+        : undefined;
       // Optimistically move the card AND live-sync the linked lead's funnel
       // badge: patch `stage` on every conversation for this opportunity's
       // contact, so the chat-list embudo badge updates without a refresh.
@@ -3944,7 +3954,12 @@ export default function Index() {
         // who moved the stage after a refresh (GHL doesn't record it).
         const stageLabel = stages.find((s) => s.id === stageId)?.label ?? stageId;
         api.conversations
-          .patch(convId, { stage: stageId, stageName: stageLabel, actorName: currentUser.name })
+          .patch(convId, {
+            stage: stageId,
+            stageName: stageLabel,
+            fromStageName: fromStageLabel,
+            actorName: currentUser.name,
+          })
           .catch((err) => console.error("lead stage sync failed", err));
       }
     },
