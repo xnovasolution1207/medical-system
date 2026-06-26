@@ -677,10 +677,29 @@ export const api = {
     // wants to render the right-rail contact panel.
     get: (id: string) => request<User>("GET", `/contacts/${id}`),
     // Per-contact free-form "Nota" (right panel). Durable, location-wide.
+    // Carries rich-text body + sticky color + file attachments.
     getNote: (id: string) =>
-      request<{ note: string }>("GET", `/contacts/${id}/note`),
-    saveNote: (id: string, note: string) =>
-      request<{ note: string }>("PUT", `/contacts/${id}/note`, { note }),
+      request<{ note: ContactNoteData }>("GET", `/contacts/${id}/note`),
+    saveNote: (id: string, note: ContactNoteData) =>
+      request<{ note: ContactNoteData }>("PUT", `/contacts/${id}/note`, { note }),
+    uploadNoteAttachment: async (
+      id: string,
+      file: File
+    ): Promise<{ url: string; name: string; type: string }> => {
+      const form = new FormData();
+      form.append("file", file);
+      const headers: Record<string, string> = {};
+      const token = getAuthToken();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/contacts/${id}/note/attachment`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      if (!res.ok) throw new Error(`No se pudo subir el adjunto (${res.status})`);
+      const json = await res.json();
+      return json.data;
+    },
     // Full lead bundle for a contact (contact + most-recent
     // conversation + messages + tasks). Same shape the WS
     // `lead.updated` event ships. Used by the opportunity chat
@@ -851,4 +870,10 @@ export type StageRule = {
   stageId: string;
   pipelineId: string;
   enabled: boolean;
+};
+
+export type ContactNoteData = {
+  html: string;
+  color?: string;
+  attachments?: Array<{ url: string; name: string; type?: string }>;
 };
