@@ -25,12 +25,12 @@ const NOTE_COLORS: Record<
   string,
   { swatch: string; body: string; bar: string; border: string; text: string }
 > = {
-  yellow: { swatch: "#FDE68A", body: "bg-[#FFFBEB] dark:bg-amber-900/15", bar: "bg-amber-100/60 dark:bg-amber-900/25", border: "border-amber-200/70 dark:border-amber-500/30", text: "text-amber-950 dark:text-amber-100" },
-  green: { swatch: "#BBF7D0", body: "bg-[#F0FDF4] dark:bg-emerald-900/15", bar: "bg-emerald-100/60 dark:bg-emerald-900/25", border: "border-emerald-200/70 dark:border-emerald-500/30", text: "text-emerald-950 dark:text-emerald-100" },
-  blue: { swatch: "#BFDBFE", body: "bg-[#EFF6FF] dark:bg-blue-900/15", bar: "bg-blue-100/60 dark:bg-blue-900/25", border: "border-blue-200/70 dark:border-blue-500/30", text: "text-blue-950 dark:text-blue-100" },
-  pink: { swatch: "#FBCFE8", body: "bg-[#FDF2F8] dark:bg-pink-900/15", bar: "bg-pink-100/60 dark:bg-pink-900/25", border: "border-pink-200/70 dark:border-pink-500/30", text: "text-pink-950 dark:text-pink-100" },
-  purple: { swatch: "#DDD6FE", body: "bg-[#F5F3FF] dark:bg-violet-900/15", bar: "bg-violet-100/60 dark:bg-violet-900/25", border: "border-violet-200/70 dark:border-violet-500/30", text: "text-violet-950 dark:text-violet-100" },
-  slate: { swatch: "#E2E8F0", body: "bg-slate-50 dark:bg-slate-800/40", bar: "bg-slate-100/70 dark:bg-slate-800/60", border: "border-slate-200 dark:border-slate-600/40", text: "text-slate-900 dark:text-slate-100" },
+  yellow: { swatch: "#FACC15", body: "bg-[#FFFBEB] dark:bg-amber-900/15", bar: "bg-amber-100/60 dark:bg-amber-900/25", border: "border-amber-200/70 dark:border-amber-500/30", text: "text-amber-950 dark:text-amber-100" },
+  green: { swatch: "#4ADE80", body: "bg-[#F0FDF4] dark:bg-emerald-900/15", bar: "bg-emerald-100/60 dark:bg-emerald-900/25", border: "border-emerald-200/70 dark:border-emerald-500/30", text: "text-emerald-950 dark:text-emerald-100" },
+  blue: { swatch: "#60A5FA", body: "bg-[#EFF6FF] dark:bg-blue-900/15", bar: "bg-blue-100/60 dark:bg-blue-900/25", border: "border-blue-200/70 dark:border-blue-500/30", text: "text-blue-950 dark:text-blue-100" },
+  pink: { swatch: "#F472B6", body: "bg-[#FDF2F8] dark:bg-pink-900/15", bar: "bg-pink-100/60 dark:bg-pink-900/25", border: "border-pink-200/70 dark:border-pink-500/30", text: "text-pink-950 dark:text-pink-100" },
+  orange: { swatch: "#FB923C", body: "bg-[#FFF7ED] dark:bg-orange-900/15", bar: "bg-orange-100/60 dark:bg-orange-900/25", border: "border-orange-200/70 dark:border-orange-500/30", text: "text-orange-950 dark:text-orange-100" },
+  purple: { swatch: "#A78BFA", body: "bg-[#F5F3FF] dark:bg-violet-900/15", bar: "bg-violet-100/60 dark:bg-violet-900/25", border: "border-violet-200/70 dark:border-violet-500/30", text: "text-violet-950 dark:text-violet-100" },
 };
 
 // A persistent free-form "Nota" for a contact: rich text (B/U/I/S, lists,
