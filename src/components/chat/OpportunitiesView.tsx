@@ -1784,9 +1784,15 @@ export function OpportunitiesView({
                     <TableRow
                       key={opp.id}
                       data-state={isSelected ? "selected" : undefined}
-                      className="group"
+                      className={cn(
+                        "group",
+                        onOpenChat && opp.contactId && "cursor-pointer"
+                      )}
+                      onClick={() => {
+                        if (onOpenChat && opp.contactId) onOpenChat(opp.contactId);
+                      }}
                     >
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={() => toggleOppSelected(opp.id)}
