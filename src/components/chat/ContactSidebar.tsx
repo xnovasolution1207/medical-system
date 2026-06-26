@@ -1187,49 +1187,9 @@ export function ContactSidebar({
                     ))}
                   </div>
                 )}
-                {contact.attribution &&
-                  Object.values(contact.attribution).some(Boolean) && (
-                    <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
-                      <p className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
-                        Campaña / Origen
-                      </p>
-                      {[
-                        { label: "Campaña", value: contact.attribution.campaign },
-                        { label: "Origen", value: contact.attribution.source },
-                        { label: "Medio", value: contact.attribution.medium },
-                        { label: "Contenido", value: contact.attribution.content },
-                        { label: "Término", value: contact.attribution.term },
-                        { label: "Formulario", value: contact.attribution.form },
-                        { label: "Referente", value: contact.attribution.referrer },
-                      ]
-                        .filter((r) => r.value)
-                        .map((r) => (
-                          <div
-                            key={r.label}
-                            className="flex items-start justify-between gap-4 rounded-md p-2 -mx-2"
-                          >
-                            <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                              <Megaphone className="h-4 w-4" />
-                              {r.label}
-                            </span>
-                            {/^https?:\/\//i.test(String(r.value)) ? (
-                              <a
-                                href={String(r.value)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="min-w-0 text-right font-medium text-primary hover:underline [overflow-wrap:anywhere]"
-                              >
-                                {r.value}
-                              </a>
-                            ) : (
-                              <span className="min-w-0 text-right font-medium text-foreground/80 [overflow-wrap:anywhere]">
-                                {r.value}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  )}
+                {/* "Campaña / Origen" (attribution) intentionally removed — the
+                    team found the source/medium fields confusing and only wants
+                    the form data shown above. */}
               </div>
             )}
           </div>
