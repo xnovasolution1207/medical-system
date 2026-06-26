@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Filter,
@@ -22,6 +22,7 @@ import {
   UserPlus,
   X,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -420,6 +421,11 @@ export function OpportunitiesView({
   // Ordenar
   const [sortKey, setSortKey] = useState<SortKey>("recientes");
   const [stageRulesOpen, setStageRulesOpen] = useState(false);
+  // List-view infinite scroll: render rows in growing windows so a table with
+  // thousands of opportunities doesn't mount every row at once.
+  const TABLE_PAGE_SIZE = 50;
+  const [tableVisible, setTableVisible] = useState(TABLE_PAGE_SIZE);
+  const tableSentinelRef = useRef<HTMLDivElement>(null);
 
   // Crear oportunidad dialog
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -896,6 +902,33 @@ export function OpportunitiesView({
     conversations,
     mentionContactsByValue,
   ]);
+
+  // Reset the list-view window whenever the filtered/sorted set changes, so a
+  // new search/filter starts from the top page.
+  useEffect(() => {
+    setTableVisible(TABLE_PAGE_SIZE);
+  }, [searchQuery, builderFilters, builderLogic, datePreset, customDateRange, sortKey, viewMode]);
+
+  // Infinite scroll for the list view: reveal the next page when the bottom
+  // sentinel nears the viewport. Re-created on length/window changes so it keeps
+  // firing while the sentinel stays in view (tall viewports / fast scroll).
+  useEffect(() => {
+    if (viewMode !== "list") return;
+    const el = tableSentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setTableVisible((v) =>
+            v < filteredOpps.length ? v + TABLE_PAGE_SIZE : v
+          );
+        }
+      },
+      { rootMargin: "300px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [viewMode, filteredOpps.length, tableVisible]);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedOppId(id);
@@ -1766,7 +1799,7 @@ export function OpportunitiesView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOpps.map((opp) => {
+                {filteredOpps.slice(0, tableVisible).map((opp) => {
                   const isSelected = selectedOppIds.has(opp.id);
                   const conv = convByContactId.get(opp.contactId);
                   const participant = conv?.participant;
@@ -1869,6 +1902,17 @@ export function OpportunitiesView({
                 )}
               </TableBody>
             </Table>
+            {/* Infinite-scroll sentinel + count. Reveals the next page as it
+                nears the viewport; shows the loaded/total tally. */}
+            {filteredOpps.length > tableVisible && (
+              <div
+                ref={tableSentinelRef}
+                className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground"
+              >
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cargando más… ({tableVisible}/{filteredOpps.length})
+              </div>
+            )}
           </div>
         )}
       </div>
