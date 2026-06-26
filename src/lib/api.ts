@@ -478,6 +478,11 @@ export const api = {
         markRead: boolean;
         activeReminder: string | null;
         stage: string;
+        // Display label of the target stage + the staff user making the move,
+        // sent so the backend can persist WHO changed the stage and re-attach
+        // it to the timeline pill on refresh (GHL doesn't record the actor).
+        stageName: string;
+        actorName: string;
         // Add a snapshot to the conversation's pinned-message stack
         // (each pin renders as a banner above the chat). Pass `null`
         // to clear ALL pins (legacy clear-all path).

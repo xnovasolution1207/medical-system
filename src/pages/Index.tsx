@@ -2948,7 +2948,10 @@ export default function Index() {
       // once the real conversation arrives.
       if (!isStubConvId(id)) {
         api.conversations
-          .patch(id, { stage })
+          // Send the actor + stage label so the backend can persist WHO moved
+          // the stage and re-attach it to the timeline pill after a refresh
+          // (GHL's activity message doesn't record the user).
+          .patch(id, { stage, stageName: stageLabel, actorName: currentUser.name })
           .catch((err) => console.error("stage update failed", err));
       }
 
@@ -3931,12 +3934,15 @@ export default function Index() {
         ? conversations.find((c) => c.participant.id === contactId)?.id
         : undefined;
       if (convId && !isStubConvId(convId)) {
+        // Record the actor + stage label so the timeline pill keeps the user
+        // who moved the stage after a refresh (GHL doesn't record it).
+        const stageLabel = stages.find((s) => s.id === stageId)?.label ?? stageId;
         api.conversations
-          .patch(convId, { stage: stageId })
+          .patch(convId, { stage: stageId, stageName: stageLabel, actorName: currentUser.name })
           .catch((err) => console.error("lead stage sync failed", err));
       }
     },
-    [updateBootstrap, opportunities, conversations]
+    [updateBootstrap, opportunities, conversations, stages, currentUser.name]
   );
 
   // Status (open/won/lost/abandoned) + monetaryValue patches for the
