@@ -482,6 +482,10 @@ function upsertConvInList(
     participant: { ...inc.participant, ...contactPatch },
     messages: mergedMessages,
     scheduledMessages: existing.scheduledMessages ?? inc.scheduledMessages,
+    // Keep the locally-tracked stage (set authoritatively by opportunity.updated
+    // + the optimistic stage move). GHL's opportunity search lags a fresh move,
+    // so the bundle's `inc.stage` can be the OLD stage and would revert the badge.
+    stage: existing.stage ?? inc.stage,
   };
   return hasNewActivity
     ? moveConversationToFront(list, inc.id, merged)
@@ -1296,6 +1300,9 @@ export default function Index() {
             ...event.conversation,
             messages: existing.messages.length ? existing.messages : event.conversation.messages,
             scheduledMessages: existing.scheduledMessages ?? event.conversation.scheduledMessages,
+            // Stage is owned by opportunity.updated + optimistic moves; don't let
+            // a (possibly stale) header refresh revert it.
+            stage: existing.stage ?? event.conversation.stage,
           };
           return {
             ...prev,
@@ -1365,28 +1372,61 @@ export default function Index() {
           return next;
         });
       } else if (event.type === "opportunity.updated") {
+        const incoming = event.opportunity;
+        // Reflect the opportunity's stage on the contact's conversation(s) too —
+        // the list badge + chat-header stage dropdown read `conversation.stage`,
+        // so without this they stayed stale (only the kanban moved) until a
+        // refresh when the AI auto-moved the stage.
+        const applyStage = (c: Conversation) =>
+          incoming.stageId &&
+          (c.contactId === incoming.contactId ||
+            c.participant?.id === incoming.contactId)
+            ? { ...c, stage: incoming.stageId }
+            : c;
         updateBootstrap((prev) => {
-          const idx = prev.opportunities.findIndex((o) => o.id === event.opportunity.id);
+          const idx = prev.opportunities.findIndex((o) => o.id === incoming.id);
+          let opportunities = prev.opportunities;
           if (idx === -1) {
-            return { ...prev, opportunities: [event.opportunity, ...prev.opportunities] };
+            opportunities = [incoming, ...prev.opportunities];
+          } else {
+            const next = prev.opportunities.slice();
+            const existing = next[idx];
+            // A stage-move echo is mapped from GHL's minimal PUT response,
+            // which lacks `attributions` — so `source` collapses to the
+            // "Directo" default and `date` may be blank. Keep the richer
+            // existing values so the card's channel label / date don't flicker.
+            next[idx] = {
+              ...incoming,
+              source:
+                incoming.source && incoming.source !== "Directo"
+                  ? incoming.source
+                  : existing.source || incoming.source,
+              date: incoming.date || existing.date,
+            };
+            opportunities = next;
           }
-          const next = prev.opportunities.slice();
-          const existing = next[idx];
-          const incoming = event.opportunity;
-          // A stage-move echo is mapped from GHL's minimal PUT response,
-          // which lacks `attributions` — so `source` collapses to the
-          // "Directo" default and `date` may be blank. Keep the richer
-          // existing values so the card's channel label / date don't
-          // flicker every time it's dragged.
-          next[idx] = {
-            ...incoming,
-            source:
-              incoming.source && incoming.source !== "Directo"
-                ? incoming.source
-                : existing.source || incoming.source,
-            date: incoming.date || existing.date,
+          return {
+            ...prev,
+            opportunities,
+            conversations: prev.conversations.map(applyStage),
           };
-          return { ...prev, opportunities: next };
+        });
+        // Mirror the stage onto the server-fetched lists + routed map so the
+        // badge updates regardless of which view is showing the lead.
+        setSearchResults((p) => (p ? p.map(applyStage) : p));
+        setUnreadResults((p) => (p ? p.map(applyStage) : p));
+        setAssignedResults((p) => (p ? p.map(applyStage) : p));
+        setFollowedResults((p) => (p ? p.map(applyStage) : p));
+        setFavoriteResults((p) => (p ? p.map(applyStage) : p));
+        setRoutedConversations((prev) => {
+          let changed = false;
+          const next: Record<string, Conversation> = {};
+          for (const [id, c] of Object.entries(prev)) {
+            const nc = applyStage(c);
+            if (nc !== c) changed = true;
+            next[id] = nc;
+          }
+          return changed ? next : prev;
         });
       } else if (event.type === "task.created") {
         updateBootstrap((prev) => {
@@ -1554,6 +1594,11 @@ export default function Index() {
                 messages: mergedMessages,
                 scheduledMessages:
                   existing.scheduledMessages ?? inc.scheduledMessages,
+                // Preserve the locally-tracked stage (set by opportunity.updated
+                // + optimistic moves). GHL's opportunity search lags a fresh
+                // stage move, so the bundle's `inc.stage` can be stale and would
+                // revert the badge/header to the previous stage.
+                stage: existing.stage ?? inc.stage,
               };
               // Only re-sort the list when there's actual new chat activity.
               // Contact-metadata-only events (owner change, tags, name edit
