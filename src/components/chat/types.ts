@@ -314,7 +314,12 @@ export type Opportunity = {
   monetaryValue?: number;
   status: "open" | "won" | "lost" | "abandoned";
   source: string;
+  // Localized display date (e.g. "25 jun 2026") of the opportunity's creation.
   date: string;
+  // Raw ISO creation date — the value the "Filtrar por fecha" preset and the
+  // date sort compare against (the `date` string above is display-only and not
+  // chronologically comparable).
+  createdAtIso?: string;
   assignedTo?: string;
   // Linked contact's phone + tags from GHL's opportunity search — lets the
   // kanban card show them even when the conversation isn't loaded.

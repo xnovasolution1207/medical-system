@@ -824,21 +824,20 @@ export function OpportunitiesView({
       });
     }
 
-    // Date-preset narrowing. Compares against the linked conversation's
-    // `lastMessageAt` ISO — the closest recency signal on the wire
-    // today. Opportunities without a linked conversation (or without
-    // a parseable lastMessageAt) get excluded when a date filter is
-    // active.
+    // Date-preset narrowing. Compares against the opportunity's OWN creation
+    // date (`createdAtIso`) — the exact value shown on each card — so the filter
+    // matches what the user sees. (It used to compare the linked conversation's
+    // lastMessageAt, which both mismatched the card date AND dropped every
+    // opportunity whose conversation wasn't loaded — emptying most columns.)
     if (dateFilterActive) {
       const range = resolveDateRange(datePreset, customDateRange);
       if (range) {
         const fromTs = range.from.getTime();
         const toTs = range.to.getTime();
         list = list.filter((opp) => {
-          const conv = convByContactId.get(opp.contactId);
-          const lastAt = opp.lastMessageAt ?? conv?.lastMessageAt;
-          if (!lastAt) return false;
-          const t = Date.parse(lastAt);
+          const iso = opp.createdAtIso;
+          if (!iso) return false;
+          const t = Date.parse(iso);
           if (!Number.isFinite(t)) return false;
           return t >= fromTs && t < toTs;
         });
@@ -860,11 +859,19 @@ export function OpportunitiesView({
         sorted.sort((a, b) => (a.monetaryValue ?? 0) - (b.monetaryValue ?? 0));
         break;
       case "antiguos":
-        sorted.sort((a, b) => a.date.localeCompare(b.date));
+        sorted.sort(
+          (a, b) =>
+            (Date.parse(a.createdAtIso ?? "") || 0) -
+            (Date.parse(b.createdAtIso ?? "") || 0)
+        );
         break;
       case "recientes":
       default:
-        sorted.sort((a, b) => b.date.localeCompare(a.date));
+        sorted.sort(
+          (a, b) =>
+            (Date.parse(b.createdAtIso ?? "") || 0) -
+            (Date.parse(a.createdAtIso ?? "") || 0)
+        );
         break;
     }
     return sorted;
