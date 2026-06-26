@@ -1212,9 +1212,20 @@ export function ContactSidebar({
                               <Megaphone className="h-4 w-4" />
                               {r.label}
                             </span>
-                            <span className="break-words text-right font-medium text-foreground/80">
-                              {r.value}
-                            </span>
+                            {/^https?:\/\//i.test(String(r.value)) ? (
+                              <a
+                                href={String(r.value)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="min-w-0 text-right font-medium text-primary hover:underline [overflow-wrap:anywhere]"
+                              >
+                                {r.value}
+                              </a>
+                            ) : (
+                              <span className="min-w-0 text-right font-medium text-foreground/80 [overflow-wrap:anywhere]">
+                                {r.value}
+                              </span>
+                            )}
                           </div>
                         ))}
                     </div>
