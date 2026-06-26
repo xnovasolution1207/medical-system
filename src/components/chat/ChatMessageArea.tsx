@@ -2932,6 +2932,16 @@ export function ChatMessageArea({
                   ? stages.find((s) => s.id === activityStageId)?.label ?? activityStageId
                   : null);
               const name = ev.opportunityName || conversation.participant.name;
+              // When GHL recorded the previous stage, show the full
+              // "from → to" transition (e.g. "Lead Nuevo → Tibios") instead of
+              // just the landing stage. Only for genuine moves (different
+              // stages) — create / status events keep the simple form.
+              const fromStageLabel = ev.fromStageName?.trim() || null;
+              const isMove =
+                ev.action === "updated" &&
+                Boolean(fromStageLabel) &&
+                Boolean(stageLabel) &&
+                fromStageLabel !== stageLabel;
               return (
                 <React.Fragment key={message.id}>
                   {dateSeparator}
@@ -2940,11 +2950,22 @@ export function ChatMessageArea({
                     <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-muted/60 border border-border/30 select-none whitespace-nowrap">
                       <ArrowRight className="h-[11px] w-[11px] text-muted-foreground/60 shrink-0" />
                       <span className="text-[11px] text-muted-foreground/70 font-medium">{name}</span>
-                      <span className="text-[11px] text-muted-foreground/50">{actionLabel}</span>
-                      {stageLabel && ev.action !== "deleted" && (
+                      {isMove ? (
                         <>
-                          <span className="text-[11px] text-muted-foreground/50">en</span>
+                          <span className="text-[11px] text-muted-foreground/50">movido</span>
+                          <span className="text-[11px] text-muted-foreground/60">{fromStageLabel}</span>
+                          <ArrowRight className="h-[10px] w-[10px] text-muted-foreground/50 shrink-0" />
                           <span className="text-[11px] text-foreground/70 font-semibold">{stageLabel}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[11px] text-muted-foreground/50">{actionLabel}</span>
+                          {stageLabel && ev.action !== "deleted" && (
+                            <>
+                              <span className="text-[11px] text-muted-foreground/50">en</span>
+                              <span className="text-[11px] text-foreground/70 font-semibold">{stageLabel}</span>
+                            </>
+                          )}
                         </>
                       )}
                       {ev.user && (

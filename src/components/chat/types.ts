@@ -166,6 +166,9 @@ export type Message = {
         // Stage NAME GHL recorded on THIS event (its stage at the time).
         // Preferred over stageId so the thread shows the stage-change history.
         stageName?: string;
+        // Previous stage name on a stage transition — lets the pill render
+        // the full "from → to" move. Absent on create / status-only events.
+        fromStageName?: string;
         user: string;
       };
   // Present when this message is a comment on a social post (Instagram /

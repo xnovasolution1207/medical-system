@@ -2906,6 +2906,11 @@ export default function Index() {
       // on the next full load, so without this the chat history showed nothing
       // until a refresh.
       const stageLabel = stages.find((s) => s.id === stage)?.label ?? stage;
+      // Previous stage label (before this move) so the optimistic pill shows the
+      // full "from → to" transition immediately, matching the post-refresh view.
+      const fromStageLabel = conv?.stage
+        ? stages.find((s) => s.id === conv.stage)?.label ?? conv.stage
+        : undefined;
       const optimisticEvent: Message = {
         id: `sys-stage-${Date.now()}`,
         senderId: "system",
@@ -2925,6 +2930,7 @@ export default function Index() {
           opportunityName: conv?.participant?.name,
           stageId: stage,
           stageName: stageLabel,
+          fromStageName: fromStageLabel,
           user: currentUser.name,
         },
       };
