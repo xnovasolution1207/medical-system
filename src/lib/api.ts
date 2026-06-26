@@ -830,4 +830,20 @@ export const api = {
       patch: { title?: string; dueDate?: string; body?: string }
     ) => request<Task>("PATCH", `/tasks/${taskId}`, patch),
   },
+  // Keyword → pipeline-stage automation rules (the "AI" that moves a lead to
+  // the matching stage). Managed from the Oportunidades automation dialog.
+  stageRules: {
+    list: () =>
+      request<{ rules: StageRule[] }>("GET", "/stage-rules"),
+    save: (rules: StageRule[]) =>
+      request<{ rules: StageRule[] }>("PUT", "/stage-rules", { rules }),
+  },
+};
+
+export type StageRule = {
+  id: string;
+  keyword: string;
+  stageId: string;
+  pipelineId: string;
+  enabled: boolean;
 };

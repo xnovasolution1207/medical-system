@@ -60,6 +60,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { StageRulesDialog } from "./StageRulesDialog";
 import { api } from "@/lib/api";
 import type {
   AgentUser,
@@ -418,6 +419,7 @@ export function OpportunitiesView({
 
   // Ordenar
   const [sortKey, setSortKey] = useState<SortKey>("recientes");
+  const [stageRulesOpen, setStageRulesOpen] = useState(false);
 
   // Crear oportunidad dialog
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -1083,6 +1085,16 @@ export function OpportunitiesView({
                 existing chat or stubs the bot designer.
               • Agregar contacto → comprehensive contact-create form
                 with optional opportunity stage and family links. */}
+          <Button
+            variant="outline"
+            size="icon"
+            className="shrink-0"
+            title="Automatización por palabras clave"
+            aria-label="Automatización por palabras clave"
+            onClick={() => setStageRulesOpen(true)}
+          >
+            <Bot className="h-4 w-4" />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -2488,6 +2500,13 @@ export function OpportunitiesView({
           </form>
         </DialogContent>
       </Dialog>
+
+      <StageRulesDialog
+        open={stageRulesOpen}
+        onOpenChange={setStageRulesOpen}
+        stages={stages.map((s) => ({ id: s.id, label: s.label }))}
+        pipelineId={pipeline?.id}
+      />
     </div>
   );
 }

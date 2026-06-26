@@ -21,6 +21,9 @@ export type User = {
   address?: string;
   // Identity document, e.g. "CC 12345678". Backed by a GHL custom field.
   documentNumber?: string;
+  // Every GHL custom field with a value (e.g. fields captured by forms/
+  // campaigns), label-resolved, for display in the contact panel.
+  customFields?: Array<{ id: string; name: string; value: string; dataType?: string }>;
   tags?: string[];
   assignedTo?: string;
   // GHL contact creation date (ISO) — shown under the name in the contact

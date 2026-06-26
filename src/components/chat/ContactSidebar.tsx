@@ -1177,6 +1177,27 @@ export function ContactSidebar({
                 {fields.length === 0 && (
                   <span className="text-muted-foreground text-xs italic">Sin información</span>
                 )}
+                {(contact.customFields ?? []).length > 0 && (
+                  <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
+                    <p className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                      Datos del formulario
+                    </p>
+                    {contact.customFields!.map((cf) => (
+                      <div
+                        key={cf.id}
+                        className="flex items-start justify-between gap-4 rounded-md p-2 -mx-2"
+                      >
+                        <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                          <Tag className="h-4 w-4" />
+                          {cf.name}
+                        </span>
+                        <span className="break-words text-right font-medium text-foreground/80">
+                          {cf.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
