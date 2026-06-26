@@ -103,11 +103,12 @@ export function StageRulesDialog({
             Automatización por palabras clave
           </DialogTitle>
           <DialogDescription>
-            Cuando un mensaje entrante del lead contenga la palabra clave, su
-            oportunidad se moverá automáticamente a la etapa indicada. Puedes
-            listar varias palabras separadas por coma (ej. "precio, costo,
-            cuánto cuesta"); ignora mayúsculas y acentos y respeta palabras
-            completas.
+            Cuando una respuesta de la IA contenga la palabra clave, la
+            oportunidad del lead se moverá automáticamente a la etapa indicada.
+            (Se usan los mensajes de la IA porque su redacción es más precisa.)
+            Puedes listar varias palabras separadas por coma (ej. "agendada,
+            confirmada, cita programada"); ignora mayúsculas y acentos y respeta
+            palabras completas.
           </DialogDescription>
         </DialogHeader>
 
