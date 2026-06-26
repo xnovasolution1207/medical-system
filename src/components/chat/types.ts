@@ -168,6 +168,15 @@ export type Message = {
         stageName?: string;
         user: string;
       };
+  // Present when this message is a comment on a social post (Instagram /
+  // TikTok / Facebook) rather than a DM. Rendered as a "new comment on a
+  // publication" banner with a link to the post so agents don't mistake it
+  // for a normal direct message.
+  postComment?: {
+    platform: "instagram" | "tiktok" | "facebook";
+    pageName?: string;
+    postUrl?: string;
+  };
 };
 
 export type ScheduledMessage = {

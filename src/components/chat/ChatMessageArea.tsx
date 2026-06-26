@@ -27,7 +27,7 @@ import {
 } from "./scheduleOptions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
-import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Sparkles, Mail, Trash2, Loader2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Pause, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff } from "lucide-react";
+import { Phone, Video, Info, Paperclip, Smile, Send, X, FileIcon, FileText, Tags, Tag, DollarSign, Image as ImageIcon, Bold, Italic, Underline, Link as LinkIcon, List, Clock, MessageCircle, Star, Sparkles, Mail, Trash2, Loader2, ChevronDown, Bell, User as UserIcon, CheckSquare, CheckCircle2, Circle, BookmarkPlus, Edit2, Check, PanelRight, Search, CornerUpLeft, ArrowRight, Play, Pause, Reply, AlertCircle, MoreHorizontal, Menu, Inbox, Mic, Zap, Contact, Waypoints, Delete, Download, Pin, PinOff, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Conversation, Message, MessageButton, User, Task, AgentUser } from "./types";
 import { cn } from "@/lib/utils";
@@ -3036,6 +3036,33 @@ export function ChatMessageArea({
                     isMe ? "items-end" : "items-start"
                   )}
                 >
+                  {/* Social post-comment banner — makes a comment on an
+                      Instagram/TikTok/Facebook post visually distinct from a
+                      direct message so agents don't reply in the wrong context. */}
+                  {message.postComment && (
+                    <div className="mb-0.5 w-full rounded-lg border border-violet-300/60 bg-violet-50 px-2.5 py-1.5 text-[12px] dark:border-violet-400/30 dark:bg-violet-950/30">
+                      <div className="flex items-center gap-1.5 font-medium text-violet-700 dark:text-violet-300">
+                        <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          Nuevo comentario en una publicación
+                          {message.postComment.pageName
+                            ? ` · ${message.postComment.pageName}`
+                            : ""}
+                        </span>
+                      </div>
+                      {message.postComment.postUrl && (
+                        <a
+                          href={message.postComment.postUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-0.5 inline-flex items-center gap-1 font-medium text-violet-600 hover:underline dark:text-violet-300"
+                        >
+                          Ir a la publicación
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  )}
                   <div
                     className={cn(
                       "relative shadow-sm transition-all animate-in fade-in slide-in-from-bottom-2",
