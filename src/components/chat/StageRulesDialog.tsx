@@ -104,7 +104,10 @@ export function StageRulesDialog({
           </DialogTitle>
           <DialogDescription>
             Cuando un mensaje entrante del lead contenga la palabra clave, su
-            oportunidad se moverá automáticamente a la etapa indicada.
+            oportunidad se moverá automáticamente a la etapa indicada. Puedes
+            listar varias palabras separadas por coma (ej. "precio, costo,
+            cuánto cuesta"); ignora mayúsculas y acentos y respeta palabras
+            completas.
           </DialogDescription>
         </DialogHeader>
 
@@ -132,7 +135,7 @@ export function StageRulesDialog({
                 <Input
                   value={r.keyword}
                   onChange={(e) => update(r.id, { keyword: e.target.value })}
-                  placeholder="Palabra o frase clave"
+                  placeholder="Palabra(s) o frase — separa varias con coma"
                   className="flex-1"
                 />
                 <span className="shrink-0 text-xs text-muted-foreground">→</span>
