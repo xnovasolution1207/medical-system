@@ -1758,11 +1758,37 @@ export default function Index() {
                           phone: c.phone ?? conv.participant.phone,
                           address: c.address,
                           documentNumber: c.documentNumber,
+                          // Form/campaign data for the contact panel — without
+                          // these the "Datos del formulario" / "Campaña / Origen"
+                          // sections never had anything to render.
+                          customFields: c.customFields,
+                          attribution: c.attribution,
                         },
                       }
                     : conv
                 ),
               }));
+              // Same enrichment for a deep-linked (routed) conversation that
+              // isn't in the loaded list.
+              setRoutedConversations((prev) => {
+                const rc = prev[activeId];
+                if (!rc) return prev;
+                return {
+                  ...prev,
+                  [activeId]: {
+                    ...rc,
+                    participant: {
+                      ...rc.participant,
+                      email: c.email ?? rc.participant.email,
+                      phone: c.phone ?? rc.participant.phone,
+                      address: c.address,
+                      documentNumber: c.documentNumber,
+                      customFields: c.customFields,
+                      attribution: c.attribution,
+                    },
+                  },
+                };
+              });
             })
             .catch((err) => {
               console.warn("[contact] detail enrich failed", err);

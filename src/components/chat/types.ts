@@ -24,6 +24,16 @@ export type User = {
   // Every GHL custom field with a value (e.g. fields captured by forms/
   // campaigns), label-resolved, for display in the contact panel.
   customFields?: Array<{ id: string; name: string; value: string; dataType?: string }>;
+  // Campaign/form attribution — how the lead arrived (utm/source/medium/form).
+  attribution?: {
+    source?: string;
+    medium?: string;
+    campaign?: string;
+    content?: string;
+    term?: string;
+    referrer?: string;
+    form?: string;
+  };
   tags?: string[];
   assignedTo?: string;
   // GHL contact creation date (ISO) — shown under the name in the contact

@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { ContactNote } from "./ContactNote";
-import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play } from "lucide-react";
+import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play, Megaphone } from "lucide-react";
 
 interface ContactSidebarProps {
   contact: User;
@@ -1187,6 +1187,38 @@ export function ContactSidebar({
                     ))}
                   </div>
                 )}
+                {contact.attribution &&
+                  Object.values(contact.attribution).some(Boolean) && (
+                    <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
+                      <p className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                        Campaña / Origen
+                      </p>
+                      {[
+                        { label: "Campaña", value: contact.attribution.campaign },
+                        { label: "Origen", value: contact.attribution.source },
+                        { label: "Medio", value: contact.attribution.medium },
+                        { label: "Contenido", value: contact.attribution.content },
+                        { label: "Término", value: contact.attribution.term },
+                        { label: "Formulario", value: contact.attribution.form },
+                        { label: "Referente", value: contact.attribution.referrer },
+                      ]
+                        .filter((r) => r.value)
+                        .map((r) => (
+                          <div
+                            key={r.label}
+                            className="flex items-start justify-between gap-4 rounded-md p-2 -mx-2"
+                          >
+                            <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                              <Megaphone className="h-4 w-4" />
+                              {r.label}
+                            </span>
+                            <span className="break-words text-right font-medium text-foreground/80">
+                              {r.value}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
               </div>
             )}
           </div>
