@@ -4535,6 +4535,50 @@ export default function Index() {
         </div>
       )}
 
+      {/* Contact-panel skeleton while a selected conversation is still
+          hydrating (e.g. a searched / deep-linked old chat). Keeps the right
+          sidebar in place with loading placeholders instead of vanishing. */}
+      {activeMainTab !== "oportunidades" &&
+        !activeConversation &&
+        activeId &&
+        hydratingId === activeId && (
+          <div
+            className={cn(
+              "h-full shrink-0 hidden lg:block transition-all duration-300 ease-in-out",
+              isContactSidebarOpen
+                ? "w-72 xl:w-80 2xl:w-96 border-l"
+                : "w-0 overflow-hidden border-none"
+            )}
+          >
+            <div className="w-72 xl:w-80 2xl:w-96 h-full overflow-hidden p-4 space-y-5">
+              <div className="flex flex-col items-center gap-3 pt-2">
+                <Skeleton className="h-20 w-20 rounded-full" />
+                <Skeleton className="h-5 w-40 rounded" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-7 w-24 rounded-full" />
+                  <Skeleton className="h-7 w-16 rounded-full" />
+                </div>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="space-y-2.5">
+                <Skeleton className="h-4 w-24 rounded" />
+                <Skeleton className="h-4 w-full rounded" />
+                <Skeleton className="h-4 w-3/4 rounded" />
+              </div>
+              <div className="h-px bg-border" />
+              <div className="space-y-2.5">
+                <Skeleton className="h-4 w-28 rounded" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </div>
+              <div className="h-px bg-border" />
+              <div className="space-y-2.5">
+                <Skeleton className="h-4 w-20 rounded" />
+                <Skeleton className="h-9 w-full rounded-md" />
+              </div>
+            </div>
+          </div>
+        )}
+
       <Sheet open={isContactSheetOpen} onOpenChange={setIsContactSheetOpen}>
         <SheetContent side="right" className="p-0 w-[85vw] sm:w-96 max-w-none border-l-0 lg:hidden">
           <SheetTitle className="sr-only">Detalles del contacto</SheetTitle>
