@@ -947,11 +947,6 @@ export function ContactSidebar({
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold">Información de Contacto</h3>
-              {!isEditingFields && (
-                <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => setIsEditingFields(true)}>
-                  <Plus className="h-4 w-4" />
-                </Button>
-              )}
             </div>
             
             {isEditingFields ? (
