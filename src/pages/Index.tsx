@@ -1881,6 +1881,12 @@ export default function Index() {
   // returns "matches query AND assigned to me" instead of all matches.
   // User-supplied advanced filter params win on conflicting keys.
   useEffect(() => {
+    // On "Favoritos" the search/filter narrows WITHIN the favorites
+    // (client-side) — skip the global GHL search so it doesn't replace the list.
+    if (favoriteFilterActive) {
+      setIsSearching(false);
+      return;
+    }
     const q = searchQuery.trim();
     const { params: filterParams, hasServerParam } = buildServerFilterParams(
       advancedFilters,
@@ -1941,6 +1947,7 @@ export default function Index() {
     assignedFilterActive,
     followedFilterActive,
     unreadFilterActive,
+    favoriteFilterActive,
     dateFilterRange,
     myUserId,
   ]);
@@ -2185,17 +2192,50 @@ export default function Index() {
         return true;
       })
     : [];
+  // "Favoritos" set, narrowed WITHIN the favorites by the active MainSidebar
+  // scope (Asignados a mí / Seguidos por mí) and by the search text / advanced
+  // filters — just like a search on the unread tab stays scoped to unread.
+  // Favorites are local, so this narrowing is client-side over the fetched set.
+  const favoriteConversations = favoriteFilterActive
+    ? (favoriteResults ?? []).filter((c) => {
+        if (assignedFilterActive && myUserId && c.participant?.assignedTo !== myUserId)
+          return false;
+        if (
+          followedFilterActive &&
+          myUserId &&
+          !(c.participant?.followers ?? []).includes(myUserId)
+        )
+          return false;
+        const q = searchQuery.trim().toLowerCase();
+        if (q) {
+          const name = (c.participant?.name ?? "").toLowerCase();
+          const last = (c.lastMessage ?? "").toLowerCase();
+          if (!name.includes(q) && !last.includes(q)) return false;
+        }
+        for (const cond of advancedFilters) {
+          const val = (cond.value ?? "").trim();
+          if (!val) continue;
+          if (cond.field === "etiqueta") {
+            const tags = (c.participant?.tags ?? []).map((t) => String(t).toLowerCase());
+            if (!tags.some((t) => t.includes(val.toLowerCase()))) return false;
+          }
+          if (cond.field === "asignado" && c.participant?.assignedTo !== val) return false;
+        }
+        return true;
+      })
+    : [];
   const displayConversationsBase = archivedFilterActive
     ? conversations.filter((c) => c.isArchived)
-    : isSearchActive
-      ? withCachedStage(searchResults ?? [])
-      : unreadFilterActive
-        ? // Server-wide unread set when loaded; local-derived as a fast
-          // first-paint fallback until it arrives.
-          withCachedStage(unreadResults ?? unreadConversations)
-        : favoriteFilterActive
-          ? // Server-wide favorites set (spans the whole dataset).
-            withCachedStage(favoriteResults ?? [])
+    : favoriteFilterActive
+      ? // Favorites stays the source even while searching/scoping — narrowing
+        // happens WITHIN the favorites (see favoriteConversations).
+        withCachedStage(favoriteConversations)
+      : isSearchActive
+        ? withCachedStage(searchResults ?? [])
+        : unreadFilterActive
+          ? // Server-wide unread set when loaded; local-derived as a fast
+            // first-paint fallback until it arrives.
+            withCachedStage(unreadResults ?? unreadConversations)
           : assignedFilterActive
             ? withCachedStage(assignedResults ?? [])
             : followedFilterActive
@@ -4189,12 +4229,12 @@ export default function Index() {
                 // displayConversations (search/filter first) — otherwise a
                 // filter applied while on a tab reads the wrong cursor and
                 // infinite scroll stops firing.
-                (isSearchActive
-                  ? searchNextCursor
-                  : unreadFilterActive
-                    ? unreadNextCursor
-                    : favoriteFilterActive
-                      ? favoriteNextCursor
+                (favoriteFilterActive
+                  ? favoriteNextCursor
+                  : isSearchActive
+                    ? searchNextCursor
+                    : unreadFilterActive
+                      ? unreadNextCursor
                       : assignedFilterActive
                         ? assignedNextCursor
                         : followedFilterActive
@@ -4276,12 +4316,12 @@ export default function Index() {
                 // displayConversations (search/filter first) — otherwise a
                 // filter applied while on a tab reads the wrong cursor and
                 // infinite scroll stops firing.
-                (isSearchActive
-                  ? searchNextCursor
-                  : unreadFilterActive
-                    ? unreadNextCursor
-                    : favoriteFilterActive
-                      ? favoriteNextCursor
+                (favoriteFilterActive
+                  ? favoriteNextCursor
+                  : isSearchActive
+                    ? searchNextCursor
+                    : unreadFilterActive
+                      ? unreadNextCursor
                       : assignedFilterActive
                         ? assignedNextCursor
                         : followedFilterActive
