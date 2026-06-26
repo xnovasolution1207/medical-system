@@ -534,10 +534,11 @@ export function OpportunitiesView({
   const isBoardFiltered = useMemo(
     () =>
       searchQuery.trim().length > 0 ||
+      dateFilterActive ||
       builderFilters.some(
         (c) => c.field && c.value !== undefined && c.value !== ""
       ),
-    [searchQuery, builderFilters]
+    [searchQuery, dateFilterActive, builderFilters]
   );
 
   const stageLookup = useMemo(
