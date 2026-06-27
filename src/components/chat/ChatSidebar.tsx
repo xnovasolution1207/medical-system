@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Mail, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft, Clock } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Mail, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft, Clock, Image as ImageIcon, Headphones, Video as VideoIcon, FileText, Paperclip, Sticker } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +69,122 @@ const SERVER_TRANSLATABLE_FIELDS = new Set<string>([
   "tipo_ultimo_mensaje_saliente",
   "direccion_ultimo_mensaje",
 ]);
+
+// Messaging channels where an empty last-message body means "media" (audio /
+// photo / sticker) rather than a system/activity entry. Used for the generic
+// "Multimedia" fallback when we haven't loaded the actual message yet.
+const MESSAGING_SOURCES = new Set<string>([
+  "whatsapp",
+  "instagram",
+  "messenger",
+  "tiktok",
+]);
+
+// WhatsApp-style list preview for the last message. GHL's conversation search
+// gives NO media-type for list rows (every media arrives as an empty-body
+// TYPE_WHATSAPP), so we read the precise type from the last LOADED message's
+// attachment when available (opened chats + media that arrived live over WS),
+// and fall back to a generic "Multimedia" indicator for not-yet-loaded media.
+// Maps a lazily-fetched media kind (from /last-message-kind) to its icon+label.
+function mediaKindPreview(kind: string): {
+  icon: typeof ImageIcon | null;
+  label: string;
+} | null {
+  switch (kind) {
+    case "image":
+      return { icon: ImageIcon, label: "Foto" };
+    case "video":
+      return { icon: VideoIcon, label: "Video" };
+    case "audio":
+      return { icon: Headphones, label: "Audio" };
+    case "document":
+      return { icon: FileText, label: "Documento" };
+    case "sticker":
+      return { icon: Sticker, label: "Sticker" };
+    case "file":
+      return { icon: Paperclip, label: "Archivo" };
+    default:
+      return null;
+  }
+}
+
+function getLastMessagePreview(
+  conv: Conversation,
+  // Lazily-resolved kind of the last message for unopened media rows (GHL omits
+  // it from list data). When present and the row is otherwise unknown media, it
+  // upgrades the generic "Multimedia" label to the precise type.
+  resolvedMediaKind?: string
+): {
+  icon: typeof ImageIcon | null;
+  label: string;
+} {
+  // Prefer the LOADED messages — they hold the real last message (text or
+  // attachment). This is authoritative: GHL's conversation DETAIL endpoint
+  // omits lastMessageBody, so once a chat is opened `conv.lastMessage` gets
+  // wiped to "" by the detail merge. Reading the loaded message avoids
+  // mislabelling those text chats as "Multimedia".
+  const msgs = conv.messages;
+  let lastMsg: (typeof msgs)[number] | undefined;
+  if (msgs && msgs.length) {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      // Skip system-event separators (stage moves, assignments) — they aren't
+      // chat content and shouldn't drive the preview.
+      if (!msgs[i].systemEvent) {
+        lastMsg = msgs[i];
+        break;
+      }
+    }
+  }
+
+  if (lastMsg) {
+    const caption = (lastMsg.text ?? "").trim();
+    const att = lastMsg.attachment;
+    if (att) {
+      const isSticker = /\.webp(\?|#|$)/i.test(att.url);
+      switch (att.type) {
+        case "image":
+          return isSticker
+            ? { icon: Sticker, label: "Sticker" }
+            : { icon: ImageIcon, label: caption || "Foto" };
+        case "video":
+          return { icon: VideoIcon, label: caption || "Video" };
+        case "audio":
+          return { icon: Headphones, label: "Audio" };
+        case "document":
+          return { icon: FileText, label: caption || att.name || "Documento" };
+        default:
+          return { icon: Paperclip, label: caption || att.name || "Archivo" };
+      }
+    }
+    if (caption) return { icon: null, label: caption };
+    // Loaded message with neither text nor attachment → fall through to the
+    // list-level body / generic fallback below.
+  }
+
+  const text = (conv.lastMessage ?? "").trim();
+  if (text) return { icon: null, label: text };
+  // No text anywhere AND nothing loaded: GHL gives an empty body for media list
+  // rows. Show the lazily-fetched precise type once known; otherwise blank (the
+  // fetch is in flight, or it resolved to something that isn't media — e.g. an
+  // activity-only conversation). We deliberately DON'T show a generic
+  // "Multimedia" placeholder — it was misleading on non-media rows.
+  if (!lastMsg && MESSAGING_SOURCES.has(conv.source)) {
+    const precise = resolvedMediaKind ? mediaKindPreview(resolvedMediaKind) : null;
+    return precise ?? { icon: null, label: "" };
+  }
+  return { icon: null, label: "" };
+}
+
+// True when a row would render the generic "Multimedia" placeholder and should
+// therefore have its precise media kind lazily fetched.
+function needsMediaKind(conv: Conversation): boolean {
+  if (!MESSAGING_SOURCES.has(conv.source)) return false;
+  if ((conv.lastMessage ?? "").trim()) return false;
+  const msgs = conv.messages;
+  // A loaded non-system message means we already know the content.
+  if (msgs && msgs.some((m) => !m.systemEvent)) return false;
+  return true;
+}
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -742,6 +858,40 @@ export function ChatSidebar({
     return true;
   });
 
+  // ── Lazy media-kind resolution for list previews ──────────────────────────
+  // GHL's conversation search omits the media type, so media rows first render
+  // as a generic "Multimedia". For the rows actually displayed we fetch the
+  // precise kind (audio / image / sticker …) in the background and upgrade the
+  // label. The ref dedupes so each conversation is fetched at most once.
+  const [mediaKinds, setMediaKinds] = useState<Record<string, string>>({});
+  const mediaKindRequested = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const pending = filteredConversations
+      .filter(
+        (c) => needsMediaKind(c) && !mediaKindRequested.current.has(c.id)
+      )
+      // Cap per pass so a large inbox doesn't fire hundreds of calls at once;
+      // the effect re-runs as the list changes to pick up the rest.
+      .slice(0, 40);
+    if (pending.length === 0) return;
+    pending.forEach((c) => mediaKindRequested.current.add(c.id));
+    // NOTE: no cleanup/cancellation here. `filteredConversations` is a fresh
+    // array on every render, so this effect re-runs constantly; a cleanup that
+    // cancelled the in-flight fetch would abort setMediaKinds before it applied
+    // (and the dedupe ref then prevents a retry) — leaving the label blank
+    // forever. setMediaKinds is idempotent and safe to call across re-renders.
+    void (async () => {
+      for (const c of pending) {
+        try {
+          const { kind } = await api.conversations.lastMessageKind(c.id);
+          if (kind) setMediaKinds((prev) => ({ ...prev, [c.id]: kind }));
+        } catch {
+          // Leave the row blank on failure.
+        }
+      }
+    })();
+  }, [filteredConversations]);
+
   const handleSaveView = (name: string, viewId?: string) => {
     if (onSaveView) {
       onSaveView({
@@ -1301,20 +1451,34 @@ export function ChatSidebar({
                         ) : conv.lastMessageDirection === "inbound" ? (
                           <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         ) : null}
-                        <span
-                          className={cn(
-                            // min-w-0 lets the span shrink inside the flex row;
-                            // without it the unbroken text overflows and pushes
-                            // the trailing unread badge off the right edge.
-                            "line-clamp-1 min-w-0 text-xs leading-tight",
-                            conv.unreadCount > 0
-                              ? "font-semibold text-foreground"
-                              : "text-muted-foreground"
-                          )}
-                          title={conv.lastMessage}
-                        >
-                          {conv.lastMessage}
-                        </span>
+                        {(() => {
+                          // WhatsApp-style media preview: icon + label ("Audio",
+                          // "Foto", "Sticker", caption…) instead of a blank line
+                          // when the last message is media rather than text.
+                          const preview = getLastMessagePreview(conv, mediaKinds[conv.id]);
+                          const PreviewIcon = preview.icon;
+                          return (
+                            <>
+                              {PreviewIcon && (
+                                <PreviewIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              )}
+                              <span
+                                className={cn(
+                                  // min-w-0 lets the span shrink inside the flex
+                                  // row; without it the unbroken text overflows and
+                                  // pushes the trailing unread badge off the edge.
+                                  "line-clamp-1 min-w-0 text-xs leading-tight",
+                                  conv.unreadCount > 0
+                                    ? "font-semibold text-foreground"
+                                    : "text-muted-foreground"
+                                )}
+                                title={preview.label}
+                              >
+                                {preview.label}
+                              </span>
+                            </>
+                          );
+                        })()}
                       </span>
                       {conv.unreadCount > 0 && (
                         <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">

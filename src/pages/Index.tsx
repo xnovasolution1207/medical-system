@@ -1728,6 +1728,13 @@ export default function Index() {
             ...existing,
             ...full,
             source: existing.source,
+            // GHL's conversation DETAIL endpoint omits lastMessageBody /
+            // direction (it only returns them on search), so `full` would blank
+            // the list preview on open. Keep the search-derived values when the
+            // detail didn't supply them.
+            lastMessage: full.lastMessage || existing.lastMessage,
+            lastMessageDirection:
+              full.lastMessageDirection ?? existing.lastMessageDirection,
             stage: existing.stage ?? full.stage,
             // Preserve the locally-tracked unread badge. GHL's per-conversation
             // unreadCount is unreliable for this location, so letting the detail
