@@ -1532,7 +1532,7 @@ export function ContactSidebar({
 
         <Separator />
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-3">
           <h3 className="text-sm font-semibold">Asignación</h3>
           {users.length === 0 ? (
             <p className="text-xs text-muted-foreground italic">
@@ -1540,14 +1540,14 @@ export function ContactSidebar({
               expone la lista de usuarios.
             </p>
           ) : (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0 space-y-1">
                 <Label className="text-xs text-muted-foreground">Propietario</Label>
                 <Select
                   value={selectedOwner || "__unassigned__"}
                   onValueChange={(v) => handleOwnerChange(v === "__unassigned__" ? "" : v)}
                 >
-                  <SelectTrigger className="w-full bg-popover hover:bg-popover [&>span]:flex [&>span]:items-center [&>span]:gap-2">
+                  <SelectTrigger className="h-9 w-full bg-popover hover:bg-popover [&>span]:flex [&>span]:items-center [&>span]:gap-2 [&>span]:truncate">
                     <SelectValue placeholder="Seleccionar propietario" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1568,11 +1568,11 @@ export function ContactSidebar({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="min-w-0 space-y-1">
                 <Label className="text-xs text-muted-foreground">Seguidores</Label>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between font-normal px-3 h-10 bg-popover hover:bg-popover">
+                    <Button variant="outline" className="w-full justify-between font-normal px-3 h-9 bg-popover hover:bg-popover">
                       <div className="flex items-center gap-2 overflow-hidden truncate">
                         {selectedFollowers.length > 0 ? (
                           selectedFollowers.length === 1 ? (
