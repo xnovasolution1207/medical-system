@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentUser, User, Conversation, FamilyMember, Message, Opportunity, TagSummary } from "./types";
@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { ContactNote } from "./ContactNote";
-import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play, Megaphone, Copy } from "lucide-react";
+import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play, Megaphone, Copy, MoreVertical, MessageSquare } from "lucide-react";
 
 interface ContactSidebarProps {
   contact: User;
@@ -74,6 +74,10 @@ interface ContactSidebarProps {
     address?: string;
     documentNumber?: string;
   }) => void;
+  // Open the chat for a related family-member contact ("Escribir" in the
+  // Parentesco row menu). Parent resolves the contact's conversation (or a
+  // stub) and makes it the active chat.
+  onMessageFamilyMember?: (contactId: string) => void;
 }
 
 // Spanish labels for GHL's four opportunity statuses. "Abandonar" matches the
@@ -109,6 +113,21 @@ const FAMILY_RELATIONSHIP_LABELS: Record<
   hermano: "Hermano(a)",
   otro: "Otro",
 };
+
+// Soft avatar tints for the family-member initials, picked deterministically
+// from the name so the same person always gets the same color.
+const FAMILY_AVATAR_COLORS = [
+  "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300",
+  "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+  "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+  "bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-300",
+  "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300",
+];
+function familyAvatarColor(name: string): string {
+  const sum = [...(name || "?")].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return FAMILY_AVATAR_COLORS[sum % FAMILY_AVATAR_COLORS.length];
+}
 
 const FAMILY_RELATIONSHIP_ORDER: FamilyMember["relationship"][] = [
   "hijo",
@@ -211,6 +230,7 @@ export function ContactSidebar({
   availableTags = [],
   onUpdateTags,
   onUpdateContactFields,
+  onMessageFamilyMember,
 }: ContactSidebarProps) {
   // Local draft of the monetary value while the input is focused. We commit
   // (and round-trip to GHL) on blur or Enter — keystroke-level PATCHes would
@@ -250,6 +270,8 @@ export function ContactSidebar({
     contact.familyMembers ?? []
   );
   const [isFamilyDialogOpen, setIsFamilyDialogOpen] = useState(false);
+  // Collapse/expand the Parentesco list (chevron in the section header).
+  const [isFamilyOpen, setIsFamilyOpen] = useState(true);
   // null = the dialog is in "add" mode; a relation id = editing that member.
   const [editingFamilyId, setEditingFamilyId] = useState<string | null>(null);
   const [familyName, setFamilyName] = useState("");
@@ -1282,33 +1304,68 @@ export function ContactSidebar({
 
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="h-4 w-4" />
-              <span>Parentesco</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-primary hover:bg-primary/10"
-              onClick={() => {
-                resetFamilyDialog();
-                setIsFamilyDialogOpen(true);
-              }}
-              aria-label="Agregar familiar"
+            <button
+              type="button"
+              onClick={() => setIsFamilyOpen((v) => !v)}
+              className="flex items-center gap-2 text-sm font-semibold text-foreground"
+              aria-expanded={isFamilyOpen}
             >
-              <Plus className="h-4 w-4" />
-            </Button>
+              <span>Parentesco</span>
+              {familyMembers.length > 0 && (
+                <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+                  {familyMembers.length}
+                </span>
+              )}
+            </button>
+            <div className="flex items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-primary hover:bg-primary/10"
+                onClick={() => {
+                  resetFamilyDialog();
+                  setIsFamilyDialogOpen(true);
+                }}
+                aria-label="Agregar familiar"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setIsFamilyOpen((v) => !v)}
+                aria-label={isFamilyOpen ? "Contraer" : "Expandir"}
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform",
+                    isFamilyOpen && "rotate-180"
+                  )}
+                />
+              </Button>
+            </div>
           </div>
-          {familyMembers.length > 0 && (
-            <ul className="space-y-1 text-sm">
+          {isFamilyOpen && familyMembers.length > 0 && (
+            <ul className="space-y-1">
               {familyMembers.map((m) => (
                 <li
                   key={m.id}
-                  className="group flex items-center justify-between gap-2 rounded-md px-2 -mx-2 py-1.5 hover:bg-muted/50 transition-colors"
+                  className="group flex items-center gap-3 rounded-lg p-2 -mx-2 hover:bg-muted/50 transition-colors"
                 >
+                  <div
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+                      familyAvatarColor(m.name)
+                    )}
+                  >
+                    {(m.name.trim()[0] || "?").toUpperCase()}
+                  </div>
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-foreground">{m.name}</span>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {m.name}
+                    </span>
+                    <span className="truncate text-[12px] text-muted-foreground">
                       {FAMILY_RELATIONSHIP_LABELS[m.relationship]}
                       {m.phone && <> · {m.phone}</>}
                     </span>
@@ -1316,19 +1373,31 @@ export function ContactSidebar({
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
-                      onClick={() => openEditFamilyDialog(m)}
-                      className="h-5 w-5 rounded-full hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground"
-                      aria-label={`Editar ${m.name}`}
+                      onClick={() => onMessageFamilyMember?.(m.contactId)}
+                      disabled={!onMessageFamilyMember || !m.contactId}
+                      className="h-7 w-7 rounded-md hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+                      aria-label={`Escribir a ${m.name}`}
+                      title="Escribir"
                     >
-                      <Edit2 className="h-3 w-3" />
+                      <MessageSquare className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditFamilyDialog(m)}
+                      className="h-7 w-7 rounded-md hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                      aria-label={`Editar ${m.name}`}
+                      title="Editar"
+                    >
+                      <Edit2 className="h-4 w-4" />
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRemoveFamilyMember(m.id)}
-                      className="h-5 w-5 rounded-full hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground"
+                      className="h-7 w-7 rounded-md hover:bg-destructive/10 flex items-center justify-center text-muted-foreground hover:text-destructive"
                       aria-label={`Eliminar ${m.name}`}
+                      title="Borrar"
                     >
-                      <X className="h-3 w-3" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </li>

@@ -1054,6 +1054,66 @@ export default function Index() {
     [navigate, activeMainTab, activeViewId]
   );
 
+  // Open the chat for an arbitrary contact (used by "Escribir" on a Parentesco
+  // / family-member row). Prefer a conversation already in the cache; otherwise
+  // fetch the lead bundle and open its conversation, or a stub when the contact
+  // has no conversation yet so the agent can send the first message.
+  const handleMessageContact = useCallback(
+    (contactId: string) => {
+      if (!contactId) return;
+      const cache = queryClient.getQueryData<BootstrapPayload>(
+        BOOTSTRAP_QUERY_KEY
+      );
+      const existing = cache?.conversations.find(
+        (c) => c.participant.id === contactId || c.contactId === contactId
+      );
+      if (existing) {
+        handleSelectConversation(existing.id);
+        return;
+      }
+      api.contacts
+        .getLead(contactId)
+        .then((bundle) => {
+          if (bundle.conversation) {
+            const conv: Conversation = {
+              ...bundle.conversation,
+              participant: {
+                ...bundle.conversation.participant,
+                ...bundle.contact,
+              },
+            };
+            setRoutedConversations((prev) => ({ ...prev, [conv.id]: conv }));
+            handleSelectConversation(conv.id);
+          } else {
+            // No conversation yet — open a stub keyed by contact so the agent
+            // can start one (same shape the WS ContactCreate path synthesizes).
+            const stubId = `pending-${contactId}`;
+            const stub: Conversation = {
+              id: stubId,
+              contactId,
+              participant: bundle.contact,
+              source: "whatsapp",
+              recipientNumber: bundle.contact.phone ?? "",
+              lastMessage: "",
+              unreadCount: 0,
+              timestamp: "",
+              messages: [],
+            };
+            setRoutedConversations((prev) => ({ ...prev, [stubId]: stub }));
+            handleSelectConversation(stubId);
+          }
+        })
+        .catch((err) => {
+          console.error("[family] open chat failed", err);
+          toast({
+            title: "No se pudo abrir el chat de este contacto",
+            variant: "destructive",
+          });
+        });
+    },
+    [queryClient, handleSelectConversation, toast]
+  );
+
   // Wraps `handleSelectConversation` so that picking a row in the mobile
   // lead-list drawer also dismisses the drawer — otherwise the user has to tap
   // outside the sheet after every selection.
@@ -4600,6 +4660,7 @@ export default function Index() {
             <ContactSidebar
               contact={activeConversation.participant}
               conversation={activeConversation}
+              onMessageFamilyMember={handleMessageContact}
               onUpdateContactName={(newName) =>
                 handleUpdateContactName(activeConversation.participant.id, newName)
               }
@@ -4691,6 +4752,7 @@ export default function Index() {
             <ContactSidebar
               contact={activeConversation.participant}
               conversation={activeConversation}
+              onMessageFamilyMember={handleMessageContact}
               onUpdateContactName={(newName) =>
                 handleUpdateContactName(activeConversation.participant.id, newName)
               }
@@ -4905,6 +4967,7 @@ export default function Index() {
                     <ContactSidebar
                       contact={conv.participant}
                       conversation={conv}
+                      onMessageFamilyMember={handleMessageContact}
                       onUpdateContactName={(newName) =>
                         handleUpdateContactName(conv.participant.id, newName)
                       }
