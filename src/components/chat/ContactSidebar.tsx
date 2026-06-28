@@ -499,6 +499,16 @@ export function ContactSidebar({
     );
   };
 
+  // Copy a single field's value to the clipboard.
+  const copyValue = (value: string) => {
+    const v = (value ?? "").trim();
+    if (!v) return;
+    navigator.clipboard.writeText(v).then(
+      () => toast({ title: "Copiado" }),
+      () => toast({ title: "No se pudo copiar", variant: "destructive" })
+    );
+  };
+
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [editedFieldValue, setEditedFieldValue] = useState("");
   const [editedDocType, setEditedDocType] = useState("CC");
@@ -1193,10 +1203,28 @@ export function ContactSidebar({
                     ) : (
                       <div className="flex items-center gap-2 flex-1 justify-end overflow-hidden">
                         <span className="font-medium text-right truncate text-foreground/80">
-                          {field.value 
-                            ? (field.type === 'document' ? `${field.docType || 'CC'} ${field.value}` : field.value) 
+                          {field.value
+                            ? (field.type === 'document' ? `${field.docType || 'CC'} ${field.value}` : field.value)
                             : <span className="text-muted-foreground/50 italic">Vacío</span>}
                         </span>
+                        {field.value && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyValue(
+                                field.type === 'document'
+                                  ? `${field.docType || 'CC'} ${field.value}`
+                                  : field.value
+                              );
+                            }}
+                            className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            aria-label="Copiar"
+                            title="Copiar"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <Edit2 className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                       </div>
                     )}
@@ -1213,14 +1241,30 @@ export function ContactSidebar({
                     {contact.customFields!.map((cf) => (
                       <div
                         key={cf.id}
-                        className="flex items-start justify-between gap-4 rounded-md p-2 -mx-2"
+                        className="group/cf flex items-start justify-between gap-4 rounded-md p-2 -mx-2"
                       >
                         <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                           <Tag className="h-4 w-4" />
                           {cf.name}
                         </span>
-                        <span className="break-words text-right font-medium text-foreground/80">
-                          {cf.value}
+                        <span className="flex min-w-0 items-start justify-end gap-2">
+                          <span className="break-words text-right font-medium text-foreground/80">
+                            {cf.value}
+                          </span>
+                          {cf.value && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyValue(cf.value);
+                              }}
+                              className="mt-0.5 text-muted-foreground hover:text-foreground opacity-0 group-hover/cf:opacity-100 transition-opacity shrink-0"
+                              aria-label="Copiar"
+                              title="Copiar"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </span>
                       </div>
                     ))}
