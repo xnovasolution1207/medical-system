@@ -93,11 +93,13 @@ const STATUS_LABELS: Record<Opportunity["status"], string> = {
 // Visual treatment per status — kept compact so the badge fits inline next to
 // the contact name. Open is the neutral default; the closed states pick up
 // semantic colors that match the Kanban board elsewhere.
+// Soft, borderless status chips (match the contact-card design): a muted fill
+// for the default "Abierto", subtle tints for the closed states.
 const STATUS_TRIGGER_CLASS: Record<Opportunity["status"], string> = {
-  open: "border-slate-200 bg-slate-50 text-slate-700 dark:border-border dark:bg-muted/50 dark:text-foreground",
-  won: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300",
-  lost: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300",
-  abandoned: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300",
+  open: "border-none bg-muted/60 hover:bg-muted text-foreground/80",
+  won: "border-none bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300",
+  lost: "border-none bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300",
+  abandoned: "border-none bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-300",
 };
 
 // Spanish labels for the four canonical family relationships plus the
@@ -148,18 +150,26 @@ function formatMonetary(value: number | undefined): string {
   })}`;
 }
 
-// Contact creation date for the subtitle under the name. Returns the Peru-time
-// date ("Creado el 5 jun. 2026") or null when there's no valid timestamp.
+// Contact creation date + time for the subtitle under the name. Returns the
+// Peru-time stamp ("Creado: 12 oct 2023, 10:30 a. m.") or null when there's no
+// valid timestamp.
 function formatCreatedDate(iso: string | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (isNaN(d.getTime())) return null;
-  return `Creado el ${d.toLocaleDateString("es-PE", {
+  const date = d.toLocaleDateString("es-PE", {
     day: "numeric",
     month: "short",
     year: "numeric",
     timeZone: "America/Lima",
-  })}`;
+  });
+  const time = d.toLocaleTimeString("es-PE", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "America/Lima",
+  });
+  return `Creado: ${date}, ${time}`;
 }
 
 // One editable row in the "Información de Contacto" section.
@@ -760,34 +770,42 @@ export function ContactSidebar({
   return (
     <div className="flex h-full w-full flex-col border-l bg-card text-card-foreground overflow-hidden">
       <ScrollArea className="flex-1">
-        <div className="flex flex-col items-center p-6 text-center">
-          <ChannelAvatar 
-            name={contact.name} 
-            src={contact.avatar} 
-            status={contact.status}
-            className="h-24 w-24 mb-4"
-          />
-          {isEditingName ? (
-            <input
-              autoFocus
-              className="text-xl font-bold text-center bg-transparent border-b border-primary focus:outline-none mb-1 w-full max-w-[200px] px-2"
-              value={editedName}
-              onChange={(e) => setEditedName(e.target.value)}
-              onBlur={handleNameSave}
-              onKeyDown={handleNameKeyDown}
+        <div className="p-4">
+          {/* Compact header: avatar + name + created date on one row. */}
+          <div className="flex items-center gap-3">
+            <ChannelAvatar
+              name={contact.name}
+              src={contact.avatar}
+              status={contact.status}
+              className="h-12 w-12 shrink-0"
             />
-          ) : (
-            <div 
-              className="group relative flex items-center justify-center gap-2 cursor-pointer w-full mb-1 rounded-md hover:bg-muted/50 p-1 -mx-1"
-              onClick={() => setIsEditingName(true)}
-            >
-              <h2 className="text-xl font-bold">{contact.name}</h2>
-              <Edit2 className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute right-4 sm:right-8" />
+            <div className="min-w-0 flex-1 text-left">
+              {isEditingName ? (
+                <input
+                  autoFocus
+                  className="w-full bg-transparent border-b border-primary text-base font-bold focus:outline-none"
+                  value={editedName}
+                  onChange={(e) => setEditedName(e.target.value)}
+                  onBlur={handleNameSave}
+                  onKeyDown={handleNameKeyDown}
+                />
+              ) : (
+                <div
+                  className="group flex items-center gap-1.5 cursor-pointer rounded-md hover:bg-muted/50 -mx-1 px-1"
+                  onClick={() => setIsEditingName(true)}
+                >
+                  <h2 className="truncate text-base font-bold">{contact.name}</h2>
+                  <Edit2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              )}
+              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                <Calendar className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {formatCreatedDate(contact.createdAt) ?? "Lead"}
+                </span>
+              </p>
             </div>
-          )}
-          <p className="text-sm text-muted-foreground mb-4">
-            {formatCreatedDate(contact.createdAt) ?? "Lead"}
-          </p>
+          </div>
 
           {/* Opportunity status + monetary chip. Rendered for every lead so
               the sidebar layout doesn't jump when toggling between a lead
@@ -798,7 +816,9 @@ export function ContactSidebar({
               the parent's default pipeline + stage. Once the create-then-
               hydrate round-trip lands the opportunity in state, the next
               render switches to the regular update path. */}
-          <div className="flex items-center justify-center gap-2 w-full mb-4">
+          {/* Indented to align under the name (avatar 48px + gap 12px) so the
+              name, date and status chips form one clean left-aligned column. */}
+          <div className="flex items-center gap-2 mt-3 pl-[60px]">
             <Select
               value={opportunity ? opportunity.status : ""}
               onValueChange={(v) => {
@@ -814,8 +834,8 @@ export function ContactSidebar({
               <SelectTrigger
                 className={
                   opportunity
-                    ? `h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border px-3 text-sm font-medium ${STATUS_TRIGGER_CLASS[opportunity.status]}`
-                    : "h-9 w-auto min-w-[120px] flex-shrink-0 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-400 dark:border-border dark:bg-muted/50 dark:text-muted-foreground"
+                    ? `h-7 w-auto min-w-[100px] flex-shrink-0 rounded-md px-3 text-xs font-medium focus:ring-0 ${STATUS_TRIGGER_CLASS[opportunity.status]}`
+                    : "h-7 w-auto min-w-[100px] flex-shrink-0 rounded-md border-none bg-muted/60 hover:bg-muted px-3 text-xs font-medium text-muted-foreground focus:ring-0"
                 }
                 aria-label="Estado de la oportunidad"
               >
@@ -884,7 +904,7 @@ export function ContactSidebar({
                     e.currentTarget.blur();
                   }
                 }}
-                className="h-9 w-[110px] rounded-md border border-slate-200 bg-slate-50 px-3 text-center text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-1 focus:ring-primary dark:border-border dark:bg-muted/50 dark:text-foreground"
+                className="h-7 w-[90px] rounded-md border-none bg-muted/60 px-3 text-center text-xs font-medium text-foreground/80 outline-none focus:ring-1 focus:ring-primary dark:bg-muted/60"
                 aria-label="Valor monetario"
               />
             </div>

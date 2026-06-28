@@ -1825,6 +1825,9 @@ export default function Index() {
                           phone: c.phone ?? conv.participant.phone,
                           address: c.address,
                           documentNumber: c.documentNumber,
+                          // Creation date for the "Creado: …" subtitle (the
+                          // conversation mapper doesn't carry it).
+                          createdAt: c.createdAt,
                           // Form/campaign data for the contact panel — without
                           // these the "Datos del formulario" / "Campaña / Origen"
                           // sections never had anything to render.
@@ -1850,6 +1853,7 @@ export default function Index() {
                       phone: c.phone ?? rc.participant.phone,
                       address: c.address,
                       documentNumber: c.documentNumber,
+                      createdAt: c.createdAt,
                       customFields: c.customFields,
                       attribution: c.attribution,
                     },
