@@ -1373,7 +1373,20 @@ export function ContactSidebar({
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
-                      onClick={() => onMessageFamilyMember?.(m.contactId)}
+                      onClick={() => {
+                        // A WhatsApp conversation can't be started without a
+                        // number — alert instead of opening an unusable chat.
+                        if (!m.phone || !m.phone.trim()) {
+                          toast({
+                            title: "El número de teléfono está vacío",
+                            description:
+                              "No se puede iniciar una conversación con este familiar sin un número de teléfono.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        onMessageFamilyMember?.(m.contactId);
+                      }}
                       disabled={!onMessageFamilyMember || !m.contactId}
                       className="h-7 w-7 rounded-md hover:bg-muted-foreground/15 flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
                       aria-label={`Escribir a ${m.name}`}
