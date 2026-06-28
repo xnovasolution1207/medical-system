@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { ImageLightbox } from "./ImageLightbox";
 import { VideoLightbox } from "./VideoLightbox";
 import { ContactNote } from "./ContactNote";
-import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play, Megaphone } from "lucide-react";
+import { Phone, Mail, Tag, Calendar, CheckSquare, Plus, BellOff, X, ChevronDown, Edit2, Trash2, FileIcon, ImageIcon, Download, MapPin, FileText, Users, Headphones, Link as LinkIcon, Play, Megaphone, Copy } from "lucide-react";
 
 interface ContactSidebarProps {
   contact: User;
@@ -469,6 +469,35 @@ export function ContactSidebar({
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(contact.name);
+
+  // Copy the contact card as plain text with emoji labels — Nombre, Teléfono,
+  // Email, plus any "Datos del formulario" fields. Skips empty values.
+  const handleCopyContactInfo = () => {
+    const lines: string[] = [];
+    const name = contact.name?.trim();
+    if (name) lines.push(`👤 Nombre: ${name}`);
+    const phone =
+      fields.find((f) => f.id === "phone")?.value?.trim() ||
+      contact.phone?.trim();
+    if (phone) lines.push(`📞 Teléfono: ${phone}`);
+    const email =
+      fields.find((f) => f.id === "email")?.value?.trim() ||
+      contact.email?.trim();
+    if (email) lines.push(`📧 Email: ${email}`);
+    for (const cf of contact.customFields ?? []) {
+      const v = (cf.value ?? "").trim();
+      if (v) lines.push(`📋 ${cf.name}: ${v}`);
+    }
+    const text = lines.join("\n");
+    if (!text) {
+      toast({ title: "No hay datos para copiar" });
+      return;
+    }
+    navigator.clipboard.writeText(text).then(
+      () => toast({ title: "Información copiada" }),
+      () => toast({ title: "No se pudo copiar", variant: "destructive" })
+    );
+  };
 
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [editedFieldValue, setEditedFieldValue] = useState("");
@@ -948,6 +977,16 @@ export function ContactSidebar({
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold">Información de Contacto</h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={handleCopyContactInfo}
+                aria-label="Copiar información de contacto"
+                title="Copiar (nombre, teléfono, email y datos del formulario)"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
             </div>
             
             {isEditingFields ? (
