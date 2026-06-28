@@ -110,13 +110,15 @@ function mediaKindPreview(kind: string): {
 
 function getLastMessagePreview(
   conv: Conversation,
-  // Lazily-resolved kind of the last message for unopened media rows (GHL omits
-  // it from list data). When present and the row is otherwise unknown media, it
-  // upgrades the generic "Multimedia" label to the precise type.
-  resolvedMediaKind?: string
+  // Lazily-resolved info about the last real chat message for unopened rows (GHL
+  // omits the media type from list data and reports the direction of the last
+  // message OVERALL — often an outbound stage activity). `kind` upgrades the
+  // label to the precise type; `direction` drives the from-Lead/from-us arrow.
+  resolved?: { kind?: string | null; direction?: "inbound" | "outbound" | null }
 ): {
   icon: typeof ImageIcon | null;
   label: string;
+  direction: "inbound" | "outbound" | null | undefined;
 } {
   // Prefer the LOADED messages — they hold the real last message (text or
   // attachment). This is authoritative: GHL's conversation DETAIL endpoint
@@ -137,6 +139,9 @@ function getLastMessagePreview(
   }
 
   if (lastMsg) {
+    // Outbound messages carry senderId === "agent" (survives multiple staff).
+    const direction: "inbound" | "outbound" =
+      lastMsg.senderId === "agent" ? "outbound" : "inbound";
     const caption = (lastMsg.text ?? "").trim();
     const att = lastMsg.attachment;
     if (att) {
@@ -144,35 +149,41 @@ function getLastMessagePreview(
       switch (att.type) {
         case "image":
           return isSticker
-            ? { icon: Sticker, label: "Sticker" }
-            : { icon: ImageIcon, label: caption || "Foto" };
+            ? { icon: Sticker, label: "Sticker", direction }
+            : { icon: ImageIcon, label: caption || "Foto", direction };
         case "video":
-          return { icon: VideoIcon, label: caption || "Video" };
+          return { icon: VideoIcon, label: caption || "Video", direction };
         case "audio":
-          return { icon: Headphones, label: "Audio" };
+          return { icon: Headphones, label: "Audio", direction };
         case "document":
-          return { icon: FileText, label: caption || att.name || "Documento" };
+          return { icon: FileText, label: caption || att.name || "Documento", direction };
         default:
-          return { icon: Paperclip, label: caption || att.name || "Archivo" };
+          return { icon: Paperclip, label: caption || att.name || "Archivo", direction };
       }
     }
-    if (caption) return { icon: null, label: caption };
+    if (caption) return { icon: null, label: caption, direction };
     // Loaded message with neither text nor attachment → fall through to the
     // list-level body / generic fallback below.
   }
 
+  // Direction for unopened rows: prefer the lazily-resolved last-chat-message
+  // direction over conv.lastMessageDirection (which may be a stage activity).
+  const direction = resolved?.direction ?? conv.lastMessageDirection;
+
   const text = (conv.lastMessage ?? "").trim();
-  if (text) return { icon: null, label: text };
+  if (text) return { icon: null, label: text, direction };
   // No text anywhere AND nothing loaded: GHL gives an empty body for media list
   // rows. Show the lazily-fetched precise type once known; otherwise blank (the
   // fetch is in flight, or it resolved to something that isn't media — e.g. an
   // activity-only conversation). We deliberately DON'T show a generic
   // "Multimedia" placeholder — it was misleading on non-media rows.
   if (!lastMsg && MESSAGING_SOURCES.has(conv.source)) {
-    const precise = resolvedMediaKind ? mediaKindPreview(resolvedMediaKind) : null;
-    return precise ?? { icon: null, label: "" };
+    const precise = resolved?.kind ? mediaKindPreview(resolved.kind) : null;
+    return precise
+      ? { ...precise, direction }
+      : { icon: null, label: "", direction };
   }
-  return { icon: null, label: "" };
+  return { icon: null, label: "", direction };
 }
 
 // True when a row would render the generic "Multimedia" placeholder and should
@@ -863,7 +874,9 @@ export function ChatSidebar({
   // as a generic "Multimedia". For the rows actually displayed we fetch the
   // precise kind (audio / image / sticker …) in the background and upgrade the
   // label. The ref dedupes so each conversation is fetched at most once.
-  const [mediaKinds, setMediaKinds] = useState<Record<string, string>>({});
+  const [mediaInfo, setMediaInfo] = useState<
+    Record<string, { kind: string | null; direction: "inbound" | "outbound" | null }>
+  >({});
   const mediaKindRequested = useRef<Set<string>>(new Set());
   useEffect(() => {
     const pending = filteredConversations
@@ -877,14 +890,15 @@ export function ChatSidebar({
     pending.forEach((c) => mediaKindRequested.current.add(c.id));
     // NOTE: no cleanup/cancellation here. `filteredConversations` is a fresh
     // array on every render, so this effect re-runs constantly; a cleanup that
-    // cancelled the in-flight fetch would abort setMediaKinds before it applied
-    // (and the dedupe ref then prevents a retry) — leaving the label blank
-    // forever. setMediaKinds is idempotent and safe to call across re-renders.
+    // cancelled the in-flight fetch would abort the state update before it
+    // applied (and the dedupe ref then prevents a retry) — leaving the label
+    // blank forever. setMediaInfo is idempotent and safe across re-renders.
     void (async () => {
       for (const c of pending) {
         try {
-          const { kind } = await api.conversations.lastMessageKind(c.id);
-          if (kind) setMediaKinds((prev) => ({ ...prev, [c.id]: kind }));
+          const info = await api.conversations.lastMessageKind(c.id);
+          // Store even when kind is null — `direction` still corrects the arrow.
+          setMediaInfo((prev) => ({ ...prev, [c.id]: info }));
         } catch {
           // Leave the row blank on failure.
         }
@@ -1443,22 +1457,24 @@ export function ChatSidebar({
                   {viewMode !== "small" && (
                     <div className="flex items-start justify-between gap-2 mt-0.5">
                       <span className="flex min-w-0 flex-1 items-center gap-1 pr-2">
-                        {/* Read/direction indicator (WhatsApp-style): the
-                            last message was outbound (blue ✓✓ = enviado/
-                            leído) or inbound (↵ = recibido). */}
-                        {conv.lastMessageDirection === "outbound" ? (
-                          <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-500" />
-                        ) : conv.lastMessageDirection === "inbound" ? (
-                          <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        ) : null}
                         {(() => {
                           // WhatsApp-style media preview: icon + label ("Audio",
-                          // "Foto", "Sticker", caption…) instead of a blank line
-                          // when the last message is media rather than text.
-                          const preview = getLastMessagePreview(conv, mediaKinds[conv.id]);
+                          // "Foto", "Sticker", caption…) plus a direction arrow
+                          // showing whether the last message is from us (✓✓) or
+                          // from the Lead (↵). Both derive from the SAME resolved
+                          // last chat message so the arrow matches the content
+                          // (not a stage-activity that GHL reports as "last").
+                          const preview = getLastMessagePreview(conv, mediaInfo[conv.id]);
                           const PreviewIcon = preview.icon;
                           return (
                             <>
+                              {/* Read/direction indicator: outbound (blue ✓✓ =
+                                  enviado por nosotros) or inbound (↵ = del Lead). */}
+                              {preview.direction === "outbound" ? (
+                                <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-500" />
+                              ) : preview.direction === "inbound" ? (
+                                <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              ) : null}
                               {PreviewIcon && (
                                 <PreviewIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               )}

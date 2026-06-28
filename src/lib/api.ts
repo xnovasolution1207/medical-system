@@ -394,15 +394,15 @@ export const api = {
       );
     },
     get: (id: string) => request<Conversation>("GET", `/conversations/${id}`),
-    // Precise media kind of a conversation's last message ("audio" | "image" |
-    // "sticker" | "video" | "document" | "file" | "text" | null). GHL's list
-    // search omits this, so the SPA calls it lazily for media rows to upgrade
-    // the generic "Multimedia" preview to the exact type.
+    // Precise media kind + direction of a conversation's last real chat message.
+    // GHL's list search omits the media type and reports the direction of the
+    // last message OVERALL (often an outbound stage activity), so the SPA calls
+    // this lazily to show the exact type AND the correct from-Lead/from-us arrow.
     lastMessageKind: (id: string) =>
-      request<{ kind: string | null }>(
-        "GET",
-        `/conversations/${id}/last-message-kind`
-      ),
+      request<{
+        kind: string | null;
+        direction: "inbound" | "outbound" | null;
+      }>("GET", `/conversations/${id}/last-message-kind`),
     // Total unread-conversation count across the whole GHL location.
     // Drives the "No leídos" sidebar badge so the number reflects every
     // unread lead in the tenant, not just the locally-loaded page.
