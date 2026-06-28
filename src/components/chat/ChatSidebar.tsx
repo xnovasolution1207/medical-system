@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { ChannelAvatar } from "./ChannelAvatar";
-import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Mail, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft, Clock, Image as ImageIcon, Headphones, Video as VideoIcon, FileText, Paperclip, Sticker } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Filter, Calendar, ListFilter, Save, X, Star, Archive, CheckCheck, Mail, Trash2, Bell, AtSign, StickyNote, CheckSquare, LayoutList, List, AlignJustify, Loader2, Menu, CornerDownLeft, Clock, Image as ImageIcon, Headphones, Video as VideoIcon, FileText, Paperclip, Sticker, ArrowRight, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1468,12 +1468,12 @@ export function ChatSidebar({
                           const PreviewIcon = preview.icon;
                           return (
                             <>
-                              {/* Read/direction indicator: outbound (blue ✓✓ =
-                                  enviado por nosotros) or inbound (↵ = del Lead). */}
-                              {preview.direction === "outbound" ? (
-                                <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-500" />
-                              ) : preview.direction === "inbound" ? (
-                                <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              {/* Direction arrow: the patient/Lead wrote → (→,
+                                  incoming); we replied → (←, outgoing). */}
+                              {preview.direction === "inbound" ? (
+                                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                              ) : preview.direction === "outbound" ? (
+                                <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-sky-500" />
                               ) : null}
                               {PreviewIcon && (
                                 <PreviewIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
