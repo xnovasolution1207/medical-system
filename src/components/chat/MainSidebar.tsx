@@ -184,11 +184,11 @@ export function MainSidebar({ savedViews, activeViewId, onSelectView, activeTab,
                 {isExpanded && <span className="truncate flex-1 text-left">{item.label}</span>}
                 {showBadge && (
                   isExpanded ? (
-                    <span className="ml-auto flex items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary h-5 min-w-5 px-1.5">
+                    <span className="ml-auto flex items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground h-5 min-w-5 px-1.5">
                       {badgeCount}
                     </span>
                   ) : (
-                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary h-4 min-w-4 px-1 ring-2 ring-background">
+                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground h-4 min-w-4 px-1 ring-2 ring-background">
                       {badgeCount}
                     </span>
                   )

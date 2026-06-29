@@ -1172,7 +1172,7 @@ export function ChatSidebar({
             <TabsTrigger value="unread" className={cn(TAB_TRIGGER_CLASS, "flex-1 text-[11px] flex items-center justify-center gap-1.5")}>
               No leídos
               {totalUnread > 0 && (
-                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
+                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
                   {totalUnread}
                 </span>
               )}
