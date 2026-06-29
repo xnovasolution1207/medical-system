@@ -221,18 +221,25 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
                   onClick={() => onSelectConversation(task.conversationId)}
                   className={cn(
                     "group relative flex text-left transition-all hover:bg-muted/50 border cursor-pointer",
-                    activeConversationId === task.conversationId 
-                      ? "bg-slate-50/50 dark:bg-slate-900/50 border-border/50 shadow-sm" 
+                    activeConversationId === task.conversationId
+                      ? "bg-neutral-100 dark:bg-[#ffffff0d] border-border/60 shadow-sm"
                       : "border-transparent hover:border-border/50",
                     task.status === "completed" && "opacity-60",
-                    viewMode === "normal" ? "items-start gap-3 rounded-xl p-4 mb-2" : 
-                    viewMode === "compact" ? "items-start gap-2.5 rounded-lg p-3 mb-1.5" : 
+                    viewMode === "normal" ? "items-start gap-3 rounded-xl p-4 mb-2" :
+                    viewMode === "compact" ? "items-start gap-2.5 rounded-lg p-3 mb-1.5" :
                     "items-center gap-2 rounded-md p-2 mb-1"
                   )}
                 >
-                  {activeConversationId === task.conversationId && (
-                    <div className="absolute left-0 top-3 bottom-3 w-1.5 rounded-r-md bg-primary" />
-                  )}
+                  {/* Purple left accent: full when active, a hint on hover so
+                      every card gets the polished highlight of the active one. */}
+                  <div
+                    className={cn(
+                      "absolute left-0 top-3 bottom-3 w-1.5 rounded-r-md bg-primary transition-opacity",
+                      activeConversationId === task.conversationId
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-50"
+                    )}
+                  />
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -302,7 +309,7 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
                           viewMode === "normal" ? "px-2.5 py-1 text-[13px]" : "px-2 py-0.5 text-[12px]",
                           task.dueDate.includes("Ayer") ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400" :
                           task.dueDate.includes("Hoy") ? "bg-amber-100/80 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400" :
-                          "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                          "bg-neutral-100 text-neutral-700 dark:bg-neutral-700/60 dark:text-neutral-300"
                         )}>
                           <Clock className={viewMode === "normal" ? "h-3.5 w-3.5" : "h-3 w-3"} />
                           {task.dueDate}
