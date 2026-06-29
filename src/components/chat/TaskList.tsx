@@ -29,6 +29,50 @@ function assigneeInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// Relative due-date label computed LIVE from the ISO `dueAt`. The backend bakes
+// `task.dueDate` ("Hoy/Mañana/Ayer, …") at fetch time, so it goes stale once the
+// day rolls over (a task fetched yesterday as "Mañana" is really due "Hoy"
+// today). Recomputing here keeps the label honest and in sync with the filters.
+const DUE_PERU_TZ = "America/Lima";
+function formatDueLabel(task: Task): string {
+  if (!task.dueAt) return task.dueDate; // legacy rows without an ISO
+  const d = new Date(task.dueAt);
+  if (isNaN(d.getTime())) return task.dueDate;
+  const dYmd = d.toLocaleDateString("en-CA", { timeZone: DUE_PERU_TZ });
+  const todayYmd = new Date().toLocaleDateString("en-CA", { timeZone: DUE_PERU_TZ });
+  const [ty, tm, td] = todayYmd.split("-").map(Number);
+  const baseUtc = Date.UTC(ty, tm - 1, td);
+  const ymdOffset = (days: number): string => {
+    const x = new Date(baseUtc + days * 86400000);
+    return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+  };
+  const time = d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: DUE_PERU_TZ,
+  });
+  if (dYmd === todayYmd) return `Hoy, ${time}`;
+  if (dYmd === ymdOffset(1)) return `Mañana, ${time}`;
+  if (dYmd === ymdOffset(-1)) return `Ayer, ${time}`;
+  return `${d.toLocaleDateString("es-PE", { day: "numeric", month: "short", timeZone: DUE_PERU_TZ })}, ${time}`;
+}
+
+// A task is "delayed" (overdue) when it's still pending and its scheduled time
+// has already passed. Prefer the real ISO `dueAt`; fall back to the display
+// label for legacy rows that predate it. Drives the red due-date styling.
+function isTaskOverdue(task: Task): boolean {
+  if (task.status === "completed") return false;
+  if (task.dueAt) {
+    // The reservation time itself: red as soon as that exact moment has passed,
+    // even if it's still today. (Comparing absolute instants is timezone-safe.)
+    const t = new Date(task.dueAt).getTime();
+    if (!isNaN(t)) return t < Date.now();
+  }
+  const lbl = (task.dueDate || "").toLowerCase();
+  return lbl.includes("ayer") || lbl.includes("atrasado");
+}
+
 export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSelectConversation, activeConversationId, users = [], onOpenMobileNav }: TaskListProps) {
   const [viewMode, setViewMode] = useState<"normal" | "compact" | "small">("normal");
   // Infinite scroll: render 25 tasks at a time and reveal 25 more as the list is
@@ -307,12 +351,12 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
                         <div className={cn(
                           "flex items-center gap-1.5 rounded-full font-medium",
                           viewMode === "normal" ? "px-2.5 py-1 text-[13px]" : "px-2 py-0.5 text-[12px]",
-                          task.dueDate.includes("Ayer") ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400" :
-                          task.dueDate.includes("Hoy") ? "bg-amber-100/80 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400" :
+                          isTaskOverdue(task) ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400" :
+                          formatDueLabel(task).includes("Hoy") ? "bg-amber-100/80 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400" :
                           "bg-neutral-100 text-neutral-700 dark:bg-neutral-700/60 dark:text-neutral-300"
                         )}>
                           <Clock className={viewMode === "normal" ? "h-3.5 w-3.5" : "h-3 w-3"} />
-                          {task.dueDate}
+                          {formatDueLabel(task)}
                         </div>
                         
                         {(() => {
@@ -353,9 +397,9 @@ export function TaskList({ tasks, onToggleTask, filterType, selectedUsers, onSel
                         <span className="truncate">{task.contact.name}</span>
                         <span>•</span>
                         <span className={cn(
-                          task.dueDate.includes("Ayer") ? "text-rose-600 dark:text-rose-400" :
-                          task.dueDate.includes("Hoy") ? "text-amber-600 dark:text-amber-400" : ""
-                        )}>{task.dueDate}</span>
+                          isTaskOverdue(task) ? "text-rose-600 dark:text-rose-400" :
+                          formatDueLabel(task).includes("Hoy") ? "text-amber-600 dark:text-amber-400" : ""
+                        )}>{formatDueLabel(task)}</span>
                       </div>
                     )}
                   </div>
